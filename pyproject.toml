@@ -1,0 +1,23 @@
+[project]
+name = "memory-augmented-retrieval-chatbot"
+version = "0.1.0"
+description = "Prototype Chainlit chatbot with lightweight persistent memory retrieval."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "chainlit>=2.0.0",
+    "openai>=1.0.0",
+    "python-dotenv>=1.0.0",
+]
+
+[dependency-groups]
+dev = [
+    "ruff>=0.8.0",
+]
+
+[tool.uv]
+package = false
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
