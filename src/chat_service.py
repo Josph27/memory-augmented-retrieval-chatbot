@@ -5,22 +5,35 @@ from uuid import uuid4
 from openai import OpenAIError
 
 from src.database import Database
+from src.memory.short_term import ShortTermMemory
 from src.model_wrapper import ModelWrapper
 
 
 SYSTEM_PROMPT = (
-    "You are a concise, helpful chatbot prototype. Use the recent conversation history as "
-    "short-term memory. If information is missing, say what you need instead of inventing facts."
+    "You are a concise, helpful chatbot prototype. Use the structured current-chat memory "
+    "and recent messages as short-term memory. If information is missing, say what you need "
+    "instead of inventing facts."
 )
 
 
 class ChatService:
     """Coordinates database persistence, short-term memory, and model calls."""
 
-    def __init__(self, database: Database, model: ModelWrapper, recent_message_limit: int) -> None:
+    def __init__(
+        self,
+        database: Database,
+        model: ModelWrapper,
+        raw_message_limit: int,
+        memory_update_batch_size: int,
+    ) -> None:
         self.database = database
         self.model = model
-        self.recent_message_limit = recent_message_limit
+        self.memory = ShortTermMemory(
+            database=database,
+            model=model,
+            raw_message_limit=raw_message_limit,
+            memory_update_batch_size=memory_update_batch_size,
+        )
 
     def start_chat(self) -> str:
         """Create a chat id for a Chainlit session."""
@@ -30,15 +43,16 @@ class ChatService:
 
     def handle_user_message(self, chat_id: str, content: str) -> str:
         """Save a user message, call the model, and save the assistant response."""
-        self.database.save_message(chat_id=chat_id, role="user", content=content)
+        user_message_id = self.database.save_message(chat_id=chat_id, role="user", content=content)
 
-        recent_messages = self.database.recent_messages(
+        context = self.memory.build_context(
             chat_id=chat_id,
-            limit=self.recent_message_limit,
+            latest_user_message_id=user_message_id,
         )
-        model_messages = [{"role": "system", "content": SYSTEM_PROMPT}]
-        model_messages.extend(
-            {"role": message.role, "content": message.content} for message in recent_messages
+        model_messages = self.memory.build_model_messages(
+            system_prompt=SYSTEM_PROMPT,
+            context=context,
+            latest_user_message={"role": "user", "content": content},
         )
 
         try:
@@ -51,4 +65,10 @@ class ChatService:
             )
 
         self.database.save_message(chat_id=chat_id, role="assistant", content=response)
+        try:
+            self.memory.update_memory_if_needed(chat_id)
+        except OpenAIError:
+            # Memory updates should not break the visible chat response. The next
+            # successful turn can retry because messages remain unprocessed.
+            pass
         return response

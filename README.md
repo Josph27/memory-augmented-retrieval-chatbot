@@ -9,8 +9,8 @@ The app uses Chainlit for the browser chat UI, Python for backend logic, SQLite 
 - Browser chat UI with Chainlit
 - OpenAI-compatible model wrapper with one `chat(messages)` method
 - Local/free model defaults for Ollama-compatible endpoints
-- SQLite tables for `chats` and `messages`
-- Short-term memory from recent messages in the current chat
+- SQLite tables for `chats`, `messages`, and `chat_memory_state`
+- Short-term memory: structured JSON memory state plus recent raw messages
 - Dockerfile with persistent `data/` mount support
 
 ## Local Model Defaults
@@ -42,6 +42,94 @@ Open the local URL printed by Chainlit, usually `http://localhost:8000`.
 
 The SQLite database is created at `data/chatbot.db` by default. The database file is ignored by git because it is runtime state.
 
+## Short-Term Memory
+
+Current chat memory is built from two parts:
+
+- Structured JSON memory derived from older messages and stored in `chat_memory_state`
+- The most recent raw messages from `messages`
+
+Raw messages remain the source of truth. The JSON memory state is a derived cache that can be regenerated later from `messages` if needed.
+
+The current schema for `chat_memory_state.memory_json` stores typed memory records:
+
+```json
+{
+  "memories": [
+    {
+      "id": "user_facts:name",
+      "category": "user_facts",
+      "key": "name",
+      "value": "Keming",
+      "source_message_ids": [12],
+      "confidence": 0.95,
+      "status": "active"
+    }
+  ]
+}
+```
+
+The memory updater asks the model for validated operations such as `upsert`, `supersede`, and `delete`. Python applies accepted operations deterministically so weak model output cannot rewrite the whole memory state or erase known facts.
+
+Supported memory categories are `user_facts`, `project_facts`, `decisions`, `corrections`, `open_tasks`, `preferences`, and `constraints`.
+
+The MVP policy keeps the latest `RAW_MESSAGE_LIMIT` messages raw. Older unprocessed messages update structured memory only when at least `MEMORY_UPDATE_BATCH_SIZE` eligible messages exist. After a batch is processed, those message rows are marked with `summarized = 1`, so they are not processed again. The column name is historical; it now means "processed into the derived memory cache."
+
+This is intentionally based on fixed message counts for now. The memory module accepts a future `token_budget` parameter so the selector can later be replaced or extended with token-budget-based context selection.
+
+## Manual Memory Verification
+
+Start the app and send messages like:
+
+- `my name is Keming`
+- `my project uses Chainlit and SQLite`
+- `no, Keming is my name, not the assistant's name`
+
+Send enough turns to create at least 6 older messages outside the latest 8-message raw window. Then inspect SQLite:
+
+```bash
+sqlite3 data/chatbot.db
+```
+
+Inside SQLite:
+
+```sql
+SELECT * FROM chat_memory_state;
+SELECT id, role, summarized, content FROM messages ORDER BY id;
+```
+
+Expected result:
+
+- A row exists in `chat_memory_state` after the memory update threshold is reached
+- `memory_json` contains active records such as `user_facts.name`, not copied `user:` / `assistant:` transcript text
+- Older messages included in the memory update have `summarized = 1`
+- The newest `RAW_MESSAGE_LIMIT` messages remain available as raw messages
+- Already processed rows are not processed again on later turns
+
+Exit SQLite with:
+
+```sql
+.quit
+```
+
+## Running Short-Term Memory Evals
+
+The eval script runs controlled current-chat conversations against a temporary SQLite database. It verifies that target facts leave the recent raw-message window and are still available through structured memory.
+
+Start your local model server first:
+
+```bash
+ollama serve
+```
+
+Then run:
+
+```bash
+uv run python evals/test_short_term_memory.py
+```
+
+The script prints each test name, expected answer, actual answer, whether the fact appeared in structured memory, whether it was outside the recent raw window, and a final `Passed X/Y tests` summary.
+
 ## Local Setup With pip
 
 ```bash
@@ -67,7 +155,7 @@ docker run --rm -p 8000:8000 \
   -v "$PWD/data:/app/data" \
   -e OPENAI_API_KEY=dummy \
   -e OPENAI_BASE_URL=http://host.docker.internal:11434/v1 \
-  -e MODEL_NAME=llama3.2:1b \
+  -e MODEL_NAME=qwen2.5:3b \
   memory-chatbot
 ```
 
@@ -82,7 +170,9 @@ app.py                  Chainlit entrypoint
 src/config.py           Environment configuration
 src/database.py         SQLite schema and persistence helpers
 src/model_wrapper.py    OpenAI-compatible model client
-src/chat_service.py     Chat orchestration and short-term memory
+src/chat_service.py     Chat orchestration and memory integration
+src/memory/short_term.py  Structured-memory plus recent-message context selection
+src/memory/structured_state.py  JSON memory update and validation
 data/chatbot.db         Runtime SQLite database, created automatically
 ```
 

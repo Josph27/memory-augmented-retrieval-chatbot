@@ -6,6 +6,8 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
+from src.memory.constants import MEMORY_UPDATE_BATCH_SIZE, RAW_MESSAGE_LIMIT
+
 
 @dataclass(frozen=True)
 class AppConfig:
@@ -15,7 +17,8 @@ class AppConfig:
     openai_base_url: str
     model_name: str
     database_path: Path
-    recent_message_limit: int
+    raw_message_limit: int
+    memory_update_batch_size: int
 
     @classmethod
     def from_env(cls) -> "AppConfig":
@@ -27,5 +30,11 @@ class AppConfig:
             openai_base_url=os.getenv("OPENAI_BASE_URL", "http://localhost:11434/v1"),
             model_name=os.getenv("MODEL_NAME", "qwen2.5:3b"),
             database_path=Path(os.getenv("DATABASE_PATH", "data/chatbot.db")),
-            recent_message_limit=int(os.getenv("RECENT_MESSAGE_LIMIT", "12")),
+            raw_message_limit=int(os.getenv("RAW_MESSAGE_LIMIT", str(RAW_MESSAGE_LIMIT))),
+            memory_update_batch_size=int(
+                os.getenv(
+                    "MEMORY_UPDATE_BATCH_SIZE",
+                    os.getenv("SUMMARY_BATCH_SIZE", str(MEMORY_UPDATE_BATCH_SIZE)),
+                )
+            ),
         )

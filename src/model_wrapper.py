@@ -19,11 +19,20 @@ class ModelWrapper:
             base_url=config.openai_base_url,
         )
 
-    def chat(self, messages: list[dict[str, str]]) -> str:
+    def chat(
+        self,
+        messages: list[dict[str, str]],
+        temperature: float | None = None,
+    ) -> str:
         """Send messages to the configured model and return assistant text."""
+        kwargs = {}
+        if temperature is not None:
+            kwargs["temperature"] = temperature
+
         completion = self.client.chat.completions.create(
             model=self.model_name,
             messages=messages,
+            **kwargs,
         )
         content = completion.choices[0].message.content
         return content or ""

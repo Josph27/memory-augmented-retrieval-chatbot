@@ -11,7 +11,12 @@ from src.model_wrapper import ModelWrapper
 config = AppConfig.from_env()
 database = Database(config.database_path)
 model = ModelWrapper(config)
-chat_service = ChatService(database=database, model=model, recent_message_limit=config.recent_message_limit)
+chat_service = ChatService(
+    database=database,
+    model=model,
+    raw_message_limit=config.raw_message_limit,
+    memory_update_batch_size=config.memory_update_batch_size,
+)
 
 
 @cl.on_chat_start
@@ -22,8 +27,8 @@ async def on_chat_start() -> None:
 
     await cl.Message(
         content=(
-            "Chat is ready. Messages in this session are stored in SQLite and recent turns "
-            "are sent back to the model as short-term memory."
+            "Chat is ready. Messages are stored in SQLite. Older turns update structured "
+            "JSON memory while recent turns remain available as raw short-term memory."
         )
     ).send()
 
