@@ -9,6 +9,7 @@ from src.agents.context_builder_agent import ContextBuilderAgent
 from src.agents.short_term_memory_agent import ShortTermMemoryAgent
 from src.core.contracts import AgentTurnResult, WorkflowTrace
 from src.database import Database
+from src.retrieval.reranker import MemoryReranker
 from src.retrieval.retriever_dispatcher import RetrieverDispatcher
 from src.routing.route_planner import RoutePlanner
 
@@ -28,6 +29,7 @@ class CoordinatorAgent:
         system_prompt: str,
         route_planner: RoutePlanner | None = None,
         retriever_dispatcher: RetrieverDispatcher | None = None,
+        memory_reranker: MemoryReranker | None = None,
     ) -> None:
         self.database = database
         self.memory_agent = memory_agent
@@ -36,6 +38,7 @@ class CoordinatorAgent:
         self.system_prompt = system_prompt
         self.route_planner = route_planner or RoutePlanner()
         self.retriever_dispatcher = retriever_dispatcher or RetrieverDispatcher(database)
+        self.memory_reranker = memory_reranker or MemoryReranker()
 
     def run_turn(self, chat_id: str, content: str) -> AgentTurnResult:
         """Run one user turn while preserving the existing runtime behavior."""
@@ -49,6 +52,10 @@ class CoordinatorAgent:
         retrieved_candidates = self.retriever_dispatcher.retrieve(
             chat_id=chat_id,
             route_plan=route_plan,
+        )
+        ranked_candidates = self.memory_reranker.rank(
+            candidates=retrieved_candidates,
+            ranking_profile=route_plan.ranking_profile,
         )
 
         context = self.memory_agent.build_context(
@@ -90,6 +97,7 @@ class CoordinatorAgent:
             chat_id=chat_id,
             route_plan=route_plan,
             retrieved_candidates=retrieved_candidates,
+            ranked_candidates=ranked_candidates,
             context_packet=context_packet,
             termination_reason=TERMINATION_RESPONSE_SAVED,
             errors=errors,
@@ -123,6 +131,7 @@ class CoordinatorAgent:
             f"intent={route_intent} "
             f"active_sources={active_sources} "
             f"retrieved_candidates={len(trace.retrieved_candidates)} "
+            f"ranked_candidates={len(trace.ranked_candidates)} "
             f"termination_reason={trace.termination_reason} "
             f"recent_message_ids={recent_ids}"
         )

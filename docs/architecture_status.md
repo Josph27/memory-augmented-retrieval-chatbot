@@ -14,6 +14,7 @@ Chainlit app.py
 -> Database.save_message(user)
 -> RetrieverDispatcher
 -> RecentMessagesRetriever / StructuredMemoryRetriever
+-> MemoryReranker
 -> ShortTermMemoryAgent / ShortTermMemory.build_context
 -> ContextBuilderAgent / ShortTermMemory.build_model_messages
 -> ChatAgent / ModelWrapper.chat
@@ -54,6 +55,9 @@ Chainlit UI. `ChatService.handle_user_turn` exposes the richer
     and message metadata.
 - `src/retrieval/structured_memory_retriever.py`
   - Loads active structured memory records from `chat_memory_state`.
+- `src/retrieval/reranker.py`
+  - Scores retrieved `MemoryCandidate` objects and returns ranked copies with
+    score breakdown metadata. This is trace-only and does not affect prompts.
 
 ## Current Routing
 
@@ -72,6 +76,11 @@ The dispatcher now calls retrievers for enabled sources and stores the resulting
 `MemoryCandidate` objects on `WorkflowTrace.retrieved_candidates`. These
 candidates are trace/normalization output only; prompt construction still uses
 the existing `ShortTermMemory` path.
+
+`MemoryReranker` now stores scored copies on
+`WorkflowTrace.ranked_candidates`. Score breakdowns include feature values,
+weights, feature contributions, final score, and the `ranking_profile`.
+Ranked candidates are not consumed by prompt construction yet.
 
 Stub retrievers exist for disabled future sources:
 
@@ -103,9 +112,9 @@ Short-term memory remains unchanged:
 
 ## Missing Future Components
 
-- `MemoryReranker`
 - `ContextBudgetAllocator`
 - `LongTermMemoryAgent`
 - implemented chunk/document/previous-chat retrieval
+- ContextBuilder consumption of ranked candidates
 - persistent workflow trace storage
 - explicit graph runtime or LangGraph-style execution
