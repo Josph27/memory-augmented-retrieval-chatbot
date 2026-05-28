@@ -15,6 +15,8 @@ Chainlit app.py
 -> RetrieverDispatcher
 -> RecentMessagesRetriever / StructuredMemoryRetriever
 -> MemoryReranker
+-> ContextBudgetAllocator
+-> trace-only ContextBuilder
 -> ShortTermMemoryAgent / ShortTermMemory.build_context
 -> ContextBuilderAgent / ShortTermMemory.build_model_messages
 -> ChatAgent / ModelWrapper.chat
@@ -58,6 +60,16 @@ Chainlit UI. `ChatService.handle_user_turn` exposes the richer
 - `src/retrieval/reranker.py`
   - Scores retrieved `MemoryCandidate` objects and returns ranked copies with
     score breakdown metadata. This is trace-only and does not affect prompts.
+- `src/context/token_estimator.py`
+  - Defines a replaceable token estimator interface plus a tokenizer-free
+    approximate implementation.
+- `src/context/context_budget_allocator.py`
+  - Allocates profile-based trace budgets using `RoutePlan`, ranked candidates,
+    model context limit, answer reserve, and system prompt estimate.
+- `src/context/context_builder.py`
+  - Builds a budget-aware trace-only `ContextPacket` from ranked candidates and
+    `ContextBudget`. It records selected candidates, dropped candidates, section
+    ordering, and estimated token usage.
 
 ## Current Routing
 
@@ -81,6 +93,16 @@ the existing `ShortTermMemory` path.
 `WorkflowTrace.ranked_candidates`. Score breakdowns include feature values,
 weights, feature contributions, final score, and the `ranking_profile`.
 Ranked candidates are not consumed by prompt construction yet.
+
+`ContextBudgetAllocator` now stores a trace-only `ContextBudget` on
+`WorkflowTrace.context_budget`. It supports profiles for `general_chat`,
+`memory_recall`, `document_question`, and `mixed_memory_document`, but final
+prompt construction still uses the existing `ShortTermMemory` path.
+
+`ContextBuilder` now stores a trace-only `ContextPacket` on
+`WorkflowTrace.context_packet`. It orders proposed context as system prompt,
+structured memory, retrieved/document memory, recent raw messages, and latest
+user message. This packet is not sent to the model yet.
 
 Stub retrievers exist for disabled future sources:
 
@@ -112,9 +134,9 @@ Short-term memory remains unchanged:
 
 ## Missing Future Components
 
-- `ContextBudgetAllocator`
 - `LongTermMemoryAgent`
 - implemented chunk/document/previous-chat retrieval
-- ContextBuilder consumption of ranked candidates
+- switching the model call from legacy `ShortTermMemory` messages to the
+  validated trace `ContextPacket`
 - persistent workflow trace storage
 - explicit graph runtime or LangGraph-style execution

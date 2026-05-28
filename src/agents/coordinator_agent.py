@@ -7,6 +7,8 @@ from openai import OpenAIError
 from src.agents.chat_agent import ChatAgent
 from src.agents.context_builder_agent import ContextBuilderAgent
 from src.agents.short_term_memory_agent import ShortTermMemoryAgent
+from src.context.context_budget_allocator import ContextBudgetAllocator
+from src.context.context_builder import ContextBuilder as TraceContextBuilder
 from src.core.contracts import AgentTurnResult, WorkflowTrace
 from src.database import Database
 from src.retrieval.reranker import MemoryReranker
@@ -30,6 +32,8 @@ class CoordinatorAgent:
         route_planner: RoutePlanner | None = None,
         retriever_dispatcher: RetrieverDispatcher | None = None,
         memory_reranker: MemoryReranker | None = None,
+        context_budget_allocator: ContextBudgetAllocator | None = None,
+        trace_context_builder: TraceContextBuilder | None = None,
     ) -> None:
         self.database = database
         self.memory_agent = memory_agent
@@ -39,6 +43,8 @@ class CoordinatorAgent:
         self.route_planner = route_planner or RoutePlanner()
         self.retriever_dispatcher = retriever_dispatcher or RetrieverDispatcher(database)
         self.memory_reranker = memory_reranker or MemoryReranker()
+        self.context_budget_allocator = context_budget_allocator or ContextBudgetAllocator()
+        self.trace_context_builder = trace_context_builder or TraceContextBuilder()
 
     def run_turn(self, chat_id: str, content: str) -> AgentTurnResult:
         """Run one user turn while preserving the existing runtime behavior."""
@@ -57,12 +63,24 @@ class CoordinatorAgent:
             candidates=retrieved_candidates,
             ranking_profile=route_plan.ranking_profile,
         )
+        context_budget = self.context_budget_allocator.allocate(
+            route_plan=route_plan,
+            ranked_candidates=ranked_candidates,
+            system_prompt=self.system_prompt,
+        )
+        trace_context_packet = self.trace_context_builder.build(
+            system_prompt=self.system_prompt,
+            latest_user_message={"role": "user", "content": content},
+            ranked_candidates=ranked_candidates,
+            context_budget=context_budget,
+            route_plan=route_plan,
+        )
 
         context = self.memory_agent.build_context(
             chat_id=chat_id,
             latest_user_message_id=user_message_id,
         )
-        model_messages, context_packet = self.context_builder.build(
+        model_messages, _actual_context_packet = self.context_builder.build(
             chat_id=chat_id,
             system_prompt=self.system_prompt,
             context=context,
@@ -98,7 +116,8 @@ class CoordinatorAgent:
             route_plan=route_plan,
             retrieved_candidates=retrieved_candidates,
             ranked_candidates=ranked_candidates,
-            context_packet=context_packet,
+            context_budget=context_budget,
+            context_packet=trace_context_packet,
             termination_reason=TERMINATION_RESPONSE_SAVED,
             errors=errors,
         )
@@ -124,6 +143,9 @@ class CoordinatorAgent:
             active_sources = [
                 source.source for source in trace.route_plan.sources if source.enabled
             ]
+        context_profile = None
+        if trace.context_budget is not None:
+            context_profile = trace.context_budget.metadata.get("context_profile")
         print(
             "workflow_trace "
             f"trace_id={trace.trace_id} "
@@ -132,6 +154,7 @@ class CoordinatorAgent:
             f"active_sources={active_sources} "
             f"retrieved_candidates={len(trace.retrieved_candidates)} "
             f"ranked_candidates={len(trace.ranked_candidates)} "
+            f"context_profile={context_profile} "
             f"termination_reason={trace.termination_reason} "
             f"recent_message_ids={recent_ids}"
         )
