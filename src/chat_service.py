@@ -10,6 +10,7 @@ from src.core.contracts import AgentTurnResult
 from src.database import Database
 from src.memory.short_term import ShortTermMemory
 from src.model_wrapper import ModelWrapper
+from src.retrieval.retriever_dispatcher import RetrieverDispatcher
 
 
 SYSTEM_PROMPT = (
@@ -43,6 +44,10 @@ class ChatService:
             context_builder=ContextBuilderAgent(self.memory),
             chat_agent=ChatAgent(model),
             system_prompt=SYSTEM_PROMPT,
+            retriever_dispatcher=RetrieverDispatcher(
+                database=database,
+                raw_message_limit=raw_message_limit,
+            ),
         )
 
     def start_chat(self) -> str:

@@ -2,7 +2,7 @@
 
 This project is a Chainlit + SQLite chatbot with current-chat short-term memory.
 The new agent classes are production-shaped wrappers around the existing behavior;
-they do not add retrieval, embeddings, documents, or new memory algorithms.
+they do not add embeddings, documents, vector storage, or new memory algorithms.
 
 ## Current Pipeline
 
@@ -12,6 +12,8 @@ Chainlit app.py
 -> CoordinatorAgent
 -> QueryAnalyzer / RoutePlanner
 -> Database.save_message(user)
+-> RetrieverDispatcher
+-> RecentMessagesRetriever / StructuredMemoryRetriever
 -> ShortTermMemoryAgent / ShortTermMemory.build_context
 -> ContextBuilderAgent / ShortTermMemory.build_model_messages
 -> ChatAgent / ModelWrapper.chat
@@ -44,6 +46,14 @@ Chainlit UI. `ChatService.handle_user_turn` exposes the richer
 - `src/routing/route_planner.py`
   - Produces a `RoutePlan` for every turn. The plan is included in
     `WorkflowTrace` but does not change context construction yet.
+- `src/retrieval/retriever_dispatcher.py`
+  - Calls enabled source retrievers from the `RoutePlan` and returns normalized
+    `MemoryCandidate` objects.
+- `src/retrieval/recent_messages_retriever.py`
+  - Loads recent raw messages from SQLite and preserves role, content, order,
+    and message metadata.
+- `src/retrieval/structured_memory_retriever.py`
+  - Loads active structured memory records from `chat_memory_state`.
 
 ## Current Routing
 
@@ -58,8 +68,16 @@ Future sources may appear in the plan as disabled:
 - `previous_chat_memory`
 - `document_memory`
 
-No retriever is called yet. The route plan is a production-shaped trace and
-extension point around the existing behavior.
+The dispatcher now calls retrievers for enabled sources and stores the resulting
+`MemoryCandidate` objects on `WorkflowTrace.retrieved_candidates`. These
+candidates are trace/normalization output only; prompt construction still uses
+the existing `ShortTermMemory` path.
+
+Stub retrievers exist for disabled future sources:
+
+- `current_chat_chunks`
+- `previous_chat_memory`
+- `document_memory`
 
 ## Termination
 
@@ -85,11 +103,9 @@ Short-term memory remains unchanged:
 
 ## Missing Future Components
 
-- `RetrieverDispatcher`
-- source-specific retrievers
 - `MemoryReranker`
 - `ContextBudgetAllocator`
-- `DocumentRetriever`
 - `LongTermMemoryAgent`
+- implemented chunk/document/previous-chat retrieval
 - persistent workflow trace storage
 - explicit graph runtime or LangGraph-style execution

@@ -94,6 +94,7 @@ class WorkflowTrace:
     trace_id: str
     chat_id: str
     route_plan: RoutePlan | None = None
+    retrieved_candidates: list[MemoryCandidate] = field(default_factory=list)
     context_packet: ContextPacket | None = None
     termination_reason: str | None = None
     errors: list[str] = field(default_factory=list)
