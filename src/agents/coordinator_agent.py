@@ -9,6 +9,7 @@ from src.agents.context_builder_agent import ContextBuilderAgent
 from src.agents.short_term_memory_agent import ShortTermMemoryAgent
 from src.core.contracts import AgentTurnResult, WorkflowTrace
 from src.database import Database
+from src.routing.route_planner import RoutePlanner
 
 
 TERMINATION_RESPONSE_SAVED = "response_generated_and_messages_saved"
@@ -24,16 +25,19 @@ class CoordinatorAgent:
         context_builder: ContextBuilderAgent,
         chat_agent: ChatAgent,
         system_prompt: str,
+        route_planner: RoutePlanner | None = None,
     ) -> None:
         self.database = database
         self.memory_agent = memory_agent
         self.context_builder = context_builder
         self.chat_agent = chat_agent
         self.system_prompt = system_prompt
+        self.route_planner = route_planner or RoutePlanner()
 
     def run_turn(self, chat_id: str, content: str) -> AgentTurnResult:
         """Run one user turn while preserving the existing runtime behavior."""
         trace_id = str(uuid4())
+        route_plan = self.route_planner.plan(content)
         user_message_id = self.database.save_message(
             chat_id=chat_id,
             role="user",
@@ -77,7 +81,7 @@ class CoordinatorAgent:
         trace = WorkflowTrace(
             trace_id=trace_id,
             chat_id=chat_id,
-            route_plan=None,
+            route_plan=route_plan,
             context_packet=context_packet,
             termination_reason=TERMINATION_RESPONSE_SAVED,
             errors=errors,
@@ -97,10 +101,19 @@ class CoordinatorAgent:
         recent_ids = []
         if trace.context_packet is not None:
             recent_ids = trace.context_packet.recent_message_ids
+        route_intent = None
+        active_sources = []
+        if trace.route_plan is not None:
+            route_intent = trace.route_plan.intent
+            active_sources = [
+                source.source for source in trace.route_plan.sources if source.enabled
+            ]
         print(
             "workflow_trace "
             f"trace_id={trace.trace_id} "
             f"chat_id={trace.chat_id} "
+            f"intent={route_intent} "
+            f"active_sources={active_sources} "
             f"termination_reason={trace.termination_reason} "
             f"recent_message_ids={recent_ids}"
         )

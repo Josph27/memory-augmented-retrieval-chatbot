@@ -4,7 +4,18 @@ from dataclasses import dataclass, field
 from typing import Any, Literal
 
 
-MemorySourceType = Literal["short_term", "long_term", "document", "raw_messages", "unknown"]
+MemorySourceType = Literal[
+    "recent_messages",
+    "structured_memory",
+    "current_chat_chunks",
+    "previous_chat_memory",
+    "document_memory",
+    "short_term",
+    "long_term",
+    "document",
+    "raw_messages",
+    "unknown",
+]
 
 
 @dataclass(frozen=True)
@@ -26,7 +37,13 @@ class RoutePlan:
     query: str
     sources: list[SourcePlan] = field(default_factory=list)
     intent: str | None = None
+    confidence: float | None = None
     requires_retrieval: bool | None = None
+    ranking_profile: str | None = None
+    context_profile: str | None = None
+    fallback_policy: str | None = None
+    update_policy: str | None = None
+    termination_policy: str | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
 
 

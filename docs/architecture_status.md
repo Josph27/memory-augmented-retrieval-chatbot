@@ -2,7 +2,7 @@
 
 This project is a Chainlit + SQLite chatbot with current-chat short-term memory.
 The new agent classes are production-shaped wrappers around the existing behavior;
-they do not add routing, retrieval, embeddings, documents, or new memory algorithms.
+they do not add retrieval, embeddings, documents, or new memory algorithms.
 
 ## Current Pipeline
 
@@ -10,6 +10,7 @@ they do not add routing, retrieval, embeddings, documents, or new memory algorit
 Chainlit app.py
 -> ChatService
 -> CoordinatorAgent
+-> QueryAnalyzer / RoutePlanner
 -> Database.save_message(user)
 -> ShortTermMemoryAgent / ShortTermMemory.build_context
 -> ContextBuilderAgent / ShortTermMemory.build_model_messages
@@ -37,6 +38,28 @@ Chainlit UI. `ChatService.handle_user_turn` exposes the richer
 - `src/agents/context_builder_agent.py`
   - Thin wrapper around model-message construction and `ContextPacket`
     creation.
+- `src/routing/query_analyzer.py`
+  - Produces normalized query text, coarse intent, lightweight signals, and
+    confidence for tracing and future routing.
+- `src/routing/route_planner.py`
+  - Produces a `RoutePlan` for every turn. The plan is included in
+    `WorkflowTrace` but does not change context construction yet.
+
+## Current Routing
+
+The current route plan actively enables only:
+
+- `recent_messages`
+- `structured_memory`
+
+Future sources may appear in the plan as disabled:
+
+- `current_chat_chunks`
+- `previous_chat_memory`
+- `document_memory`
+
+No retriever is called yet. The route plan is a production-shaped trace and
+extension point around the existing behavior.
 
 ## Termination
 
@@ -62,8 +85,6 @@ Short-term memory remains unchanged:
 
 ## Missing Future Components
 
-- `QueryAnalyzer`
-- `RoutePlanner`
 - `RetrieverDispatcher`
 - source-specific retrievers
 - `MemoryReranker`
