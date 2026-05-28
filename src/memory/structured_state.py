@@ -20,35 +20,12 @@ MEMORY_CATEGORIES = (
 
 MEMORY_OPERATION_NAMES = ("upsert", "supersede", "delete")
 TRANSCRIPT_MARKER_PATTERN = re.compile(r"\b(?:user|assistant)\s*:", re.IGNORECASE)
-NAME_PATTERN = re.compile(r"\bmy name is\s+([A-Za-z][A-Za-z .'-]{0,60})", re.IGNORECASE)
-NAME_CORRECTION_PATTERN = re.compile(
-    r"\b(?:no,?\s*)?([A-Za-z][A-Za-z .'-]{0,60})\s+is\s+my\s+name,\s+not\s+"
-    r"(?:the\s+)?assistant(?:'s)?\s+name",
+CORRECTION_SIGNAL_PATTERN = re.compile(
+    r"\b(?:actually|instead|correction|i meant|use .+ instead|no,)\b|"
+    r"\bnot\b.+\b(?:but|instead)\b|"
+    r"\bnot\s+(?:the\s+)?assistant",
     re.IGNORECASE,
 )
-PROJECT_PATTERN = re.compile(r"\bmy project is\s+([^.!?\n]{3,160})", re.IGNORECASE)
-BUILDING_PATTERN = re.compile(r"\bi am building\s+([^.!?\n]{3,160})", re.IGNORECASE)
-PREFERENCE_PATTERN = re.compile(r"\bi prefer\s+([^.!?\n]{3,160})", re.IGNORECASE)
-CONCISE_PATTERN = re.compile(r"\bkeep answers concise\b", re.IGNORECASE)
-LOCAL_ONLY_PATTERN = re.compile(
-    r"\b(?:must run locally|run locally|do not suggest cloud|no cloud)\b",
-    re.IGNORECASE,
-)
-CSV_TASK_PATTERN = re.compile(
-    r"\b(?:next step is\s+)?(?:importing|import|support)\s+[^.!?\n]*csv[^.!?\n]*",
-    re.IGNORECASE,
-)
-CSV_EXPORT_PATTERN = re.compile(r"\bcsv export\b", re.IGNORECASE)
-POSTGRES_DECISION_PATTERN = re.compile(
-    r"\b(?:decided to use|use)\s+(postgresql|postgres)\b(?:[^.!?\n]*)",
-    re.IGNORECASE,
-)
-DATABASE_CORRECTION_PATTERN = re.compile(
-    r"\b(?:database is|database should be|use)\s+(postgresql|postgres)\s+"
-    r"(?:now,\s*)?not\s+(sqlite)\b",
-    re.IGNORECASE,
-)
-DEADLINE_PATTERN = re.compile(r"\bdeadline is\s+([^.!?\n]{2,80})", re.IGNORECASE)
 
 MEMORY_UPDATE_SYSTEM_PROMPT = """You extract structured current-chat memory operations.
 
@@ -75,7 +52,7 @@ Example:
     "operation": "upsert",
     "category": "user_facts",
     "key": "name",
-    "value": "Keming",
+    "value": "Alex",
     "source_message_ids": [3],
     "confidence": 0.95
   }
@@ -119,6 +96,17 @@ Rules:
 - If the user says "my name is X", upsert category "user_facts", key "name", value "X".
 - If the user corrects a misunderstanding, preserve the correction.
 - If the user says "X is my name, not the assistant's name", upsert user_facts/name and add a correction.
+- Do not supersede or delete user_facts/name when the user says "X is my name,
+  not the assistant's name"; the active memory should remain user_facts/name=X.
+- If the user corrects or replaces a previous fact/decision, output BOTH:
+  a supersede/delete operation for the outdated memory if applicable, and
+  an upsert operation for the corrected current value.
+- Never leave a corrected fact with only a superseded old value.
+- The active memory after applying operations must reflect the latest user correction.
+- Example: if the user first says "We will use PostgreSQL." and later says
+  "Actually, use SQLite for the MVP instead.", include operations that supersede
+  old database_choice=PostgreSQL if it exists and upsert database_choice=SQLite
+  for the MVP as the active current value.
 - Do not store assistant claims about itself as user facts.
 - Do not store vague facts such as "user is discussing a problem".
 - Prefer stable, reusable facts over one-off wording.
@@ -143,6 +131,7 @@ class MemoryUpdateResult:
 
     memory_state: dict[str, list[dict[str, Any]]]
     accepted: bool
+    rejection_reason: str | None = None
 
 
 def empty_memory_state() -> dict[str, list[dict[str, Any]]]:
@@ -333,9 +322,7 @@ def normalize_memory_operation(
     if not target_key or not isinstance(reason, str) or not reason.strip():
         return None
     cleaned_reason = clean_text(reason)
-    if looks_like_transcript_text(cleaned_reason):
-        return None
-    if operation_name == "supersede" and not reason_supports_supersede(cleaned_reason):
+    if looks_like_transcript_text(cleaned_reason) or is_vague_memory(cleaned_reason):
         return None
     source_ids = supported_source_ids(cleaned_reason, source_ids, source_text_by_id)
     if not source_ids:
@@ -372,7 +359,6 @@ def apply_memory_operations(
 
 def apply_upsert(records: list[dict[str, Any]], operation: dict[str, Any]) -> None:
     """Add or update a memory record by category/key."""
-    supersede_conflicting_records(records, operation)
     memory_id = make_memory_id(operation["category"], operation["key"])
     for record in records:
         if record["category"] == operation["category"] and record["key"] == operation["key"]:
@@ -423,43 +409,6 @@ def apply_status_update(
             )
 
 
-def supersede_conflicting_records(
-    records: list[dict[str, Any]],
-    operation: dict[str, Any],
-) -> None:
-    """Mark obvious stale records inactive before applying a stronger upsert."""
-    category = operation["category"]
-    key = operation["key"]
-    value = operation["value"]
-    source_ids = operation["source_message_ids"]
-
-    if category == "project_facts" and key == "database":
-        for record in records:
-            if record["status"] != "active":
-                continue
-            searchable = f"{record['key']} {record['value']}".lower()
-            if "sqlite" in searchable and "sqlite" not in value.lower():
-                record["status"] = "superseded"
-                record["superseded_reason"] = f"Database updated to {value}."
-                record["source_message_ids"] = merge_source_ids(
-                    record["source_message_ids"],
-                    source_ids,
-                )
-
-    if category == "decisions" and key == "database":
-        for record in records:
-            if record["status"] != "active":
-                continue
-            searchable = f"{record['key']} {record['value']}".lower()
-            if "sqlite" in searchable and "postgres" in value.lower():
-                record["status"] = "superseded"
-                record["superseded_reason"] = value
-                record["source_message_ids"] = merge_source_ids(
-                    record["source_message_ids"],
-                    source_ids,
-                )
-
-
 class StructuredMemoryState:
     """Updates derived structured memory from older raw chat messages."""
 
@@ -501,186 +450,26 @@ class StructuredMemoryState:
 
         operations = parse_memory_operations(raw_output, allowed_source_ids, source_text_by_id)
         if operations is None:
-            return MemoryUpdateResult(memory_state=normalized_memory, accepted=False)
+            return MemoryUpdateResult(
+                memory_state=normalized_memory,
+                accepted=False,
+                rejection_reason="model_output_invalid_json_or_schema",
+            )
 
-        deterministic_operations = extract_deterministic_operations(user_messages)
-        all_operations = operations + deterministic_operations
-        updated_memory = apply_memory_operations(normalized_memory, all_operations)
+        updated_memory = apply_memory_operations(normalized_memory, operations)
+        if valid_but_useless_correction_batch(
+            before_memory=normalized_memory,
+            after_memory=updated_memory,
+            operations=operations,
+            messages=user_messages,
+        ):
+            return MemoryUpdateResult(
+                memory_state=normalized_memory,
+                accepted=False,
+                rejection_reason="correction_batch_without_active_replacement",
+            )
+
         return MemoryUpdateResult(memory_state=updated_memory, accepted=True)
-
-
-def extract_deterministic_operations(messages: list[StoredMessage]) -> list[dict[str, Any]]:
-    """Extract high-confidence operations for common memory-bearing phrases."""
-    operations: list[dict[str, Any]] = []
-    for message in messages:
-        text = clean_text(message.content)
-        lowered = text.lower()
-        source_ids = [message.id]
-
-        if match := NAME_PATTERN.search(text):
-            name = clean_extracted_value(match.group(1))
-            if name:
-                operations.append(
-                    upsert_operation("user_facts", "name", name, source_ids, confidence=0.99)
-                )
-
-        if match := NAME_CORRECTION_PATTERN.search(text):
-            name = clean_extracted_value(match.group(1))
-            if name:
-                operations.append(
-                    upsert_operation("user_facts", "name", name, source_ids, confidence=0.99)
-                )
-                operations.append(
-                    upsert_operation(
-                        "corrections",
-                        "name_owner",
-                        f"{name} is the user's name, not the assistant's name.",
-                        source_ids,
-                        confidence=0.95,
-                    )
-                )
-
-        if match := PROJECT_PATTERN.search(text):
-            value = clean_extracted_value(match.group(1))
-            if value:
-                operations.append(
-                    upsert_operation(
-                        "project_facts",
-                        "project_description",
-                        value,
-                        source_ids,
-                        confidence=0.9,
-                    )
-                )
-
-        if match := BUILDING_PATTERN.search(text):
-            value = clean_extracted_value(match.group(1))
-            if value:
-                operations.append(
-                    upsert_operation(
-                        "project_facts",
-                        "project_description",
-                        value,
-                        source_ids,
-                        confidence=0.9,
-                    )
-                )
-
-        if match := DATABASE_CORRECTION_PATTERN.search(text):
-            database = normalize_database_name(match.group(1))
-            old_database = normalize_database_name(match.group(2))
-            operations.append(
-                upsert_operation(
-                    "project_facts",
-                    "database",
-                    database,
-                    source_ids,
-                    confidence=0.99,
-                )
-            )
-            operations.append(
-                upsert_operation(
-                    "corrections",
-                    "database",
-                    f"Database is {database}, not {old_database}.",
-                    source_ids,
-                    confidence=0.95,
-                )
-            )
-
-        elif match := POSTGRES_DECISION_PATTERN.search(text):
-            database = normalize_database_name(match.group(1))
-            operations.append(
-                upsert_operation(
-                    "decisions",
-                    "database",
-                    f"Use {database}.",
-                    source_ids,
-                    confidence=0.9,
-                )
-            )
-
-        if match := PREFERENCE_PATTERN.search(text):
-            value = clean_extracted_value(match.group(1))
-            if value:
-                operations.append(
-                    upsert_operation(
-                        "preferences",
-                        "response_style",
-                        value,
-                        source_ids,
-                        confidence=0.9,
-                    )
-                )
-
-        if CONCISE_PATTERN.search(text):
-            operations.append(
-                upsert_operation(
-                    "preferences",
-                    "response_style",
-                    "concise answers",
-                    source_ids,
-                    confidence=0.9,
-                )
-            )
-
-        if LOCAL_ONLY_PATTERN.search(text):
-            operations.append(
-                upsert_operation(
-                    "constraints",
-                    "local_only",
-                    "The app must run locally; do not suggest cloud services.",
-                    source_ids,
-                    confidence=0.95,
-                )
-            )
-
-        if CSV_TASK_PATTERN.search(text) or CSV_EXPORT_PATTERN.search(text):
-            value = "CSV export" if CSV_EXPORT_PATTERN.search(text) else "CSV import"
-            if "import" in lowered or "importing" in lowered:
-                value = "importing recipes from CSV"
-            operations.append(
-                upsert_operation(
-                    "open_tasks",
-                    "csv",
-                    value,
-                    source_ids,
-                    confidence=0.9,
-                )
-            )
-
-        if match := DEADLINE_PATTERN.search(text):
-            deadline = clean_extracted_value(match.group(1))
-            if deadline:
-                operations.append(
-                    upsert_operation(
-                        "open_tasks",
-                        "deadline",
-                        deadline,
-                        source_ids,
-                        confidence=0.9,
-                    )
-                )
-
-    return operations
-
-
-def upsert_operation(
-    category: str,
-    key: str,
-    value: str,
-    source_message_ids: list[int],
-    confidence: float,
-) -> dict[str, Any]:
-    """Build a validated deterministic upsert operation."""
-    return {
-        "operation": "upsert",
-        "category": category,
-        "key": normalize_key(key),
-        "value": clean_text(value),
-        "source_message_ids": source_message_ids,
-        "confidence": confidence,
-    }
 
 
 def make_memory_id(category: str, key: str) -> str:
@@ -803,21 +592,41 @@ def clean_text(value: str) -> str:
     return " ".join(value.strip(" \n\t\r").split())
 
 
-def clean_extracted_value(value: str) -> str:
-    """Clean deterministic extractor captures."""
-    return clean_text(value.strip(" .,!?:;\"'"))
+def valid_but_useless_correction_batch(
+    before_memory: dict[str, list[dict[str, Any]]],
+    after_memory: dict[str, list[dict[str, Any]]],
+    operations: list[dict[str, Any]],
+    messages: list[StoredMessage],
+) -> bool:
+    """Reject correction-like batches that produce no active replacement memory."""
+    if not has_correction_signal(messages):
+        return False
+
+    if not operations:
+        return True
+
+    if not any(operation["operation"] == "upsert" for operation in operations):
+        return True
+
+    before_active = active_memory_signature(before_memory)
+    after_active = active_memory_signature(after_memory)
+    if not after_active:
+        return True
+
+    return before_active == after_active
 
 
-def normalize_database_name(value: str) -> str:
-    """Normalize common database names."""
-    lowered = value.lower()
-    if lowered == "postgres":
-        return "Postgres"
-    if lowered == "postgresql":
-        return "PostgreSQL"
-    if lowered == "sqlite":
-        return "SQLite"
-    return clean_extracted_value(value)
+def has_correction_signal(messages: list[StoredMessage]) -> bool:
+    """Return whether user messages contain correction/replacement language."""
+    return any(CORRECTION_SIGNAL_PATTERN.search(message.content) for message in messages)
+
+
+def active_memory_signature(memory_state: dict[str, list[dict[str, Any]]]) -> set[tuple[str, str, str]]:
+    """Return a compact comparable signature for active memory."""
+    return {
+        (record["category"], record["key"], record["value"])
+        for record in active_memories(memory_state)
+    }
 
 
 def looks_like_transcript_text(value: str) -> bool:
@@ -836,25 +645,6 @@ def is_vague_memory(value: str) -> bool:
         "the user needs advice",
     )
     return any(phrase in lowered for phrase in vague_phrases)
-
-
-def reason_supports_supersede(reason: str) -> bool:
-    """Reject corrections that affirm a fact instead of invalidating it."""
-    lowered = reason.lower()
-    if "my name" in lowered and "not my name" not in lowered:
-        return False
-
-    supersede_markers = (
-        "incorrect",
-        "wrong",
-        "not true",
-        "no longer",
-        "instead",
-        "changed",
-        "correction",
-        "misunderstanding",
-    )
-    return any(marker in lowered for marker in supersede_markers)
 
 
 def merge_source_ids(existing: list[int], new: list[int]) -> list[int]:

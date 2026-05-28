@@ -9,6 +9,7 @@ from src.agents.context_builder_agent import ContextBuilderAgent
 from src.agents.short_term_memory_agent import ShortTermMemoryAgent
 from src.context.context_budget_allocator import ContextBudgetAllocator
 from src.context.context_builder import ContextBuilder as TraceContextBuilder
+from src.context.context_comparator import ContextComparator
 from src.core.contracts import AgentTurnResult, WorkflowTrace
 from src.database import Database
 from src.retrieval.reranker import MemoryReranker
@@ -34,6 +35,7 @@ class CoordinatorAgent:
         memory_reranker: MemoryReranker | None = None,
         context_budget_allocator: ContextBudgetAllocator | None = None,
         trace_context_builder: TraceContextBuilder | None = None,
+        context_comparator: ContextComparator | None = None,
     ) -> None:
         self.database = database
         self.memory_agent = memory_agent
@@ -45,6 +47,7 @@ class CoordinatorAgent:
         self.memory_reranker = memory_reranker or MemoryReranker()
         self.context_budget_allocator = context_budget_allocator or ContextBudgetAllocator()
         self.trace_context_builder = trace_context_builder or TraceContextBuilder()
+        self.context_comparator = context_comparator or ContextComparator()
 
     def run_turn(self, chat_id: str, content: str) -> AgentTurnResult:
         """Run one user turn while preserving the existing runtime behavior."""
@@ -68,9 +71,10 @@ class CoordinatorAgent:
             ranked_candidates=ranked_candidates,
             system_prompt=self.system_prompt,
         )
+        latest_user_message = {"role": "user", "content": content}
         trace_context_packet = self.trace_context_builder.build(
             system_prompt=self.system_prompt,
-            latest_user_message={"role": "user", "content": content},
+            latest_user_message=latest_user_message,
             ranked_candidates=ranked_candidates,
             context_budget=context_budget,
             route_plan=route_plan,
@@ -84,7 +88,12 @@ class CoordinatorAgent:
             chat_id=chat_id,
             system_prompt=self.system_prompt,
             context=context,
-            latest_user_message={"role": "user", "content": content},
+            latest_user_message=latest_user_message,
+        )
+        context_comparison = self.context_comparator.compare(
+            old_model_messages=model_messages,
+            new_context_packet=trace_context_packet,
+            latest_user_message=latest_user_message,
         )
 
         errors: list[str] = []
@@ -120,6 +129,7 @@ class CoordinatorAgent:
             context_packet=trace_context_packet,
             termination_reason=TERMINATION_RESPONSE_SAVED,
             errors=errors,
+            metadata={"context_comparison": context_comparison.to_dict()},
         )
         self._log_trace(trace)
         return AgentTurnResult(
@@ -146,6 +156,10 @@ class CoordinatorAgent:
         context_profile = None
         if trace.context_budget is not None:
             context_profile = trace.context_budget.metadata.get("context_profile")
+        comparison_warnings = []
+        comparison = trace.metadata.get("context_comparison")
+        if isinstance(comparison, dict):
+            comparison_warnings = comparison.get("warnings", [])
         print(
             "workflow_trace "
             f"trace_id={trace.trace_id} "
@@ -155,6 +169,7 @@ class CoordinatorAgent:
             f"retrieved_candidates={len(trace.retrieved_candidates)} "
             f"ranked_candidates={len(trace.ranked_candidates)} "
             f"context_profile={context_profile} "
+            f"context_comparison_warnings={comparison_warnings} "
             f"termination_reason={trace.termination_reason} "
             f"recent_message_ids={recent_ids}"
         )

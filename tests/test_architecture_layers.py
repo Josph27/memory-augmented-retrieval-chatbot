@@ -251,3 +251,9 @@ def test_coordinator_trace_contains_all_trace_only_layers(tmp_path: Path) -> Non
         "role": "user",
         "content": "Which database did we decide to use?",
     }
+    comparison = result.trace.metadata["context_comparison"]
+    assert comparison["metadata"]["comparison_type"] == (
+        "legacy_short_term_vs_trace_context_packet"
+    )
+    assert comparison["metadata"]["full_prompts_included"] is False
+    assert "warnings" in comparison

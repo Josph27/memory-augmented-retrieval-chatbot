@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from typing import Any
 
@@ -20,6 +21,7 @@ from src.memory.structured_state import (
 
 
 MEMORY_CONTEXT_ROLE = "system"
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -113,6 +115,12 @@ class ShortTermMemory:
             messages=messages,
         )
         if not result.accepted:
+            logger.warning(
+                "structured memory update rejected chat_id=%s message_ids=%s reason=%s",
+                chat_id,
+                [message.id for message in messages],
+                result.rejection_reason or "unknown",
+            )
             self.database.upsert_chat_memory_state(chat_id, dumps_memory_state(result.memory_state))
             return False
 

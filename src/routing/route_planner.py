@@ -50,10 +50,25 @@ class RoutePlannerPolicy:
         ),
     )
     ranking_profile: str = "none_current_order"
-    context_profile: str = "structured_memory_plus_recent_messages"
     fallback_policy: str = "answer_from_available_context_or_state_missing_information"
     update_policy: str = "update_structured_memory_after_response_when_threshold_reached"
     termination_policy: str = "response_generated_and_messages_saved"
+    intent_context_profiles: dict[str, str] = None
+
+    def __post_init__(self) -> None:
+        if self.intent_context_profiles is None:
+            object.__setattr__(
+                self,
+                "intent_context_profiles",
+                {
+                    "general_question": "general_chat",
+                    "current_chat_question": "memory_recall",
+                    "previous_memory_question": "memory_recall",
+                    "decision_question": "memory_recall",
+                    "task_question": "memory_recall",
+                    "document_question": "document_question",
+                },
+            )
 
 
 class RoutePlanner:
@@ -91,7 +106,10 @@ class RoutePlanner:
             requires_retrieval=False,
             sources=sources,
             ranking_profile=self.policy.ranking_profile,
-            context_profile=self.policy.context_profile,
+            context_profile=self.policy.intent_context_profiles.get(
+                analysis.intent,
+                "general_chat",
+            ),
             fallback_policy=self.policy.fallback_policy,
             update_policy=self.policy.update_policy,
             termination_policy=self.policy.termination_policy,

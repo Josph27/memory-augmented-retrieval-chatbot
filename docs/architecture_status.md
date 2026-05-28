@@ -17,6 +17,7 @@ Chainlit app.py
 -> MemoryReranker
 -> ContextBudgetAllocator
 -> trace-only ContextBuilder
+-> trace-only ContextComparator
 -> ShortTermMemoryAgent / ShortTermMemory.build_context
 -> ContextBuilderAgent / ShortTermMemory.build_model_messages
 -> ChatAgent / ModelWrapper.chat
@@ -70,6 +71,10 @@ Chainlit UI. `ChatService.handle_user_turn` exposes the richer
   - Builds a budget-aware trace-only `ContextPacket` from ranked candidates and
     `ContextBudget`. It records selected candidates, dropped candidates, section
     ordering, and estimated token usage.
+- `src/context/context_comparator.py`
+  - Compares the legacy `ShortTermMemory` prompt messages with the trace-only
+    `ContextPacket`. It records compact prompt-shape metrics and warning codes
+    without printing full prompts by default.
 
 ## Current Routing
 
@@ -103,6 +108,14 @@ prompt construction still uses the existing `ShortTermMemory` path.
 `WorkflowTrace.context_packet`. It orders proposed context as system prompt,
 structured memory, retrieved/document memory, recent raw messages, and latest
 user message. This packet is not sent to the model yet.
+
+`ContextComparator` now stores a compact comparison result in
+`WorkflowTrace.metadata["context_comparison"]`. It compares estimated token
+usage, message/section shape, structured memory presence, recent-message
+presence, latest-user-message presence, and large token-count differences. This
+is trace/debug output only; the model call still uses the legacy
+`ShortTermMemory` messages. The next step is switching the final model call to
+the validated `ContextPacket` after comparison output looks safe.
 
 Stub retrievers exist for disabled future sources:
 

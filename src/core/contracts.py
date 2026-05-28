@@ -70,6 +70,7 @@ class ContextBudget:
     recent_message_tokens: int | None = None
     retrieval_tokens: int | None = None
     reserved_response_tokens: int | None = None
+    source_token_budgets: dict[str, int] = field(default_factory=dict)
     metadata: dict[str, Any] = field(default_factory=dict)
 
 
@@ -96,6 +97,7 @@ class WorkflowTrace:
     route_plan: RoutePlan | None = None
     retrieved_candidates: list[MemoryCandidate] = field(default_factory=list)
     ranked_candidates: list[MemoryCandidate] = field(default_factory=list)
+    context_budget: ContextBudget | None = None
     context_packet: ContextPacket | None = None
     termination_reason: str | None = None
     errors: list[str] = field(default_factory=list)
