@@ -16,10 +16,10 @@ Chainlit app.py
 -> RecentMessagesRetriever / StructuredMemoryRetriever
 -> MemoryReranker
 -> ContextBudgetAllocator
--> trace-only ContextBuilder
--> trace-only ContextComparator
+-> ContextBuilder / ContextPacket
+-> ContextComparator
 -> ShortTermMemoryAgent / ShortTermMemory.build_context
--> ContextBuilderAgent / ShortTermMemory.build_model_messages
+-> ContextBuilderAgent / ShortTermMemory.build_model_messages fallback
 -> ChatAgent / ModelWrapper.chat
 -> Database.save_message(assistant)
 -> ShortTermMemoryAgent / ShortTermMemory.update_memory_if_needed
@@ -68,13 +68,16 @@ Chainlit UI. `ChatService.handle_user_turn` exposes the richer
   - Allocates profile-based trace budgets using `RoutePlan`, ranked candidates,
     model context limit, answer reserve, and system prompt estimate.
 - `src/context/context_builder.py`
-  - Builds a budget-aware trace-only `ContextPacket` from ranked candidates and
-    `ContextBudget`. It records selected candidates, dropped candidates, section
-    ordering, and estimated token usage.
+  - Builds a budget-aware `ContextPacket` from ranked candidates and
+    `ContextBudget`. This is now the default final prompt source after
+    validation.
 - `src/context/context_comparator.py`
   - Compares the legacy `ShortTermMemory` prompt messages with the trace-only
     `ContextPacket`. It records compact prompt-shape metrics and warning codes
     without printing full prompts by default.
+- `src/context/prompt_messages.py`
+  - Converts validated `ContextPacket` messages to OpenAI-compatible chat
+    messages and returns fallback reasons when validation fails.
 
 ## Current Routing
 
@@ -90,21 +93,17 @@ Future sources may appear in the plan as disabled:
 - `document_memory`
 
 The dispatcher now calls retrievers for enabled sources and stores the resulting
-`MemoryCandidate` objects on `WorkflowTrace.retrieved_candidates`. These
-candidates are trace/normalization output only; prompt construction still uses
-the existing `ShortTermMemory` path.
+`MemoryCandidate` objects on `WorkflowTrace.retrieved_candidates`.
 
 `MemoryReranker` now stores scored copies on
 `WorkflowTrace.ranked_candidates`. Score breakdowns include feature values,
 weights, feature contributions, final score, and the `ranking_profile`.
-Ranked candidates are not consumed by prompt construction yet.
 
 `ContextBudgetAllocator` now stores a trace-only `ContextBudget` on
 `WorkflowTrace.context_budget`. It supports profiles for `general_chat`,
-`memory_recall`, `document_question`, and `mixed_memory_document`, but final
-prompt construction still uses the existing `ShortTermMemory` path.
+`memory_recall`, `document_question`, and `mixed_memory_document`.
 
-`ContextBuilder` now stores a trace-only `ContextPacket` on
+`ContextBuilder` now stores a `ContextPacket` on
 `WorkflowTrace.context_packet`. It orders proposed context as system prompt,
 structured memory, retrieved/document memory, recent raw messages, and latest
 user message. Recent raw messages are chronology-preserving conversation
@@ -112,15 +111,18 @@ context, not semantic retrieval results: they are ordered by persisted message
 order and the latest user query is excluded from the recent-message section so
 it appears only once as the final latest user message. Retrieved/gist/document
 memories may use ranked order, but recent raw messages preserve conversation
-order. This packet is not sent to the model yet.
+order. This packet is now the default model prompt source.
 
 `ContextComparator` now stores a compact comparison result in
 `WorkflowTrace.metadata["context_comparison"]`. It compares estimated token
 usage, message/section shape, structured memory presence, recent-message
-presence, latest-user-message presence, and large token-count differences. This
-is trace/debug output only; the model call still uses the legacy
-`ShortTermMemory` messages. The next step is switching the final model call to
-the validated `ContextPacket` after comparison output looks safe.
+presence, latest-user-message presence, and large token-count differences.
+
+Prompt assembly validates the `ContextPacket` before calling the model. If the
+packet is missing or invalid, the coordinator falls back to the legacy
+`ShortTermMemory` prompt messages. `WorkflowTrace.metadata` records
+`prompt_source` as `context_packet` or `legacy_short_term_memory_fallback` plus
+`fallback_reason` when fallback is used.
 
 Stub retrievers exist for disabled future sources:
 
@@ -154,7 +156,5 @@ Short-term memory remains unchanged:
 
 - `LongTermMemoryAgent`
 - implemented chunk/document/previous-chat retrieval
-- switching the model call from legacy `ShortTermMemory` messages to the
-  validated trace `ContextPacket`
 - persistent workflow trace storage
 - explicit graph runtime or LangGraph-style execution

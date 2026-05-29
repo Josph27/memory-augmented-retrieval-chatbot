@@ -15,6 +15,9 @@ def candidate(
     metadata = {}
     if role is not None:
         metadata["role"] = role
+    if source == "structured_memory":
+        metadata["category"] = "user_facts"
+        metadata["key"] = "name"
     return MemoryCandidate(
         source=source,
         content=content,
@@ -112,7 +115,7 @@ def test_context_builder_orders_structured_before_recent_and_latest_last() -> No
 
     contents = [message["content"] for message in packet.model_messages]
     assert contents[0] == "system"
-    assert contents[1].startswith("Structured Memory:")
+    assert contents[1].startswith("Current structured memory:")
     assert contents[-3:] == ["recent user", "recent assistant", "latest question"]
     assert packet.recent_message_ids == [10, 11]
     assert packet.structured_memory is not None
@@ -153,7 +156,7 @@ def test_context_builder_formats_retrieved_sections_between_structured_and_recen
     )
 
     contents = [message["content"] for message in packet.model_messages]
-    assert contents[1].startswith("Structured Memory:")
+    assert contents[1].startswith("Current structured memory:")
     assert contents[2].startswith("Document Memory:")
     assert contents[-2:] == ["recent", "latest"]
     assert packet.metadata["context_profile"] is None
@@ -248,7 +251,7 @@ def test_context_builder_excludes_latest_user_message_from_recent_candidates() -
     contents = [message["content"] for message in packet.model_messages]
     assert contents.count("can you remember my name") == 1
     assert contents[-1] == "can you remember my name"
-    assert contents[1].startswith("Structured Memory:")
+    assert contents[1].startswith("Current structured memory:")
     assert packet.recent_message_ids == [1]
     assert any(
         item["record_id"] == "r2"

@@ -10,6 +10,7 @@ from src.agents.short_term_memory_agent import ShortTermMemoryAgent
 from src.context.context_budget_allocator import ContextBudgetAllocator
 from src.context.context_builder import ContextBuilder as TraceContextBuilder
 from src.context.context_comparator import ContextComparator
+from src.context.prompt_messages import context_packet_to_model_messages
 from src.core.contracts import AgentTurnResult, WorkflowTrace
 from src.database import Database
 from src.retrieval.reranker import MemoryReranker
@@ -95,10 +96,22 @@ class CoordinatorAgent:
             new_context_packet=trace_context_packet,
             latest_user_message=latest_user_message,
         )
+        prompt_assembly = context_packet_to_model_messages(
+            packet=trace_context_packet,
+            latest_user_message=latest_user_message,
+            context_comparison=context_comparison.to_dict(),
+        )
+        prompt_source = "context_packet"
+        fallback_reason = None
+        final_model_messages = prompt_assembly.messages
+        if not prompt_assembly.valid:
+            prompt_source = "legacy_short_term_memory_fallback"
+            fallback_reason = prompt_assembly.fallback_reason
+            final_model_messages = model_messages
 
         errors: list[str] = []
         try:
-            response = self.chat_agent.generate(model_messages)
+            response = self.chat_agent.generate(final_model_messages)
         except OpenAIError as error:
             errors.append(str(error))
             response = (
@@ -129,7 +142,11 @@ class CoordinatorAgent:
             context_packet=trace_context_packet,
             termination_reason=TERMINATION_RESPONSE_SAVED,
             errors=errors,
-            metadata={"context_comparison": context_comparison.to_dict()},
+            metadata={
+                "context_comparison": context_comparison.to_dict(),
+                "prompt_source": prompt_source,
+                "fallback_reason": fallback_reason,
+            },
         )
         self._log_trace(trace)
         return AgentTurnResult(
@@ -160,6 +177,8 @@ class CoordinatorAgent:
         comparison = trace.metadata.get("context_comparison")
         if isinstance(comparison, dict):
             comparison_warnings = comparison.get("warnings", [])
+        prompt_source = trace.metadata.get("prompt_source")
+        fallback_reason = trace.metadata.get("fallback_reason")
         print(
             "workflow_trace "
             f"trace_id={trace.trace_id} "
@@ -170,6 +189,8 @@ class CoordinatorAgent:
             f"ranked_candidates={len(trace.ranked_candidates)} "
             f"context_profile={context_profile} "
             f"context_comparison_warnings={comparison_warnings} "
+            f"prompt_source={prompt_source} "
+            f"fallback_reason={fallback_reason} "
             f"termination_reason={trace.termination_reason} "
             f"recent_message_ids={recent_ids}"
         )

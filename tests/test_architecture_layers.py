@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from pathlib import Path
 
 from src.chat_service import ChatService
 from src.context.context_budget_allocator import ContextBudgetAllocator
+from src.context.context_builder import ContextBuilder
 from src.core.contracts import MemoryCandidate, RoutePlan, SourcePlan
 from src.database import Database
 from src.retrieval.reranker import MemoryReranker
@@ -13,12 +15,16 @@ from src.routing.route_planner import RoutePlanner
 
 
 class FakeModel:
+    def __init__(self) -> None:
+        self.calls: list[list[dict[str, str]]] = []
+
     def chat(
         self,
         messages: list[dict[str, str]],
         temperature: float | None = None,
     ) -> str:
-        del messages, temperature
+        del temperature
+        self.calls.append([dict(message) for message in messages])
         return "fake response"
 
 
@@ -36,6 +42,12 @@ class SpyRetriever:
                 chat_id=chat_id,
             )
         ]
+
+
+class MissingLatestContextBuilder(ContextBuilder):
+    def build(self, *args, **kwargs):  # type: ignore[no-untyped-def]
+        packet = super().build(*args, **kwargs)
+        return replace(packet, model_messages=packet.model_messages[:-1])
 
 
 def test_route_planner_profiles_and_sources() -> None:
@@ -227,9 +239,10 @@ def test_context_budget_allocator_profiles_and_disabled_sources() -> None:
 
 def test_coordinator_trace_contains_all_trace_only_layers(tmp_path: Path) -> None:
     db = Database(tmp_path / "chatbot.db")
+    model = FakeModel()
     service = ChatService(
         database=db,
-        model=FakeModel(),
+        model=model,
         raw_message_limit=8,
         memory_update_batch_size=6,
     )
@@ -257,3 +270,27 @@ def test_coordinator_trace_contains_all_trace_only_layers(tmp_path: Path) -> Non
     )
     assert comparison["metadata"]["full_prompts_included"] is False
     assert "warnings" in comparison
+    assert result.trace.metadata["prompt_source"] == "context_packet"
+    assert result.trace.metadata["fallback_reason"] is None
+    assert model.calls[0] == result.trace.context_packet.model_messages
+
+
+def test_coordinator_falls_back_when_context_packet_is_invalid(tmp_path: Path) -> None:
+    db = Database(tmp_path / "chatbot.db")
+    model = FakeModel()
+    service = ChatService(
+        database=db,
+        model=model,
+        raw_message_limit=8,
+        memory_update_batch_size=6,
+    )
+    service.coordinator.trace_context_builder = MissingLatestContextBuilder()
+    chat_id = service.start_chat()
+
+    result = service.handle_user_turn(chat_id, "Remember this.")
+
+    assert result.answer == "fake response"
+    assert result.trace.metadata["prompt_source"] == "legacy_short_term_memory_fallback"
+    assert result.trace.metadata["fallback_reason"] == "latest_user_message_missing"
+    assert model.calls[0][-1] == {"role": "user", "content": "Remember this."}
+    assert model.calls[0] != result.trace.context_packet.model_messages

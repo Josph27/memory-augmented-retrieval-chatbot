@@ -11,6 +11,8 @@ The app uses Chainlit for the browser chat UI, Python for backend logic, SQLite 
 - Local/free model defaults for Ollama-compatible endpoints
 - SQLite tables for `chats`, `messages`, and `chat_memory_state`
 - Short-term memory: structured JSON memory state plus recent raw messages
+- Production-shaped prompt assembly through `ContextPacket`, with legacy
+  `ShortTermMemory` prompt fallback
 - Dockerfile with persistent `data/` mount support
 
 ## Local Model Defaults
@@ -50,6 +52,12 @@ Current chat memory is built from two parts:
 - The most recent raw messages from `messages`
 
 Raw messages remain the source of truth. The JSON memory state is a derived cache that can be regenerated later from `messages` if needed.
+
+Final chat prompts are assembled through the production-shaped `ContextPacket`
+path. The current active sources are `recent_messages` and `structured_memory`.
+Future chunk, previous-chat, and document sources are still disabled/stubbed. If
+the `ContextPacket` is invalid, the coordinator falls back to the legacy
+`ShortTermMemory` prompt messages.
 
 The current schema for `chat_memory_state.memory_json` stores typed memory records:
 

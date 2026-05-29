@@ -241,6 +241,18 @@ def format_source_section(source: str, candidates: list[MemoryCandidate]) -> str
     if not candidates:
         return ""
 
+    if source == "structured_memory":
+        lines = ["Current structured memory:"]
+        for candidate in candidates:
+            category = candidate.metadata.get("category")
+            key = candidate.metadata.get("key")
+            if category and key:
+                lines.append(f"- {category}.{key}: {candidate.content}")
+            else:
+                label = candidate.record_id if candidate.record_id is not None else "candidate"
+                lines.append(f"- [{label}] {candidate.content}")
+        return "\n".join(lines)
+
     title = source.replace("_", " ").title()
     lines = [f"{title}:"]
     for candidate in candidates:
