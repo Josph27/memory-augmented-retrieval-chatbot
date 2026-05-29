@@ -107,7 +107,12 @@ prompt construction still uses the existing `ShortTermMemory` path.
 `ContextBuilder` now stores a trace-only `ContextPacket` on
 `WorkflowTrace.context_packet`. It orders proposed context as system prompt,
 structured memory, retrieved/document memory, recent raw messages, and latest
-user message. This packet is not sent to the model yet.
+user message. Recent raw messages are chronology-preserving conversation
+context, not semantic retrieval results: they are ordered by persisted message
+order and the latest user query is excluded from the recent-message section so
+it appears only once as the final latest user message. Retrieved/gist/document
+memories may use ranked order, but recent raw messages preserve conversation
+order. This packet is not sent to the model yet.
 
 `ContextComparator` now stores a compact comparison result in
 `WorkflowTrace.metadata["context_comparison"]`. It compares estimated token

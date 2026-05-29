@@ -46,9 +46,17 @@ class ContextBuilder:
         dropped_candidates: list[dict[str, Any]] = []
 
         for source in CONTEXT_SOURCE_ORDER:
+            source_candidates = grouped.get(source, [])
+            if source == "recent_messages":
+                source_candidates, latest_drops = prepare_recent_candidates(
+                    source_candidates,
+                    latest_user_message,
+                )
+                dropped_candidates.extend(latest_drops)
+
             selected = self.select_for_source(
                 source=source,
-                candidates=grouped.get(source, []),
+                candidates=source_candidates,
                 budget=context_budget.source_token_budgets.get(source, 0),
             )
             selected_by_source[source] = selected
@@ -174,6 +182,58 @@ def group_candidates_by_source(
     for candidate in candidates:
         grouped.setdefault(candidate.source, []).append(candidate)
     return grouped
+
+
+def prepare_recent_candidates(
+    candidates: list[MemoryCandidate],
+    latest_user_message: dict[str, str],
+) -> tuple[list[MemoryCandidate], list[dict[str, Any]]]:
+    """Exclude the latest user query and sort recent messages chronologically."""
+    kept: list[MemoryCandidate] = []
+    dropped: list[dict[str, Any]] = []
+    for candidate in candidates:
+        if is_latest_user_candidate(candidate, latest_user_message):
+            dropped.append(
+                {
+                    "record_id": candidate.record_id,
+                    "source": candidate.source,
+                    "reason": "latest_user_message_excluded",
+                    "estimated_tokens": 0,
+                    "source_budget": None,
+                }
+            )
+            continue
+        kept.append(candidate)
+
+    return sorted(kept, key=recent_message_sort_key), dropped
+
+
+def is_latest_user_candidate(
+    candidate: MemoryCandidate,
+    latest_user_message: dict[str, str],
+) -> bool:
+    """Return whether a recent candidate is the current user query."""
+    return (
+        candidate.source == "recent_messages"
+        and str(candidate.metadata.get("role", "user")) == latest_user_message.get("role")
+        and candidate.content == latest_user_message.get("content")
+    )
+
+
+def recent_message_sort_key(candidate: MemoryCandidate) -> tuple[int, str, int]:
+    """Sort recent raw messages by persisted order instead of reranker score."""
+    source_ids = [source_id for source_id in candidate.source_message_ids if source_id >= 0]
+    if source_ids:
+        return (min(source_ids), "", 0)
+
+    if isinstance(candidate.record_id, int):
+        return (candidate.record_id, "", 0)
+
+    created_at = str(candidate.metadata.get("created_at", ""))
+    order = candidate.metadata.get("order")
+    if not isinstance(order, int):
+        order = 0
+    return (10**12, created_at, order)
 
 
 def format_source_section(source: str, candidates: list[MemoryCandidate]) -> str:
