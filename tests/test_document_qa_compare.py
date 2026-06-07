@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from evals.document_qa.compare_retrieval_modes import (
     ModeComparisonResult,
     aggregate_mode_results,
@@ -10,8 +12,12 @@ from evals.document_qa.compare_retrieval_modes import (
 from evals.document_qa.run_document_qa_eval import (
     EvalResult,
     build_eval_resources,
+    create_vector_store,
     evaluate_case,
 )
+from src.database import Database
+from src.vectorstores.in_memory_store import InMemoryVectorStore
+from src.vectorstores.sqlite_json_store import SQLiteJsonVectorStore
 
 
 def make_result(
@@ -155,3 +161,33 @@ def test_corpus_scope_retrieves_relevant_document_with_distractors() -> None:
     assert result.context_answer_anchor_hit
     assert result.context_expected_answer_hit
     assert result.context_evidence_hit
+
+
+def test_eval_vector_store_factory_selects_sqlite_json(tmp_path) -> None:
+    database = Database(tmp_path / "chatbot.db")
+
+    store = create_vector_store(database, "sqlite_json")
+
+    assert isinstance(store, SQLiteJsonVectorStore)
+
+
+def test_eval_vector_store_factory_selects_in_memory(tmp_path) -> None:
+    database = Database(tmp_path / "chatbot.db")
+
+    store = create_vector_store(database, "in_memory")
+
+    assert isinstance(store, InMemoryVectorStore)
+
+
+def test_eval_vector_store_factory_selects_sqlite_vec_when_available(tmp_path) -> None:
+    pytest.importorskip("sqlite_vec")
+    from evals.document_qa.run_document_qa_eval import RetrievalModeUnavailable
+    from src.vectorstores.sqlite_vec_store import SQLiteVecVectorStore
+
+    database = Database(tmp_path / "chatbot.db")
+    try:
+        store = create_vector_store(database, "sqlite_vec")
+    except RetrievalModeUnavailable as error:
+        pytest.skip(str(error))
+
+    assert isinstance(store, SQLiteVecVectorStore)

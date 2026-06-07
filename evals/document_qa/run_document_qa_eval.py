@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -28,6 +29,7 @@ except ImportError:
 
 DEFAULT_DATASET = Path(__file__).parent / "datasets" / "squad_style_sample.jsonl"
 RETRIEVAL_CONTEXT_MODES = {"keyword_retrieval", "vector_retrieval", "hybrid_retrieval"}
+VECTOR_BACKEND_CHOICES = ("sqlite_json", "sqlite_vec", "in_memory")
 
 
 @dataclass(frozen=True)
@@ -51,6 +53,7 @@ class EvalResources:
     corpus_database: Any | None = None
     corpus_vector_store: Any | None = None
     temp_directory: Any | None = None
+    vector_backend: str | None = None
 
 
 def main() -> None:
@@ -92,6 +95,12 @@ def main() -> None:
         default="isolated",
         help="Use one document per case or retrieve from a shared dataset corpus.",
     )
+    parser.add_argument(
+        "--vector-backend",
+        choices=VECTOR_BACKEND_CHOICES,
+        default=None,
+        help="Vector backend for vector/hybrid evals. Defaults to VECTOR_BACKEND env.",
+    )
     args = parser.parse_args()
 
     cases = load_jsonl(args.dataset)
@@ -102,6 +111,7 @@ def main() -> None:
             context_mode=args.context_mode,
             retrieval_scope=args.retrieval_scope,
             cases=cases,
+            vector_backend=args.vector_backend,
         )
         results = [
             evaluate_case(
@@ -121,6 +131,7 @@ def main() -> None:
         context_mode=args.context_mode,
         retrieval_scope=args.retrieval_scope,
         top_k=args.top_k,
+        vector_backend=resources.vector_backend,
     )
 
 
@@ -218,9 +229,11 @@ def build_eval_resources(
     context_mode: str,
     retrieval_scope: str = "isolated",
     cases: list[dict[str, Any]] | None = None,
+    vector_backend: str | None = None,
 ) -> EvalResources:
     """Create reusable resources once for an eval run."""
     embedder = None
+    selected_vector_backend = normalize_vector_backend(vector_backend)
 
     if context_mode in {"vector_retrieval", "hybrid_retrieval"}:
         ensure_repo_root_on_path()
@@ -237,7 +250,7 @@ def build_eval_resources(
             raise RetrievalModeUnavailable(msg) from error
 
     if retrieval_scope != "corpus" or context_mode not in RETRIEVAL_CONTEXT_MODES:
-        return EvalResources(embedder=embedder)
+        return EvalResources(embedder=embedder, vector_backend=selected_vector_backend)
 
     if cases is None:
         raise RetrievalModeUnavailable("Corpus retrieval requires dataset cases.")
@@ -246,6 +259,7 @@ def build_eval_resources(
         cases=cases,
         context_mode=context_mode,
         embedder=embedder,
+        vector_backend=selected_vector_backend,
     )
 
 
@@ -253,13 +267,13 @@ def build_corpus_resources(
     cases: list[dict[str, Any]],
     context_mode: str,
     embedder: Any | None = None,
+    vector_backend: str = "sqlite_json",
 ) -> EvalResources:
     """Ingest the full eval dataset into one temporary document corpus."""
     ensure_repo_root_on_path()
     from src.database import Database
     from src.documents.embedding_indexer import DocumentEmbeddingIndexer
     from src.documents.ingestion import DocumentIngestionService
-    from src.vectorstores.sqlite_json_store import SQLiteJsonVectorStore
 
     temp_directory = TemporaryDirectory()
     database = Database(Path(temp_directory.name) / "document_eval_corpus.db")
@@ -283,7 +297,7 @@ def build_corpus_resources(
     if context_mode in {"vector_retrieval", "hybrid_retrieval"}:
         if embedder is None:
             raise RetrievalModeUnavailable("Corpus vector retrieval requires an embedder.")
-        vector_store = SQLiteJsonVectorStore(database)
+        vector_store = create_vector_store(database, vector_backend)
         indexer = DocumentEmbeddingIndexer(database)
         for document_id in document_ids:
             indexer.index_document_chunks(
@@ -297,6 +311,7 @@ def build_corpus_resources(
         corpus_database=database,
         corpus_vector_store=vector_store,
         temp_directory=temp_directory,
+        vector_backend=vector_backend,
     )
 
 
@@ -313,7 +328,6 @@ def retrieval_contexts(
     from src.documents.embedding_indexer import DocumentEmbeddingIndexer
     from src.documents.ingestion import DocumentIngestionService
     from src.retrieval.document_retriever import DocumentRetriever
-    from src.vectorstores.sqlite_json_store import SQLiteJsonVectorStore
 
     with TemporaryDirectory() as directory:
         database = Database(Path(directory) / "document_eval.db")
@@ -336,7 +350,8 @@ def retrieval_contexts(
             if embedder is None:
                 msg = f"Skipping {context_mode}: embedding model was not initialized."
                 raise RetrievalModeUnavailable(msg)
-            vector_store = SQLiteJsonVectorStore(database)
+            vector_backend = resources.vector_backend if resources else normalize_vector_backend(None)
+            vector_store = create_vector_store(database, vector_backend)
             DocumentEmbeddingIndexer(database).index_document_chunks(
                 document_id=result.document_id,
                 embedder=embedder,
@@ -357,6 +372,35 @@ def retrieval_contexts(
             ),
         )
         return [candidate.content for candidate in candidates]
+
+
+def create_vector_store(database: Any, backend_name: str) -> Any:
+    """Create the configured vector store for document QA evals."""
+    ensure_repo_root_on_path()
+    from src.vectorstores.base import VectorStoreUnavailableError
+    from src.vectorstores.in_memory_store import InMemoryVectorStore
+    from src.vectorstores.sqlite_json_store import SQLiteJsonVectorStore
+    from src.vectorstores.sqlite_vec_store import SQLiteVecVectorStore
+
+    if backend_name == "sqlite_json":
+        return SQLiteJsonVectorStore(database)
+    if backend_name == "in_memory":
+        return InMemoryVectorStore()
+    if backend_name == "sqlite_vec":
+        try:
+            return SQLiteVecVectorStore(database)
+        except VectorStoreUnavailableError as error:
+            msg = f"Skipping vector/hybrid eval: VECTOR_BACKEND=sqlite_vec unavailable. {error}"
+            raise RetrievalModeUnavailable(msg) from error
+    raise RetrievalModeUnavailable(f"Unsupported vector backend: {backend_name}")
+
+
+def normalize_vector_backend(vector_backend: str | None) -> str:
+    """Normalize CLI/env vector backend selection."""
+    selected = (vector_backend or os.getenv("VECTOR_BACKEND", "sqlite_json")).strip()
+    if selected not in VECTOR_BACKEND_CHOICES:
+        return "sqlite_json"
+    return selected
 
 
 def corpus_retrieval_contexts(
@@ -412,12 +456,15 @@ def print_summary(
     context_mode: str,
     retrieval_scope: str = "isolated",
     top_k: int = 4,
+    vector_backend: str | None = None,
 ) -> None:
     """Print a concise deterministic summary."""
     total = len(results)
     print("Document QA eval scaffold")
     print("Mode: scaffold / oracle-placeholder answer")
     print(f"Retrieval scope: {retrieval_scope}")
+    if context_mode in {"vector_retrieval", "hybrid_retrieval"}:
+        print(f"Vector backend: {vector_backend or normalize_vector_backend(None)}")
     if context_mode == "keyword_retrieval":
         print("Retrieval: plain-text chunks with simple keyword scoring.")
     elif context_mode in {"vector_retrieval", "hybrid_retrieval"}:

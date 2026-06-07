@@ -11,6 +11,7 @@ try:
         EvalResult,
         EvalResources,
         RetrievalModeUnavailable,
+        VECTOR_BACKEND_CHOICES,
         build_eval_resources,
         evaluate_case,
         load_jsonl,
@@ -22,6 +23,7 @@ except ImportError:
         EvalResult,
         EvalResources,
         RetrievalModeUnavailable,
+        VECTOR_BACKEND_CHOICES,
         build_eval_resources,
         evaluate_case,
         load_jsonl,
@@ -82,6 +84,12 @@ def main() -> None:
         help="Use one document per case or retrieve from a shared dataset corpus.",
     )
     parser.add_argument(
+        "--vector-backend",
+        choices=VECTOR_BACKEND_CHOICES,
+        default=None,
+        help="Vector backend for vector/hybrid modes. Defaults to VECTOR_BACKEND env.",
+    )
+    parser.add_argument(
         "--json",
         action="store_true",
         help="Print JSON summary after the table.",
@@ -99,6 +107,7 @@ def main() -> None:
             cases=cases,
             top_k=args.top_k,
             retrieval_scope=args.retrieval_scope,
+            vector_backend=args.vector_backend,
             resource_cache=resource_cache,
         )
         for mode in args.modes
@@ -113,6 +122,7 @@ def evaluate_mode(
     cases: list[dict],
     top_k: int = 4,
     retrieval_scope: str = "isolated",
+    vector_backend: str | None = None,
     resource_cache: dict[str, EvalResources | RetrievalModeUnavailable] | None = None,
 ) -> ModeComparisonResult:
     """Run one context mode and aggregate deterministic metrics."""
@@ -121,6 +131,7 @@ def evaluate_mode(
             mode=mode,
             retrieval_scope=retrieval_scope,
             cases=cases,
+            vector_backend=vector_backend,
             resource_cache=resource_cache,
         )
         results = [
@@ -153,18 +164,29 @@ def resources_for_mode(
     mode: str,
     retrieval_scope: str,
     cases: list[dict],
+    vector_backend: str | None,
     resource_cache: dict[str, EvalResources | RetrievalModeUnavailable] | None,
 ) -> EvalResources:
     """Return shared semantic resources for vector/hybrid comparison modes."""
     if retrieval_scope == "corpus":
-        cache_key = f"corpus:{mode}"
+        cache_key = f"corpus:{mode}:{vector_backend or 'env'}"
     elif mode in {"vector_retrieval", "hybrid_retrieval"}:
-        cache_key = "semantic_retrieval"
+        cache_key = f"semantic_retrieval:{vector_backend or 'env'}"
     else:
-        return build_eval_resources(mode, retrieval_scope=retrieval_scope, cases=cases)
+        return build_eval_resources(
+            mode,
+            retrieval_scope=retrieval_scope,
+            cases=cases,
+            vector_backend=vector_backend,
+        )
 
     if resource_cache is None:
-        return build_eval_resources(mode, retrieval_scope=retrieval_scope, cases=cases)
+        return build_eval_resources(
+            mode,
+            retrieval_scope=retrieval_scope,
+            cases=cases,
+            vector_backend=vector_backend,
+        )
 
     cached = resource_cache.get(cache_key)
     if isinstance(cached, RetrievalModeUnavailable):
@@ -177,6 +199,7 @@ def resources_for_mode(
             context_mode=mode,
             retrieval_scope=retrieval_scope,
             cases=cases,
+            vector_backend=vector_backend,
         )
     except RetrievalModeUnavailable as error:
         resource_cache[cache_key] = error
