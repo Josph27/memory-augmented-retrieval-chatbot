@@ -19,6 +19,10 @@ class AppConfig:
     database_path: Path
     raw_message_limit: int
     memory_update_batch_size: int
+    document_retrieval_mode: str
+    embedding_model_name: str
+    document_top_k: int
+    vector_backend: str
 
     @classmethod
     def from_env(cls) -> "AppConfig":
@@ -37,4 +41,11 @@ class AppConfig:
                     os.getenv("SUMMARY_BATCH_SIZE", str(MEMORY_UPDATE_BATCH_SIZE)),
                 )
             ),
+            document_retrieval_mode=os.getenv("DOCUMENT_RETRIEVAL_MODE", "keyword"),
+            embedding_model_name=os.getenv(
+                "EMBEDDING_MODEL_NAME",
+                "sentence-transformers/all-MiniLM-L6-v2",
+            ),
+            document_top_k=int(os.getenv("DOCUMENT_TOP_K", "4")),
+            vector_backend=os.getenv("VECTOR_BACKEND", "sqlite_json"),
         )

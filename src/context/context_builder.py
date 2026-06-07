@@ -15,6 +15,13 @@ CONTEXT_SOURCE_ORDER = (
     "recent_messages",
 )
 
+DROPPABLE_OVERFLOW_SOURCES = (
+    "structured_memory",
+    "current_chat_chunks",
+    "previous_chat_memory",
+    "document_memory",
+)
+
 
 @dataclass(frozen=True)
 class SelectedContext:
@@ -63,12 +70,37 @@ class ContextBuilder:
             selected_candidates.extend(selected.selected)
             dropped_candidates.extend(selected.dropped)
 
+        overflow_drops = self.drop_non_recent_candidates_for_overflow(
+            selected_by_source=selected_by_source,
+            context_budget=context_budget,
+            system_prompt=system_prompt,
+            latest_user_message=latest_user_message,
+        )
+        dropped_candidates.extend(overflow_drops)
+        selected_candidates = [
+            candidate
+            for source in CONTEXT_SOURCE_ORDER
+            for candidate in selected_by_source[source].selected
+        ]
+
         model_messages = self.build_trace_messages(
             system_prompt=system_prompt,
             selected_by_source=selected_by_source,
             latest_user_message=latest_user_message,
         )
-        estimated_tokens = self.token_estimator.estimate_messages(model_messages)
+        token_accounting = self.build_token_accounting(
+            system_prompt=system_prompt,
+            selected_by_source=selected_by_source,
+            latest_user_message=latest_user_message,
+            model_messages=model_messages,
+            context_budget=context_budget,
+        )
+        estimated_tokens = token_accounting["total_prompt_tokens"]
+        dropped_candidate_ids = [
+            item["record_id"]
+            for item in dropped_candidates
+            if item.get("record_id") is not None
+        ]
         return ContextPacket(
             chat_id=first_chat_id(ranked_candidates),
             system_prompt=system_prompt,
@@ -89,11 +121,28 @@ class ContextBuilder:
                 "route_intent": route_plan.intent,
                 "context_profile": context_budget.metadata.get("context_profile"),
                 "estimated_token_usage": estimated_tokens,
+                "estimated_prompt_tokens": estimated_tokens,
+                "token_estimator": "approximate",
+                "context_limit": token_accounting["context_limit"],
+                "answer_reserve": token_accounting["answer_reserve"],
+                "safety_margin": token_accounting["safety_margin"],
+                "overflow_detected": token_accounting["overflow_detected"],
+                "overflow_tokens": token_accounting["overflow_tokens"],
+                "token_accounting": token_accounting,
                 "source_token_usage": {
                     source: selected.used_tokens
                     for source, selected in selected_by_source.items()
                 },
                 "dropped_candidates": dropped_candidates,
+                "dropped_candidate_ids": dropped_candidate_ids,
+                "dropped_candidate_reasons": [
+                    {
+                        "record_id": item.get("record_id"),
+                        "source": item.get("source"),
+                        "reason": item.get("reason"),
+                    }
+                    for item in dropped_candidates
+                ],
                 "section_order": [
                     "system",
                     "structured_memory",
@@ -172,6 +221,116 @@ class ContextBuilder:
         messages.extend(format_recent_message(candidate) for candidate in recent_messages)
         messages.append(latest_user_message)
         return messages
+
+    def drop_non_recent_candidates_for_overflow(
+        self,
+        selected_by_source: dict[str, SelectedContext],
+        context_budget: ContextBudget,
+        system_prompt: str,
+        latest_user_message: dict[str, str],
+    ) -> list[dict[str, Any]]:
+        """Drop lowest-ranked non-recent candidates if the whole prompt overflows."""
+        dropped: list[dict[str, Any]] = []
+        while True:
+            model_messages = self.build_trace_messages(
+                system_prompt=system_prompt,
+                selected_by_source=selected_by_source,
+                latest_user_message=latest_user_message,
+            )
+            accounting = self.build_token_accounting(
+                system_prompt=system_prompt,
+                selected_by_source=selected_by_source,
+                latest_user_message=latest_user_message,
+                model_messages=model_messages,
+                context_budget=context_budget,
+            )
+            if not accounting["overflow_detected"]:
+                return dropped
+
+            next_drop = lowest_ranked_non_recent_candidate(selected_by_source)
+            if next_drop is None:
+                return dropped
+
+            source, candidate = next_drop
+            selected = selected_by_source[source]
+            candidate_tokens = self.token_estimator.estimate_text(candidate.content)
+            selected.selected.remove(candidate)
+            selected_by_source[source] = SelectedContext(
+                selected=selected.selected,
+                dropped=selected.dropped,
+                used_tokens=max(0, selected.used_tokens - candidate_tokens),
+            )
+            dropped.append(
+                {
+                    "record_id": candidate.record_id,
+                    "source": candidate.source,
+                    "reason": "context_overflow",
+                    "estimated_tokens": candidate_tokens,
+                    "overflow_tokens_before_drop": accounting["overflow_tokens"],
+                }
+            )
+
+    def build_token_accounting(
+        self,
+        system_prompt: str,
+        selected_by_source: dict[str, SelectedContext],
+        latest_user_message: dict[str, str],
+        model_messages: list[dict[str, str]],
+        context_budget: ContextBudget,
+    ) -> dict[str, Any]:
+        """Estimate token usage for each prompt section and overflow metadata."""
+        structured_memory = format_source_section(
+            "structured_memory",
+            selected_by_source["structured_memory"].selected,
+        )
+        retrieved_sections = {
+            source: format_source_section(source, selected_by_source[source].selected)
+            for source in (
+                "current_chat_chunks",
+                "previous_chat_memory",
+                "document_memory",
+            )
+        }
+        recent_messages = [
+            format_recent_message(candidate)
+            for candidate in selected_by_source["recent_messages"].selected
+        ]
+        recent_message_tokens = self.token_estimator.estimate_messages(recent_messages)
+        latest_user_message_tokens = self.token_estimator.estimate_messages([latest_user_message])
+        source_memory_tokens = {
+            source: self.token_estimator.estimate_text(section)
+            for source, section in retrieved_sections.items()
+        }
+        retrieved_memory_tokens = sum(source_memory_tokens.values())
+        total_prompt_tokens = self.token_estimator.estimate_messages(model_messages)
+        answer_reserve = context_budget.reserved_response_tokens or 0
+        safety_margin = int(context_budget.metadata.get("safety_margin_tokens", 0) or 0)
+        context_limit = context_budget.max_tokens or 0
+        total_with_reserves = total_prompt_tokens + answer_reserve + safety_margin
+        overflow_tokens = (
+            max(0, total_with_reserves - context_limit)
+            if context_limit > 0
+            else 0
+        )
+        estimator_info = estimator_metadata(self.token_estimator)
+        return {
+            "token_estimator": estimator_info,
+            "system_tokens": self.token_estimator.estimate_text(system_prompt),
+            "structured_memory_tokens": self.token_estimator.estimate_text(
+                structured_memory
+            ),
+            "retrieved_memory_tokens": retrieved_memory_tokens,
+            "source_memory_tokens": source_memory_tokens,
+            "recent_message_tokens": recent_message_tokens,
+            "latest_user_message_tokens": latest_user_message_tokens,
+            "total_prompt_tokens": total_prompt_tokens,
+            "answer_reserve": answer_reserve,
+            "safety_margin": safety_margin,
+            "context_limit": context_limit,
+            "total_with_reserves": total_with_reserves,
+            "overflow_detected": overflow_tokens > 0,
+            "overflow_tokens": overflow_tokens,
+        }
 
 
 def group_candidates_by_source(
@@ -265,6 +424,40 @@ def format_recent_message(candidate: MemoryCandidate) -> dict[str, str]:
     """Convert a recent-message candidate back to a chat-shaped message."""
     role = str(candidate.metadata.get("role", "user"))
     return {"role": role, "content": candidate.content}
+
+
+def lowest_ranked_non_recent_candidate(
+    selected_by_source: dict[str, SelectedContext],
+) -> tuple[str, MemoryCandidate] | None:
+    """Return the lowest-scored selected non-recent candidate."""
+    candidates: list[tuple[float, str, MemoryCandidate]] = []
+    for source in DROPPABLE_OVERFLOW_SOURCES:
+        selected = selected_by_source[source].selected
+        if not selected:
+            continue
+        candidate = selected[-1]
+        candidates.append((candidate.score or 0.0, source, candidate))
+    if not candidates:
+        return None
+    _, source, candidate = min(candidates, key=lambda item: item[0])
+    return source, candidate
+
+
+def estimator_metadata(token_estimator: TokenEstimator) -> dict[str, Any]:
+    """Return debug metadata for the estimator without requiring a concrete class."""
+    info_method = getattr(token_estimator, "info", None)
+    if callable(info_method):
+        info = info_method()
+        return {
+            "backend": getattr(info, "backend", None),
+            "model_name": getattr(info, "model_name", None),
+            "approximate": getattr(info, "approximate", None),
+        }
+    return {
+        "backend": getattr(token_estimator, "backend", "unknown"),
+        "model_name": getattr(token_estimator, "model_name", None),
+        "approximate": None,
+    }
 
 
 def first_chat_id(candidates: list[MemoryCandidate]) -> str:

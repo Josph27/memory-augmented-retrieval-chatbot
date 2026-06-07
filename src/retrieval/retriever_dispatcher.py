@@ -5,6 +5,7 @@ from typing import Protocol
 from src.core.contracts import MemoryCandidate, RoutePlan, SourcePlan
 from src.database import Database
 from src.memory.constants import RAW_MESSAGE_LIMIT
+from src.retrieval.document_retriever import DocumentRetriever
 from src.retrieval.recent_messages_retriever import RecentMessagesRetriever
 from src.retrieval.structured_memory_retriever import StructuredMemoryRetriever
 
@@ -29,6 +30,7 @@ class RetrieverDispatcher:
         self.retrievers: dict[str, SourceRetriever] = retrievers or {
             "recent_messages": RecentMessagesRetriever(database, default_limit=raw_message_limit),
             "structured_memory": StructuredMemoryRetriever(database),
+            "document_memory": DocumentRetriever.from_env(database),
         }
 
     def retrieve(self, chat_id: str, route_plan: RoutePlan) -> list[MemoryCandidate]:

@@ -54,6 +54,11 @@ class QueryAnalyzerPolicy:
         "upload",
         "paper",
         "docs",
+        "text",
+        "source",
+        "according to",
+        "paragraph",
+        "article",
     )
     decision_terms: tuple[str, ...] = (
         "decide",

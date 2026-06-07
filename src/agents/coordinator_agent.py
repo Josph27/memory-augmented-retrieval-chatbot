@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from time import perf_counter
 from uuid import uuid4
 
 from openai import OpenAIError
@@ -52,27 +53,40 @@ class CoordinatorAgent:
 
     def run_turn(self, chat_id: str, content: str) -> AgentTurnResult:
         """Run one user turn while preserving the existing runtime behavior."""
+        total_started = perf_counter()
+        timings: dict[str, float] = {}
         trace_id = str(uuid4())
+        stage_started = perf_counter()
         route_plan = self.route_planner.plan(content)
+        timings["route_planning"] = elapsed_ms(stage_started)
+        stage_started = perf_counter()
         user_message_id = self.database.save_message(
             chat_id=chat_id,
             role="user",
             content=content,
         )
+        timings["save_user_message"] = elapsed_ms(stage_started)
+        stage_started = perf_counter()
         retrieved_candidates = self.retriever_dispatcher.retrieve(
             chat_id=chat_id,
             route_plan=route_plan,
         )
+        timings["retrieval"] = elapsed_ms(stage_started)
+        stage_started = perf_counter()
         ranked_candidates = self.memory_reranker.rank(
             candidates=retrieved_candidates,
             ranking_profile=route_plan.ranking_profile,
         )
+        timings["reranking"] = elapsed_ms(stage_started)
+        stage_started = perf_counter()
         context_budget = self.context_budget_allocator.allocate(
             route_plan=route_plan,
             ranked_candidates=ranked_candidates,
             system_prompt=self.system_prompt,
         )
+        timings["context_budget_allocation"] = elapsed_ms(stage_started)
         latest_user_message = {"role": "user", "content": content}
+        stage_started = perf_counter()
         trace_context_packet = self.trace_context_builder.build(
             system_prompt=self.system_prompt,
             latest_user_message=latest_user_message,
@@ -80,7 +94,9 @@ class CoordinatorAgent:
             context_budget=context_budget,
             route_plan=route_plan,
         )
+        timings["context_packet_building"] = elapsed_ms(stage_started)
 
+        stage_started = perf_counter()
         context = self.memory_agent.build_context(
             chat_id=chat_id,
             latest_user_message_id=user_message_id,
@@ -91,16 +107,21 @@ class CoordinatorAgent:
             context=context,
             latest_user_message=latest_user_message,
         )
+        timings["legacy_context_building"] = elapsed_ms(stage_started)
+        stage_started = perf_counter()
         context_comparison = self.context_comparator.compare(
             old_model_messages=model_messages,
             new_context_packet=trace_context_packet,
             latest_user_message=latest_user_message,
         )
+        timings["context_comparison"] = elapsed_ms(stage_started)
+        stage_started = perf_counter()
         prompt_assembly = context_packet_to_model_messages(
             packet=trace_context_packet,
             latest_user_message=latest_user_message,
             context_comparison=context_comparison.to_dict(),
         )
+        timings["context_packet_validation"] = elapsed_ms(stage_started)
         prompt_source = "context_packet"
         fallback_reason = None
         final_model_messages = prompt_assembly.messages
@@ -111,8 +132,11 @@ class CoordinatorAgent:
 
         errors: list[str] = []
         try:
+            stage_started = perf_counter()
             response = self.chat_agent.generate(final_model_messages)
+            timings["main_model_call"] = elapsed_ms(stage_started)
         except OpenAIError as error:
+            timings["main_model_call"] = elapsed_ms(stage_started)
             errors.append(str(error))
             response = (
                 "I could not reach the configured OpenAI-compatible model endpoint. "
@@ -120,17 +144,23 @@ class CoordinatorAgent:
                 f"Model error: {error}"
             )
 
+        stage_started = perf_counter()
         assistant_message_id = self.database.save_message(
             chat_id=chat_id,
             role="assistant",
             content=response,
         )
+        timings["save_assistant_message"] = elapsed_ms(stage_started)
         try:
+            stage_started = perf_counter()
             self.memory_agent.update_memory_if_needed(chat_id)
+            timings["update_memory_if_needed"] = elapsed_ms(stage_started)
         except OpenAIError as error:
+            timings["update_memory_if_needed"] = elapsed_ms(stage_started)
             errors.append(str(error))
             # Memory updates should not break the visible chat response. The next
             # successful turn can retry because messages remain unprocessed.
+        timings["total_turn"] = elapsed_ms(total_started)
 
         trace = WorkflowTrace(
             trace_id=trace_id,
@@ -146,6 +176,24 @@ class CoordinatorAgent:
                 "context_comparison": context_comparison.to_dict(),
                 "prompt_source": prompt_source,
                 "fallback_reason": fallback_reason,
+                "estimated_prompt_tokens": trace_context_packet.metadata.get(
+                    "estimated_prompt_tokens"
+                ),
+                "token_estimator": trace_context_packet.metadata.get("token_estimator"),
+                "context_limit": trace_context_packet.metadata.get("context_limit"),
+                "answer_reserve": trace_context_packet.metadata.get("answer_reserve"),
+                "safety_margin": trace_context_packet.metadata.get("safety_margin"),
+                "overflow_detected": trace_context_packet.metadata.get(
+                    "overflow_detected"
+                ),
+                "overflow_tokens": trace_context_packet.metadata.get("overflow_tokens"),
+                "dropped_candidate_ids": trace_context_packet.metadata.get(
+                    "dropped_candidate_ids"
+                ),
+                "dropped_candidate_reasons": trace_context_packet.metadata.get(
+                    "dropped_candidate_reasons"
+                ),
+                "timings_ms": timings,
             },
         )
         self._log_trace(trace)
@@ -179,6 +227,10 @@ class CoordinatorAgent:
             comparison_warnings = comparison.get("warnings", [])
         prompt_source = trace.metadata.get("prompt_source")
         fallback_reason = trace.metadata.get("fallback_reason")
+        overflow_detected = trace.metadata.get("overflow_detected")
+        overflow_tokens = trace.metadata.get("overflow_tokens")
+        estimated_prompt_tokens = trace.metadata.get("estimated_prompt_tokens")
+        token_estimator = trace.metadata.get("token_estimator")
         print(
             "workflow_trace "
             f"trace_id={trace.trace_id} "
@@ -189,8 +241,34 @@ class CoordinatorAgent:
             f"ranked_candidates={len(trace.ranked_candidates)} "
             f"context_profile={context_profile} "
             f"context_comparison_warnings={comparison_warnings} "
+            f"token_estimator={token_estimator} "
+            f"estimated_prompt_tokens={estimated_prompt_tokens} "
+            f"overflow_detected={overflow_detected} "
+            f"overflow_tokens={overflow_tokens} "
             f"prompt_source={prompt_source} "
             f"fallback_reason={fallback_reason} "
             f"termination_reason={trace.termination_reason} "
             f"recent_message_ids={recent_ids}"
         )
+        timings = trace.metadata.get("timings_ms", {})
+        if isinstance(timings, dict):
+            print(
+                "turn_timing "
+                f"trace_id={trace.trace_id} "
+                f"route_planning_ms={timings.get('route_planning')} "
+                f"save_user_message_ms={timings.get('save_user_message')} "
+                f"retrieval_ms={timings.get('retrieval')} "
+                f"reranking_ms={timings.get('reranking')} "
+                f"context_budget_allocation_ms={timings.get('context_budget_allocation')} "
+                f"context_packet_building_ms={timings.get('context_packet_building')} "
+                f"context_packet_validation_ms={timings.get('context_packet_validation')} "
+                f"main_model_call_ms={timings.get('main_model_call')} "
+                f"save_assistant_message_ms={timings.get('save_assistant_message')} "
+                f"update_memory_if_needed_ms={timings.get('update_memory_if_needed')} "
+                f"total_turn_ms={timings.get('total_turn')}"
+            )
+
+
+def elapsed_ms(started: float) -> float:
+    """Return elapsed milliseconds rounded for compact timing logs."""
+    return round((perf_counter() - started) * 1000, 2)

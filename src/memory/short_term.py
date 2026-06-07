@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+from time import perf_counter
 from typing import Any
 
 from src.database import Database, StoredMessage
@@ -102,18 +103,27 @@ class ShortTermMemory:
 
     def update_memory_if_needed(self, chat_id: str) -> bool:
         """Update structured memory from one old unsummarized batch if threshold is met."""
+        started = perf_counter()
         current_memory = load_memory_state(self.database.chat_memory_state(chat_id))
         messages = self.select_unprocessed_batch(chat_id)
         if memory_state_is_empty(current_memory) and len(messages) < self.memory_update_batch_size:
             messages = self.select_rebuild_batch(chat_id)
 
         if len(messages) < self.memory_update_batch_size:
+            print(
+                "memory_update_timing "
+                f"chat_id={chat_id} triggered=False "
+                f"eligible_messages={len(messages)} "
+                f"duration_ms={elapsed_ms(started)}"
+            )
             return False
 
+        extraction_started = perf_counter()
         result = self.structured_memory.update(
             existing_memory=current_memory,
             messages=messages,
         )
+        extraction_ms = elapsed_ms(extraction_started)
         if not result.accepted:
             logger.warning(
                 "structured memory update rejected chat_id=%s message_ids=%s reason=%s",
@@ -122,10 +132,24 @@ class ShortTermMemory:
                 result.rejection_reason or "unknown",
             )
             self.database.upsert_chat_memory_state(chat_id, dumps_memory_state(result.memory_state))
+            print(
+                "memory_update_timing "
+                f"chat_id={chat_id} triggered=True accepted=False "
+                f"message_ids={[message.id for message in messages]} "
+                f"extraction_ms={extraction_ms} "
+                f"duration_ms={elapsed_ms(started)}"
+            )
             return False
 
         self.database.upsert_chat_memory_state(chat_id, dumps_memory_state(result.memory_state))
         self.database.mark_messages_summarized([message.id for message in messages])
+        print(
+            "memory_update_timing "
+            f"chat_id={chat_id} triggered=True accepted=True "
+            f"message_ids={[message.id for message in messages]} "
+            f"extraction_ms={extraction_ms} "
+            f"duration_ms={elapsed_ms(started)}"
+        )
         return True
 
     def select_unprocessed_batch(self, chat_id: str) -> list[StoredMessage]:
@@ -143,3 +167,8 @@ class ShortTermMemory:
             raw_message_limit=self.raw_message_limit,
             batch_size=MEMORY_REBUILD_BATCH_SIZE,
         )
+
+
+def elapsed_ms(started: float) -> float:
+    """Return elapsed milliseconds rounded for compact timing logs."""
+    return round((perf_counter() - started) * 1000, 2)

@@ -46,7 +46,8 @@ class RoutePlannerPolicy:
         SourceRoutingPolicy(
             source="document_memory",
             enabled=False,
-            reason="Document memory and retrieval are not implemented yet.",
+            reason="Document memory is enabled only for document-like questions.",
+            limit=4,
         ),
     )
     ranking_profile: str = "none_current_order"
@@ -92,9 +93,13 @@ class RoutePlanner:
         sources = [
             SourcePlan(
                 source=source_policy.source,
-                enabled=source_policy.enabled,
-                reason=source_policy.reason,
-                query=analysis.normalized_query if source_policy.enabled else None,
+                enabled=source_enabled(source_policy, analysis),
+                reason=source_reason(source_policy, analysis),
+                query=(
+                    analysis.normalized_query
+                    if source_enabled(source_policy, analysis)
+                    else None
+                ),
                 limit=source_policy.limit,
             )
             for source_policy in (*self.policy.active_sources, *self.policy.future_sources)
@@ -103,7 +108,7 @@ class RoutePlanner:
             query=analysis.normalized_query,
             intent=analysis.intent,
             confidence=analysis.confidence,
-            requires_retrieval=False,
+            requires_retrieval=analysis.signals.asks_about_documents,
             sources=sources,
             ranking_profile=self.policy.ranking_profile,
             context_profile=self.policy.intent_context_profiles.get(
@@ -132,3 +137,23 @@ def signals_to_csv(analysis: QueryAnalysis) -> str:
         if enabled
     ]
     return ",".join(active)
+
+
+def source_enabled(
+    source_policy: SourceRoutingPolicy,
+    analysis: QueryAnalysis,
+) -> bool:
+    """Return whether a source should be enabled for this query."""
+    if source_policy.source == "document_memory":
+        return analysis.signals.asks_about_documents
+    return source_policy.enabled
+
+
+def source_reason(
+    source_policy: SourceRoutingPolicy,
+    analysis: QueryAnalysis,
+) -> str:
+    """Return a per-query reason for a source plan."""
+    if source_policy.source == "document_memory" and analysis.signals.asks_about_documents:
+        return "Document-like query detected; enabling keyword document retrieval."
+    return source_policy.reason

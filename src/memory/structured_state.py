@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import dataclass
+from time import perf_counter
 from typing import Any, Protocol
 
 from src.database import StoredMessage
@@ -421,6 +422,7 @@ class StructuredMemoryState:
         messages: list[StoredMessage],
     ) -> MemoryUpdateResult:
         """Ask the model for operations and apply accepted operations."""
+        started = perf_counter()
         normalized_memory = normalize_memory_state(existing_memory)
         user_messages = [message for message in messages if message.role == "user"]
         allowed_source_ids = {message.id for message in user_messages}
@@ -437,6 +439,7 @@ class StructuredMemoryState:
             ],
         }
 
+        llm_started = perf_counter()
         raw_output = self.model.chat(
             [
                 {"role": "system", "content": MEMORY_UPDATE_SYSTEM_PROMPT},
@@ -447,28 +450,55 @@ class StructuredMemoryState:
             ],
             temperature=0.0,
         ).strip()
+        llm_ms = elapsed_ms(llm_started)
+        print(
+            "structured_memory_extraction_timing "
+            f"user_messages={len(user_messages)} "
+            f"batch_message_ids={[message.id for message in messages]} "
+            f"llm_call_ms={llm_ms}"
+        )
 
+        parse_started = perf_counter()
         operations = parse_memory_operations(raw_output, allowed_source_ids, source_text_by_id)
+        parse_ms = elapsed_ms(parse_started)
         if operations is None:
+            print(
+                "structured_memory_update_timing "
+                f"accepted=False reason=model_output_invalid_json_or_schema "
+                f"parse_ms={parse_ms} total_ms={elapsed_ms(started)}"
+            )
             return MemoryUpdateResult(
                 memory_state=normalized_memory,
                 accepted=False,
                 rejection_reason="model_output_invalid_json_or_schema",
             )
 
+        apply_started = perf_counter()
         updated_memory = apply_memory_operations(normalized_memory, operations)
+        apply_ms = elapsed_ms(apply_started)
         if valid_but_useless_correction_batch(
             before_memory=normalized_memory,
             after_memory=updated_memory,
             operations=operations,
             messages=user_messages,
         ):
+            print(
+                "structured_memory_update_timing "
+                f"accepted=False reason=correction_batch_without_active_replacement "
+                f"operations={len(operations)} parse_ms={parse_ms} "
+                f"apply_ms={apply_ms} total_ms={elapsed_ms(started)}"
+            )
             return MemoryUpdateResult(
                 memory_state=normalized_memory,
                 accepted=False,
                 rejection_reason="correction_batch_without_active_replacement",
             )
 
+        print(
+            "structured_memory_update_timing "
+            f"accepted=True operations={len(operations)} "
+            f"parse_ms={parse_ms} apply_ms={apply_ms} total_ms={elapsed_ms(started)}"
+        )
         return MemoryUpdateResult(memory_state=updated_memory, accepted=True)
 
 
@@ -654,3 +684,8 @@ def merge_source_ids(existing: list[int], new: list[int]) -> list[int]:
         if source_id not in merged:
             merged.append(source_id)
     return merged
+
+
+def elapsed_ms(started: float) -> float:
+    """Return elapsed milliseconds rounded for compact timing logs."""
+    return round((perf_counter() - started) * 1000, 2)
