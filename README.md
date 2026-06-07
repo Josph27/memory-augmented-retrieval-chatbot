@@ -11,6 +11,8 @@ The app uses Chainlit for the browser chat UI, Python for backend logic, SQLite 
 - Local/free model defaults for Ollama-compatible endpoints
 - SQLite tables for `chats`, `messages`, and `chat_memory_state`
 - Short-term memory: structured JSON memory state plus recent raw messages
+- Document memory: plain-text chunks with keyword retrieval by default
+- Optional semantic document retrieval interfaces for embeddings/vector stores
 - Production-shaped prompt assembly through `ContextPacket`, with legacy
   `ShortTermMemory` prompt fallback
 - Dockerfile with persistent `data/` mount support
@@ -54,10 +56,11 @@ Current chat memory is built from two parts:
 Raw messages remain the source of truth. The JSON memory state is a derived cache that can be regenerated later from `messages` if needed.
 
 Final chat prompts are assembled through the production-shaped `ContextPacket`
-path. The current active sources are `recent_messages` and `structured_memory`.
-Future chunk, previous-chat, and document sources are still disabled/stubbed. If
-the `ContextPacket` is invalid, the coordinator falls back to the legacy
-`ShortTermMemory` prompt messages.
+path. The current active sources are `recent_messages`, `structured_memory`, and
+`document_memory` for document-like queries. Current-chat chunks and
+previous-chat memory are still disabled/stubbed. If the `ContextPacket` is
+invalid, the coordinator falls back to the legacy `ShortTermMemory` prompt
+messages.
 
 The current schema for `chat_memory_state.memory_json` stores typed memory records:
 
@@ -84,6 +87,41 @@ Supported memory categories are `user_facts`, `project_facts`, `decisions`, `cor
 The MVP policy keeps the latest `RAW_MESSAGE_LIMIT` messages raw. Older unprocessed messages update structured memory only when at least `MEMORY_UPDATE_BATCH_SIZE` eligible messages exist. After a batch is processed, those message rows are marked with `summarized = 1`, so they are not processed again. The column name is historical; it now means "processed into the derived memory cache."
 
 This is intentionally based on fixed message counts for now. The memory module accepts a future `token_budget` parameter so the selector can later be replaced or extended with token-budget-based context selection.
+
+## Document Memory
+
+Document memory currently supports plain text only:
+
+- `DocumentIngestionService.ingest_text_document(...)`
+- paragraph-preserving chunking
+- SQLite `documents` and `document_chunks` tables
+- keyword retrieval as the default document retrieval mode
+
+Document-like questions enable `document_memory` and retrieved chunks flow
+through:
+
+```text
+DocumentRetriever
+-> RetrieverDispatcher
+-> MemoryReranker
+-> ContextBudgetAllocator
+-> ContextBuilder
+-> ContextPacket
+```
+
+Optional semantic retrieval is available behind abstractions:
+
+- `DOCUMENT_RETRIEVAL_MODE=keyword|vector|hybrid`
+- `EMBEDDING_MODEL_NAME=sentence-transformers/all-MiniLM-L6-v2`
+- `DOCUMENT_TOP_K=4`
+- `VECTOR_BACKEND=sqlite_json|sqlite_vec|in_memory`
+
+Defaults keep `DOCUMENT_RETRIEVAL_MODE=keyword`, so app startup does not require
+`sentence-transformers`, internet access, or `sqlite-vec`. Vector and hybrid
+modes require document chunks to be indexed first with
+`DocumentEmbeddingIndexer`. The `sqlite_json` backend stores vectors in normal
+SQLite JSON as a fallback; `sqlite-vec` is the intended future SQLite-native
+backend when available.
 
 ## Manual Memory Verification
 

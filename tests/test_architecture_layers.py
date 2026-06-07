@@ -67,8 +67,8 @@ def test_route_planner_profiles_and_sources() -> None:
 
     enabled = {source.source for source in document.sources if source.enabled}
     disabled = {source.source for source in document.sources if not source.enabled}
-    assert enabled == {"recent_messages", "structured_memory"}
-    assert {"current_chat_chunks", "previous_chat_memory", "document_memory"} <= disabled
+    assert enabled == {"recent_messages", "structured_memory", "document_memory"}
+    assert {"current_chat_chunks", "previous_chat_memory"} <= disabled
 
 
 def test_retriever_dispatcher_calls_only_enabled_retrievers() -> None:
@@ -213,7 +213,7 @@ def test_context_budget_allocator_profiles_and_disabled_sources() -> None:
         system_prompt_tokens=50,
     )
     assert document_budget.metadata["context_profile"] == "document_question"
-    assert document_budget.source_token_budgets.get("document_memory", 0) == 0
+    assert document_budget.source_token_budgets.get("document_memory", 0) > 0
 
     mixed_route = RoutePlan(
         query="mixed",
@@ -258,6 +258,13 @@ def test_coordinator_trace_contains_all_trace_only_layers(tmp_path: Path) -> Non
     assert result.trace.context_budget is not None
     assert result.trace.termination_reason == "response_generated_and_messages_saved"
     assert result.trace.context_packet is not None
+    assert result.trace.metadata["prompt_source"] == "context_packet"
+    assert result.trace.metadata["token_estimator"] == "approximate"
+    assert result.trace.metadata["estimated_prompt_tokens"] is not None
+    assert result.trace.metadata["context_limit"] is not None
+    assert result.trace.metadata["answer_reserve"] is not None
+    assert result.trace.metadata["safety_margin"] is not None
+    assert result.trace.metadata["overflow_detected"] is False
     assert result.trace.context_packet.metadata["trace_only"] is True
     assert result.trace.context_packet.budget == result.trace.context_budget
     assert result.trace.context_packet.model_messages[-1] == {
