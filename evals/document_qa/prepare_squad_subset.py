@@ -7,6 +7,7 @@ from typing import Any
 
 
 DEFAULT_OUTPUT = Path(__file__).parent / "datasets" / "squad_subset.jsonl"
+SQUAD_DATASET_IDS = ("rajpurkar/squad", "squad")
 
 
 def main() -> int:
@@ -28,8 +29,11 @@ def main() -> int:
 
     try:
         dataset = load_squad_validation()
-    except Exception:
-        print("Could not prepare SQuAD subset. Install datasets and ensure internet access.")
+    except Exception as error:
+        print(
+            "Could not prepare SQuAD subset. Install datasets and ensure internet access. "
+            f"Last error: {type(error).__name__}: {error}"
+        )
         return 1
 
     rows = []
@@ -52,7 +56,20 @@ def load_squad_validation() -> Any:
         from datasets import load_dataset
     except ImportError as error:
         raise RuntimeError("datasets package is not installed") from error
-    return load_dataset("squad", split="validation")
+
+    last_error: Exception | None = None
+    for dataset_id in SQUAD_DATASET_IDS:
+        try:
+            return load_dataset(dataset_id, split="validation")
+        except Exception as error:
+            last_error = error
+    if last_error is not None:
+        raise RuntimeError(
+            "failed to load SQuAD validation split from "
+            f"{', '.join(SQUAD_DATASET_IDS)}; last error was "
+            f"{type(last_error).__name__}: {last_error}"
+        ) from last_error
+    raise RuntimeError("no SQuAD dataset IDs configured")
 
 
 def squad_example_to_row(example: dict[str, Any], index: int) -> dict[str, str]:

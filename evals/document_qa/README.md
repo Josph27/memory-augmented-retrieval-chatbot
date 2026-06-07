@@ -3,9 +3,10 @@
 This directory contains a lightweight RAGAS-compatible document QA evaluation
 scaffold.
 
-It does not evaluate the real chatbot document retriever yet. The project does
-not currently implement document ingestion, document chunks, embeddings, vector
-storage, or document retrieval.
+It can run against document-memory retrieval modes: plain-text keyword
+retrieval by default, plus optional vector and hybrid retrieval when embeddings
+and a vector store are available. The project still does not implement PDF
+parsing, RAGAS metrics, or generated-answer evaluation.
 
 ## Current Purpose
 
@@ -17,10 +18,9 @@ The scaffold defines:
 - a RAGAS-style row shape with `question`, `contexts`, `answer`, and
   `ground_truth`
 
-For now, the runner uses `document_text` or `supporting_evidence` as placeholder
-retrieved context and uses `expected_answer` as the oracle placeholder answer.
-This verifies eval plumbing only; it does not measure real retrieval or model
-generation quality.
+For now, the runner uses `expected_answer` as the oracle placeholder answer.
+Generation quality is still future work. Retrieval can be tested with
+`keyword_retrieval`, `vector_retrieval`, or `hybrid_retrieval`.
 
 ## Dataset Format
 
@@ -85,11 +85,92 @@ Optional placeholder context mode:
 uv run python evals/document_qa/run_document_qa_eval.py --context-mode supporting_evidence
 ```
 
+Run the real baseline document retriever over temporary SQLite chunks:
+
+```bash
+uv run python evals/document_qa/run_document_qa_eval.py --context-mode keyword_retrieval
+```
+
+By default, retrieval evals use `--retrieval-scope isolated`. That means each
+case ingests only its own document before asking its question. This is useful as
+a smoke test for ingestion/retriever plumbing, but it is not a real retrieval
+benchmark because there are no distractor documents.
+
+Use corpus scope to retrieve from all dataset documents in one temporary corpus:
+
+```bash
+uv run python evals/document_qa/run_document_qa_eval.py \
+  --context-mode keyword_retrieval \
+  --retrieval-scope corpus \
+  --top-k 5
+```
+
+Optional semantic modes:
+
+```bash
+uv run python evals/document_qa/run_document_qa_eval.py --context-mode vector_retrieval
+uv run python evals/document_qa/run_document_qa_eval.py --context-mode hybrid_retrieval
+```
+
+If `sentence-transformers` or the embedding model is unavailable, vector and
+hybrid eval modes skip with a clear message. Keyword mode does not require
+embeddings, internet, sqlite-vec, or native vector extensions.
+
+## Compare Retrieval Modes
+
+Use the comparison runner to evaluate the same dataset across retrieval modes
+side by side:
+
+```bash
+uv run python evals/document_qa/compare_retrieval_modes.py \
+  --dataset evals/document_qa/datasets/squad_style_sample.jsonl \
+  --retrieval-scope corpus \
+  --top-k 5
+```
+
+The local sample dataset is the offline smoke-test dataset. For a more realistic
+comparison, first prepare a SQuAD subset:
+
+```bash
+uv run python evals/document_qa/prepare_squad_subset.py --limit 50
+uv run python evals/document_qa/compare_retrieval_modes.py \
+  --dataset evals/document_qa/datasets/squad_subset.jsonl \
+  --retrieval-scope corpus \
+  --top-k 5
+```
+
+You can choose modes and retrieval depth:
+
+```bash
+uv run python evals/document_qa/compare_retrieval_modes.py \
+  --modes keyword_retrieval vector_retrieval hybrid_retrieval \
+  --retrieval-scope corpus \
+  --top-k 4
+```
+
+The comparison table reports retrieval hit rates side by side. Keyword retrieval
+is the default baseline. Vector and hybrid modes require embedding/indexing
+availability and may be marked as skipped on machines without the optional
+backend.
+
+Corpus mode is the actual retrieval benchmark mode because every question is
+retrieved against a shared corpus containing distractor documents. The primary
+metrics are `context_answer_anchor_hit@k` and `context_expected_answer_hit@k`.
+`context_evidence_hit@k` is also reported, but it can be strict for SQuAD
+because supporting evidence is currently the full paragraph.
+
 ## Future Use
 
-After document chunks and retrieval are implemented, retrieved chunks should
-replace the placeholder contexts. Later, RAGAS can consume the generated rows
-with:
+The retrieval modes report whether retrieved contexts contain the answer anchor,
+expected answer, and supporting evidence. Keyword mode uses term overlap.
+Vector/hybrid modes index temporary chunk embeddings first when the optional
+backend is available.
+
+The runner still uses oracle placeholder answers, so answer-anchor and expected
+answer match rates are not generated-answer quality metrics yet. Retrieval hit
+rate is the meaningful metric at this stage.
+
+Later, RAGAS can consume the generated rows with:
 
 - `question`
 - `contexts`
@@ -97,3 +178,10 @@ with:
 - `ground_truth`
 
 No RAGAS dependency is installed for this scaffold.
+
+Future work:
+
+- production sqlite-vec virtual table wiring
+- RAGAS metrics
+- PDF and richer document parsing
+- real generated-answer evaluation
