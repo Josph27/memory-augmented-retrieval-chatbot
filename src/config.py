@@ -23,6 +23,9 @@ class AppConfig:
     embedding_model_name: str
     document_top_k: int
     vector_backend: str
+    document_chunker: str
+    document_chunk_size: int
+    document_chunk_overlap: int
 
     @classmethod
     def from_env(cls) -> "AppConfig":
@@ -48,4 +51,7 @@ class AppConfig:
             ),
             document_top_k=int(os.getenv("DOCUMENT_TOP_K", "4")),
             vector_backend=os.getenv("VECTOR_BACKEND", "sqlite_json"),
+            document_chunker=os.getenv("DOCUMENT_CHUNKER", "custom"),
+            document_chunk_size=int(os.getenv("DOCUMENT_CHUNK_SIZE", "1000")),
+            document_chunk_overlap=int(os.getenv("DOCUMENT_CHUNK_OVERLAP", "150")),
         )

@@ -1,12 +1,21 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
+
+import pytest
 
 from src.context.context_budget_allocator import ContextBudgetAllocator
 from src.context.context_builder import ContextBuilder
 from src.core.contracts import SourcePlan
 from src.database import Database
 from src.documents.ingestion import DocumentIngestionService, split_text_into_chunks
+from src.documents.splitters import (
+    ChunkingConfig,
+    LangChainRecursiveSplitter,
+    LangChainSplitterUnavailable,
+    split_document_text,
+)
 from src.retrieval.document_retriever import DocumentRetriever
 from src.retrieval.retriever_dispatcher import RetrieverDispatcher
 from src.retrieval.reranker import MemoryReranker
@@ -21,6 +30,55 @@ def test_split_text_into_chunks_preserves_paragraphs() -> None:
     assert len(chunks) == 2
     assert chunks[0] == "First paragraph about SQLite."
     assert chunks[1] == "Second paragraph about Chainlit."
+
+
+def test_custom_splitter_returns_chunk_metadata() -> None:
+    chunks = split_document_text(
+        "First paragraph about SQLite.\n\nSecond paragraph about Chainlit.",
+        ChunkingConfig(chunker="custom", target_chars=35, max_chars=100),
+    )
+
+    assert len(chunks) == 2
+    assert chunks[0].text == "First paragraph about SQLite."
+    assert chunks[0].metadata["splitter_name"] == "custom_paragraph"
+    assert chunks[0].metadata["chunk_size"] == 35
+    assert chunks[0].metadata["chunk_overlap"] == 0
+    assert chunks[0].metadata["fallback_used"] is False
+    assert chunks[0].metadata["start_char"] == 0
+
+
+def test_langchain_splitter_adapter_works_when_installed() -> None:
+    pytest.importorskip("langchain_text_splitters")
+    chunks = LangChainRecursiveSplitter(
+        ChunkingConfig(
+            chunker="langchain_recursive",
+            chunk_size=30,
+            chunk_overlap=10,
+        )
+    ).split("alpha beta gamma delta epsilon zeta eta theta iota kappa")
+
+    assert len(chunks) > 1
+    assert chunks[0].metadata["splitter_name"] == "langchain_recursive"
+    assert chunks[0].metadata["chunk_size"] == 30
+    assert chunks[0].metadata["chunk_overlap"] == 10
+    assert chunks[0].metadata["fallback_used"] is False
+
+
+def test_langchain_splitter_falls_back_to_custom_when_unavailable(monkeypatch) -> None:
+    def unavailable() -> type:
+        raise LangChainSplitterUnavailable("not installed")
+
+    monkeypatch.setattr("src.documents.splitters.import_recursive_character_splitter", unavailable)
+
+    chunks = split_document_text(
+        "First paragraph about SQLite.\n\nSecond paragraph about Chainlit.",
+        ChunkingConfig(chunker="langchain_recursive", target_chars=35, max_chars=100),
+    )
+
+    assert len(chunks) == 2
+    assert chunks[0].metadata["splitter_name"] == "custom_paragraph"
+    assert chunks[0].metadata["fallback_used"] is True
+    assert chunks[0].metadata["requested_splitter"] == "langchain_recursive"
 
 
 def test_document_ingestion_stores_document_and_chunks(tmp_path: Path) -> None:
@@ -41,6 +99,12 @@ def test_document_ingestion_stores_document_and_chunks(tmp_path: Path) -> None:
     assert chunks[0].document_id == result.document_id
     assert chunks[0].document_title == "Project Notes"
     assert chunks[0].text == "SQLite stores rows."
+    metadata = json.loads(chunks[0].metadata_json)
+    assert metadata["title"] == "Project Notes"
+    assert metadata["source"] == "test"
+    assert metadata["splitter_name"] == "custom_paragraph"
+    assert metadata["chunk_size"] == 40
+    assert metadata["fallback_used"] is False
 
 
 def test_document_retriever_returns_relevant_chunk_with_metadata(tmp_path: Path) -> None:
