@@ -136,7 +136,11 @@ def test_document_retriever_returns_relevant_chunk_with_metadata(tmp_path: Path)
     ].metadata["matched_terms"]
 
 
-def test_document_retrieval_flows_through_dispatcher_when_enabled(tmp_path: Path) -> None:
+def test_document_retrieval_flows_through_dispatcher_when_enabled(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("DOCUMENT_RETRIEVAL_MODE", "keyword")
     database = Database(tmp_path / "chatbot.db")
     DocumentIngestionService(database).ingest_text_document(
         title="Model Notes",
@@ -154,7 +158,11 @@ def test_document_retrieval_flows_through_dispatcher_when_enabled(tmp_path: Path
     assert "qwen2.5:3b" in document_candidates[0].content
 
 
-def test_document_candidates_reach_context_packet_document_section(tmp_path: Path) -> None:
+def test_document_candidates_reach_context_packet_document_section(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("DOCUMENT_RETRIEVAL_MODE", "keyword")
     database = Database(tmp_path / "chatbot.db")
     DocumentIngestionService(database).ingest_text_document(
         title="Context Notes",

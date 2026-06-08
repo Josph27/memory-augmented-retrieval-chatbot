@@ -3,11 +3,10 @@
 This directory contains a lightweight RAGAS-compatible document QA evaluation
 scaffold.
 
-It can run against document-memory retrieval modes: plain-text keyword
-retrieval by default, plus optional vector and hybrid retrieval when embeddings
-and a vector store are available. It also supports optional model-generated
-answers for a basic end-to-end RAG check. The project still does not implement
-PDF parsing or RAGAS metrics.
+It can run against document-memory retrieval modes: LangChain-Chroma by default,
+plus legacy keyword/vector/hybrid modes for comparison. It also supports
+optional model-generated answers for a basic end-to-end RAG check. The project
+still does not implement PDF parsing or RAGAS metrics.
 
 Document ingestion uses a splitter abstraction. The stable default is the custom
 paragraph-preserving splitter. `DOCUMENT_CHUNKER=langchain_recursive` enables
@@ -30,7 +29,8 @@ This keeps the eval fast and makes retrieval metrics the meaningful signal.
 With `--answer-mode model`, the runner sends retrieved contexts to the
 configured chat model and checks whether the generated answer contains the
 expected answer/anchor strings. Retrieval can be tested with
-`keyword_retrieval`, `vector_retrieval`, or `hybrid_retrieval`.
+`langchain_chroma`, `keyword_retrieval`, `vector_retrieval`, or
+`hybrid_retrieval`.
 
 ## Dataset Format
 
@@ -101,6 +101,15 @@ Run the real baseline document retriever over temporary SQLite chunks:
 uv run python evals/document_qa/run_document_qa_eval.py --context-mode keyword_retrieval
 ```
 
+Run the preferred LangChain-Chroma retriever:
+
+```bash
+uv run python evals/document_qa/run_document_qa_eval.py \
+  --context-mode langchain_chroma \
+  --retrieval-scope corpus \
+  --top-k 3
+```
+
 By default this uses oracle answer mode:
 
 ```bash
@@ -145,16 +154,18 @@ uv run python evals/document_qa/run_document_qa_eval.py \
   --top-k 5
 ```
 
-Optional semantic modes:
+Retrieval modes:
 
 ```bash
+uv run python evals/document_qa/run_document_qa_eval.py --context-mode langchain_chroma
 uv run python evals/document_qa/run_document_qa_eval.py --context-mode vector_retrieval
 uv run python evals/document_qa/run_document_qa_eval.py --context-mode hybrid_retrieval
 ```
 
-If `sentence-transformers` or the embedding model is unavailable, vector and
-hybrid eval modes skip with a clear message. Keyword mode does not require
-embeddings, internet, sqlite-vec, or native vector extensions.
+If LangChain-Chroma dependencies, `sentence-transformers`, or the embedding
+model are unavailable, `langchain_chroma`, vector, and hybrid eval modes skip
+with a clear message. Keyword mode remains the legacy deterministic fallback and
+does not require embeddings, internet, sqlite-vec, or native vector extensions.
 
 ## Compare Retrieval Modes
 
@@ -183,7 +194,7 @@ You can choose modes and retrieval depth:
 
 ```bash
 uv run python evals/document_qa/compare_retrieval_modes.py \
-  --modes keyword_retrieval vector_retrieval hybrid_retrieval \
+  --modes langchain_chroma keyword_retrieval vector_retrieval hybrid_retrieval \
   --retrieval-scope corpus \
   --top-k 4
 ```
@@ -193,7 +204,7 @@ Comparison mode also supports generated answers:
 ```bash
 uv run python evals/document_qa/compare_retrieval_modes.py \
   --dataset evals/document_qa/datasets/squad_subset.jsonl \
-  --modes keyword_retrieval vector_retrieval hybrid_retrieval \
+  --modes langchain_chroma keyword_retrieval vector_retrieval hybrid_retrieval \
   --retrieval-scope corpus \
   --top-k 3 \
   --vector-backend sqlite_vec \
@@ -202,10 +213,68 @@ uv run python evals/document_qa/compare_retrieval_modes.py \
 ```
 
 The comparison table reports retrieval hit rates and answer string-match rates
-side by side. Keyword retrieval is the default baseline. Vector and hybrid modes
-require embedding/indexing availability and may be marked as skipped on machines
-without the optional backend. Model answer mode may also be skipped if the
-configured model endpoint is unavailable.
+side by side. LangChain-Chroma is the preferred document RAG backend. Keyword,
+vector, and hybrid modes are legacy custom retrieval paths kept for fallback and
+comparison. Modes requiring embedding/indexing availability may be marked as
+skipped on machines without the optional backend. Model answer mode may also be
+skipped if the configured model endpoint is unavailable.
+
+## LangChain Retrieval Baseline
+
+`langchain_baseline.py` is an eval-only baseline for comparing the custom
+document retriever against a library-backed RAG stack. It does not change the
+production pipeline. The app still uses the custom
+`RetrieverDispatcher -> MemoryReranker -> ContextBudgetAllocator ->
+ContextBuilder -> ContextPacket` path.
+
+The baseline loads the same document QA JSONL dataset, ingests all unique
+`document_text` values into one corpus, splits them with LangChain's
+`RecursiveCharacterTextSplitter`, retrieves top-k chunks through a LangChain
+vector store, and reports the same retrieval metrics:
+
+- `ctx_evidence`
+- `ctx_anchor`
+- `ctx_expected`
+- failed case IDs
+
+Run it with:
+
+```bash
+uv run python evals/document_qa/langchain_baseline.py \
+  --dataset evals/document_qa/datasets/squad_subset.jsonl \
+  --top-k 1
+```
+
+Choose a vector store:
+
+```bash
+uv run python evals/document_qa/langchain_baseline.py \
+  --dataset evals/document_qa/datasets/squad_subset.jsonl \
+  --top-k 3 \
+  --vectorstore faiss
+```
+
+or:
+
+```bash
+uv run python evals/document_qa/langchain_baseline.py \
+  --dataset evals/document_qa/datasets/squad_subset.jsonl \
+  --top-k 3 \
+  --vectorstore chroma
+```
+
+Optional dependencies depend on the backend:
+
+```bash
+uv add langchain-community faiss-cpu
+uv add langchain-chroma chromadb
+```
+
+The baseline uses `sentence-transformers/all-MiniLM-L6-v2` through a small
+LangChain embeddings adapter. If optional LangChain/vector-store dependencies
+are unavailable, the script exits gracefully and prints install guidance. Normal
+pytest does not require LangChain vector stores, Chroma, FAISS, internet, or
+model downloads.
 
 ## RAGAS-Compatible Export
 
@@ -278,7 +347,7 @@ are allowed into the retrieved context:
 ```bash
 uv run python evals/document_qa/compare_topk_curves.py \
   --dataset evals/document_qa/datasets/squad_subset.jsonl \
-  --modes keyword_retrieval vector_retrieval hybrid_retrieval \
+  --modes langchain_chroma keyword_retrieval vector_retrieval hybrid_retrieval \
   --retrieval-scope corpus \
   --top-k-values 1 3 5 10 \
   --vector-backend sqlite_vec
@@ -305,9 +374,10 @@ contexts, not whether the model writes a good answer.
 ## Future Use
 
 The retrieval modes report whether retrieved contexts contain the answer anchor,
-expected answer, and supporting evidence. Keyword mode uses term overlap.
-Vector/hybrid modes index temporary chunk embeddings first when the optional
-backend is available.
+expected answer, and supporting evidence. LangChain-Chroma uses LangChain
+splitting, embeddings, Chroma indexing, and LangChain retrieval. Keyword mode
+uses legacy term overlap. Legacy vector/hybrid modes index temporary chunk
+embeddings first when the optional backend is available.
 
 In oracle mode, answer-anchor and expected-answer match rates are not
 generated-answer quality metrics. Retrieval hit rate is the meaningful metric in

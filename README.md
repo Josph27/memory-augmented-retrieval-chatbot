@@ -11,7 +11,8 @@ The app uses Chainlit for the browser chat UI, Python for backend logic, SQLite 
 - Local/free model defaults for Ollama-compatible endpoints
 - SQLite tables for `chats`, `messages`, and `chat_memory_state`
 - Short-term memory: structured JSON memory state plus recent raw messages
-- Document memory: plain-text chunks with keyword retrieval by default
+- Document memory: LangChain-Chroma retrieval by default, with legacy custom
+  keyword/vector/hybrid retrieval fallback
 - Optional semantic document retrieval interfaces for embeddings/vector stores
 - Production-shaped prompt assembly through `ContextPacket`, with legacy
   `ShortTermMemory` prompt fallback
@@ -95,7 +96,8 @@ Document memory currently supports plain text only:
 - `DocumentIngestionService.ingest_text_document(...)`
 - splitter abstraction with custom paragraph-preserving chunking by default
 - SQLite `documents` and `document_chunks` tables
-- keyword retrieval as the default document retrieval mode
+- LangChain-Chroma as the preferred document retrieval mode
+- legacy custom keyword/vector/hybrid retrieval remains available as fallback
 
 Document-like questions enable `document_memory` and retrieved chunks flow
 through:
@@ -114,21 +116,26 @@ Optional semantic retrieval is available behind abstractions:
 - `DOCUMENT_CHUNKER=custom|langchain_recursive`
 - `DOCUMENT_CHUNK_SIZE=1000`
 - `DOCUMENT_CHUNK_OVERLAP=150`
-- `DOCUMENT_RETRIEVAL_MODE=keyword|vector|hybrid`
+- `DOCUMENT_RETRIEVAL_MODE=langchain_chroma|keyword|vector|hybrid`
+- `LANGCHAIN_CHROMA_PERSIST_DIR=data/chroma`
+- `LANGCHAIN_CHUNK_SIZE=1000`
+- `LANGCHAIN_CHUNK_OVERLAP=150`
 - `EMBEDDING_MODEL_NAME=sentence-transformers/all-MiniLM-L6-v2`
 - `DOCUMENT_TOP_K=4`
 - `VECTOR_BACKEND=sqlite_json|sqlite_vec|in_memory`
 
-Defaults keep `DOCUMENT_CHUNKER=custom` and `DOCUMENT_RETRIEVAL_MODE=keyword`,
-so app startup does not require LangChain, `sentence-transformers`, internet
-access, or `sqlite-vec`. `DOCUMENT_CHUNKER=langchain_recursive` uses
+Defaults keep `DOCUMENT_RETRIEVAL_MODE=langchain_chroma` so document RAG uses
+LangChain's Chroma integration when dependencies and the embedding model are
+available. If LangChain-Chroma is unavailable, document retrieval falls back to
+the legacy custom keyword retriever with a clear warning. `DOCUMENT_CHUNKER=custom`
+remains available for SQLite chunk storage. `DOCUMENT_CHUNKER=langchain_recursive` uses
 LangChain's `RecursiveCharacterTextSplitter` when `langchain-text-splitters`
 or LangChain is installed; if unavailable, ingestion falls back to the custom
 paragraph splitter and records fallback metadata on chunks. Vector and hybrid
 modes require document chunks to be indexed first with
 `DocumentEmbeddingIndexer`. The `sqlite_json` backend stores vectors in normal
-SQLite JSON as a fallback; `sqlite-vec` is the intended future SQLite-native
-backend when available.
+SQLite JSON as a legacy fallback; `sqlite-vec` remains available for the legacy
+custom semantic path.
 
 ## Manual Memory Verification
 

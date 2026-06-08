@@ -15,6 +15,7 @@ from evals.document_qa.run_document_qa_eval import (
     build_eval_resources,
     create_vector_store,
     evaluate_case,
+    retrieval_mode_for_context,
 )
 from src.database import Database
 from src.vectorstores.in_memory_store import InMemoryVectorStore
@@ -168,6 +169,10 @@ def test_model_answer_mode_uses_answer_generator() -> None:
     assert result.model_name == "fake-answer-model"
     assert result.answer_anchor_match
     assert result.expected_answer_match
+
+
+def test_eval_mode_maps_langchain_chroma_context() -> None:
+    assert retrieval_mode_for_context("langchain_chroma") == "langchain_chroma"
 
 
 def test_corpus_scope_retrieves_relevant_document_with_distractors() -> None:

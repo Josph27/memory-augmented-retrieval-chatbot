@@ -169,6 +169,8 @@ def topk_result_from_comparison(
 
 def backend_for_mode(mode: str, backend: str) -> str:
     """Return the vector backend label for table output."""
+    if mode == "langchain_chroma":
+        return "chroma"
     if mode in {"vector_retrieval", "hybrid_retrieval"}:
         return backend
     return "-"

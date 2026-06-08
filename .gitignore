@@ -102,8 +102,10 @@ ipython_config.py
 .uv-cache/
 .chainlit/translations/
 data/memories.json
+data/chroma/
 data/*.db
 data/*.db-*
+evals/document_qa/outputs/
 .env
 
 # poetry

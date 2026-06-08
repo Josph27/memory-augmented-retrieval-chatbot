@@ -33,7 +33,12 @@ except ImportError:
     )
 
 
-DEFAULT_MODES = ("keyword_retrieval", "vector_retrieval", "hybrid_retrieval")
+DEFAULT_MODES = (
+    "langchain_chroma",
+    "keyword_retrieval",
+    "vector_retrieval",
+    "hybrid_retrieval",
+)
 
 
 @dataclass(frozen=True)

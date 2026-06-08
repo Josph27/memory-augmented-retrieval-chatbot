@@ -40,7 +40,12 @@ except ImportError:
 
 
 DEFAULT_DATASET = Path(__file__).parent / "datasets" / "squad_style_sample.jsonl"
-RETRIEVAL_CONTEXT_MODES = {"keyword_retrieval", "vector_retrieval", "hybrid_retrieval"}
+RETRIEVAL_CONTEXT_MODES = {
+    "keyword_retrieval",
+    "vector_retrieval",
+    "hybrid_retrieval",
+    "langchain_chroma",
+}
 VECTOR_BACKEND_CHOICES = ("sqlite_json", "sqlite_vec", "in_memory")
 ANSWER_MODE_CHOICES = ("oracle", "model")
 
@@ -69,6 +74,7 @@ class EvalResources:
     embedder: Any | None = None
     corpus_database: Any | None = None
     corpus_vector_store: Any | None = None
+    langchain_retriever: Any | None = None
     temp_directory: Any | None = None
     vector_backend: str | None = None
     answer_generator: AnswerGenerator | None = None
@@ -93,6 +99,7 @@ def main() -> None:
             "keyword_retrieval",
             "vector_retrieval",
             "hybrid_retrieval",
+            "langchain_chroma",
         ),
         default="document_text",
         help="Placeholder context source until real retrieval exists.",
@@ -342,6 +349,9 @@ def build_eval_resources(
             )
             raise RetrievalModeUnavailable(msg) from error
 
+    if context_mode == "langchain_chroma":
+        ensure_repo_root_on_path()
+
     if retrieval_scope != "corpus" or context_mode not in RETRIEVAL_CONTEXT_MODES:
         return EvalResources(
             embedder=embedder,
@@ -379,6 +389,10 @@ def build_corpus_resources(
     from src.database import Database
     from src.documents.embedding_indexer import DocumentEmbeddingIndexer
     from src.documents.ingestion import DocumentIngestionService
+    from src.retrieval.langchain_chroma_retriever import (
+        LangChainChromaRetriever,
+        LangChainChromaUnavailable,
+    )
 
     temp_directory = TemporaryDirectory()
     database = Database(Path(temp_directory.name) / "document_eval_corpus.db")
@@ -399,6 +413,7 @@ def build_corpus_resources(
         document_ids.append(result.document_id)
 
     vector_store = None
+    langchain_retriever = None
     if context_mode in {"vector_retrieval", "hybrid_retrieval"}:
         if embedder is None:
             raise RetrievalModeUnavailable("Corpus vector retrieval requires an embedder.")
@@ -410,11 +425,35 @@ def build_corpus_resources(
                 embedder=embedder,
                 vector_store=vector_store,
             )
+    if context_mode == "langchain_chroma":
+        try:
+            langchain_retriever = LangChainChromaRetriever(
+                persist_dir=Path(temp_directory.name) / "chroma",
+            )
+            seen_langchain_texts: set[str] = set()
+            for case in cases:
+                document_text = str(case["document_text"])
+                if document_text in seen_langchain_texts:
+                    continue
+                seen_langchain_texts.add(document_text)
+                langchain_retriever.index_text_document(
+                    title=str(case["document_id"]),
+                    text=document_text,
+                    source=str(case.get("source", "document_qa_eval")),
+                    metadata={
+                        "document_id": str(case["document_id"]),
+                        "case_id": case.get("case_id"),
+                        "scope": "corpus",
+                    },
+                )
+        except LangChainChromaUnavailable as error:
+            raise RetrievalModeUnavailable(f"Skipping langchain_chroma: {error}") from error
 
     return EvalResources(
         embedder=embedder,
         corpus_database=database,
         corpus_vector_store=vector_store,
+        langchain_retriever=langchain_retriever,
         temp_directory=temp_directory,
         vector_backend=vector_backend,
         answer_generator=answer_generator,
@@ -435,9 +474,37 @@ def retrieval_contexts(
     from src.database import Database
     from src.documents.embedding_indexer import DocumentEmbeddingIndexer
     from src.documents.ingestion import DocumentIngestionService
+    from src.retrieval.langchain_chroma_retriever import (
+        LangChainChromaRetriever,
+        LangChainChromaUnavailable,
+    )
     from src.retrieval.document_retriever import DocumentRetriever
 
     with TemporaryDirectory() as directory:
+        if context_mode == "langchain_chroma":
+            try:
+                retriever = LangChainChromaRetriever(
+                    persist_dir=Path(directory) / "chroma",
+                )
+                retriever.index_text_document(
+                    title=str(case["document_id"]),
+                    text=str(case["document_text"]),
+                    source=str(case.get("source", "document_qa_eval")),
+                    metadata={"case_id": case.get("case_id")},
+                )
+                candidates = retriever.retrieve(
+                    chat_id="document-qa-eval",
+                    source_plan=SourcePlan(
+                        source="document_memory",
+                        enabled=True,
+                        query=str(case["question"]),
+                        limit=top_k,
+                    ),
+                )
+                return [candidate.content for candidate in candidates]
+            except LangChainChromaUnavailable as error:
+                raise RetrievalModeUnavailable(f"Skipping langchain_chroma: {error}") from error
+
         database = Database(Path(directory) / "document_eval.db")
         ingestion = DocumentIngestionService(database)
         result = ingestion.ingest_text_document(
@@ -525,6 +592,20 @@ def corpus_retrieval_contexts(
     if resources is None or resources.corpus_database is None:
         raise RetrievalModeUnavailable("Corpus retrieval resources were not initialized.")
 
+    if context_mode == "langchain_chroma":
+        if resources.langchain_retriever is None:
+            raise RetrievalModeUnavailable("LangChain-Chroma resources were not initialized.")
+        candidates = resources.langchain_retriever.retrieve(
+            chat_id="document-qa-eval-corpus",
+            source_plan=SourcePlan(
+                source="document_memory",
+                enabled=True,
+                query=str(case["question"]),
+                limit=top_k,
+            ),
+        )
+        return [candidate.content for candidate in candidates]
+
     retrieval_mode = retrieval_mode_for_context(context_mode)
     candidates = DocumentRetriever(
         database=resources.corpus_database,
@@ -549,6 +630,7 @@ def retrieval_mode_for_context(context_mode: str) -> str:
         "keyword_retrieval": "keyword",
         "vector_retrieval": "vector",
         "hybrid_retrieval": "hybrid",
+        "langchain_chroma": "langchain_chroma",
     }[context_mode]
 
 
@@ -582,6 +664,8 @@ def print_summary(
         print("Retrieval: plain-text chunks with simple keyword scoring.")
     elif context_mode in {"vector_retrieval", "hybrid_retrieval"}:
         print(f"Retrieval: optional {context_mode.replace('_', ' ')}.")
+    elif context_mode == "langchain_chroma":
+        print("Retrieval: LangChain-Chroma document RAG backend.")
     else:
         print("Retrieval: placeholder context, not real retrieval.")
     if answer_mode == "oracle":

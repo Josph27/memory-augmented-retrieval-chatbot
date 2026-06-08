@@ -26,6 +26,9 @@ class AppConfig:
     document_chunker: str
     document_chunk_size: int
     document_chunk_overlap: int
+    langchain_chroma_persist_dir: Path
+    langchain_chunk_size: int
+    langchain_chunk_overlap: int
 
     @classmethod
     def from_env(cls) -> "AppConfig":
@@ -44,7 +47,7 @@ class AppConfig:
                     os.getenv("SUMMARY_BATCH_SIZE", str(MEMORY_UPDATE_BATCH_SIZE)),
                 )
             ),
-            document_retrieval_mode=os.getenv("DOCUMENT_RETRIEVAL_MODE", "keyword"),
+            document_retrieval_mode=os.getenv("DOCUMENT_RETRIEVAL_MODE", "langchain_chroma"),
             embedding_model_name=os.getenv(
                 "EMBEDDING_MODEL_NAME",
                 "sentence-transformers/all-MiniLM-L6-v2",
@@ -54,4 +57,9 @@ class AppConfig:
             document_chunker=os.getenv("DOCUMENT_CHUNKER", "custom"),
             document_chunk_size=int(os.getenv("DOCUMENT_CHUNK_SIZE", "1000")),
             document_chunk_overlap=int(os.getenv("DOCUMENT_CHUNK_OVERLAP", "150")),
+            langchain_chroma_persist_dir=Path(
+                os.getenv("LANGCHAIN_CHROMA_PERSIST_DIR", "data/chroma")
+            ),
+            langchain_chunk_size=int(os.getenv("LANGCHAIN_CHUNK_SIZE", "1000")),
+            langchain_chunk_overlap=int(os.getenv("LANGCHAIN_CHUNK_OVERLAP", "150")),
         )

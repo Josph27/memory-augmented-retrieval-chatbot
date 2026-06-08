@@ -2,13 +2,12 @@
 
 This project is a Chainlit + SQLite chatbot with current-chat short-term memory.
 The new agent classes are production-shaped wrappers around the existing behavior.
-Document memory is implemented as a plain-text chunk baseline with SQLite
-storage and keyword retrieval by default. A splitter abstraction now sits behind
-`DocumentIngestionService`; the custom paragraph splitter remains the default,
-and a LangChain recursive splitter can be enabled when the optional package is
-installed. Optional vector/hybrid retrieval interfaces now exist, but app
-startup and tests do not require embeddings, sqlite-vec, or external document
-frameworks.
+Document memory now prefers a LangChain-Chroma retrieval backend while keeping
+the project-specific memory architecture unchanged. SQLite still stores chats,
+raw messages, structured memory, and legacy document chunks. `MemoryCandidate`,
+`ContextPacket`, and `WorkflowTrace` remain custom. The older custom
+keyword/vector/hybrid document retrievers remain available as legacy fallback
+paths.
 
 ## Current Pipeline
 
@@ -64,10 +63,15 @@ Chainlit UI. `ChatService.handle_user_turn` exposes the richer
     and message metadata.
 - `src/retrieval/structured_memory_retriever.py`
   - Loads active structured memory records from `chat_memory_state`.
+- `src/retrieval/langchain_chroma_retriever.py`
+  - Preferred document-memory retriever. Indexes document text/chunks into
+    Chroma with LangChain, retrieves top-k LangChain documents, and converts
+    them into `MemoryCandidate(source="document_memory", ...)`.
 - `src/retrieval/document_retriever.py`
-  - Loads plain-text document chunks from SQLite. Default mode ranks them with
-    simple keyword overlap. Optional vector and hybrid modes use an embedding
-    interface plus vector store abstraction when configured and indexed.
+  - Legacy/fallback document retriever. Loads plain-text document chunks from
+    SQLite. Keyword mode ranks them with simple keyword overlap. Optional vector
+    and hybrid modes use the legacy embedding/vector-store abstraction when
+    configured and indexed.
 - `src/retrieval/reranker.py`
   - Scores retrieved `MemoryCandidate` objects and returns ranked copies with
     score breakdown metadata. This is trace-only and does not affect prompts.
@@ -164,7 +168,7 @@ Stub retrievers exist for disabled future sources:
 
 ## Current Document Memory
 
-Document memory is a first baseline implementation:
+Document memory has a preferred LangChain-Chroma path plus legacy custom paths:
 
 - plain text is ingested through `DocumentIngestionService`
 - documents are split through `src/documents/splitters.py`
@@ -175,8 +179,12 @@ Document memory is a first baseline implementation:
 - chunk metadata records `splitter_name`, `chunk_size`, `chunk_overlap`,
   `fallback_used`, and character offsets when available
 - chunks are stored in SQLite tables `documents` and `document_chunks`
-- `DocumentRetriever` performs simple lowercase keyword overlap by default
-- matching chunks become `MemoryCandidate(source="document_memory", ...)`
+- `LangChainChromaRetriever` indexes document text/chunks into Chroma and uses
+  LangChain retrieval as the preferred `document_memory` backend
+- retrieved LangChain `Document` objects are converted into
+  `MemoryCandidate(source="document_memory", ...)`
+- legacy `DocumentRetriever` still performs simple lowercase keyword overlap or
+  optional custom vector/hybrid retrieval when selected
 - document candidates flow through `RetrieverDispatcher`, `MemoryReranker`,
   `ContextBudgetAllocator`, `ContextBuilder`, and `ContextPacket`
 
@@ -202,16 +210,23 @@ Configuration:
 - `DOCUMENT_CHUNKER=custom|langchain_recursive`
 - `DOCUMENT_CHUNK_SIZE=1000`
 - `DOCUMENT_CHUNK_OVERLAP=150`
-- `DOCUMENT_RETRIEVAL_MODE=keyword|vector|hybrid`
+- `DOCUMENT_RETRIEVAL_MODE=langchain_chroma|keyword|vector|hybrid`
+- `LANGCHAIN_CHROMA_PERSIST_DIR=data/chroma`
+- `LANGCHAIN_CHUNK_SIZE=1000`
+- `LANGCHAIN_CHUNK_OVERLAP=150`
 - `EMBEDDING_MODEL_NAME=sentence-transformers/all-MiniLM-L6-v2`
 - `DOCUMENT_TOP_K=4`
 - `VECTOR_BACKEND=sqlite_json|sqlite_vec|in_memory`
 
-Keyword remains the default and fallback path.
+`langchain_chroma` is the preferred document RAG mode. If optional
+LangChain-Chroma dependencies or the embedding model are unavailable, retrieval
+falls back to the legacy keyword retriever with a concise warning. Keyword,
+vector, and hybrid remain selectable legacy modes.
 
-Still missing:
+Still missing or legacy:
 
-- production sqlite-vec virtual table wiring
+- replacing legacy custom vector/hybrid internals after LangChain-Chroma evals
+- production file loaders for non-text documents
 - semantic reranking
 - PDF or document-file parsing
 - Markdown/header-aware chunking
