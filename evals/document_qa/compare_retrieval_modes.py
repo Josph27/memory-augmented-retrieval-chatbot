@@ -11,6 +11,7 @@ try:
         EvalResult,
         EvalResources,
         RetrievalModeUnavailable,
+        ANSWER_MODE_CHOICES,
         VECTOR_BACKEND_CHOICES,
         build_eval_resources,
         evaluate_case,
@@ -23,6 +24,7 @@ except ImportError:
         EvalResult,
         EvalResources,
         RetrievalModeUnavailable,
+        ANSWER_MODE_CHOICES,
         VECTOR_BACKEND_CHOICES,
         build_eval_resources,
         evaluate_case,
@@ -45,8 +47,12 @@ class ModeComparisonResult:
     context_evidence_hit_rate: float
     context_answer_anchor_hit_rate: float
     context_expected_answer_hit_rate: float
+    answer_mode: str
+    model_name: str | None
+    answer_unknown_rate: float
     skipped: bool
     failed_case_ids: list[str]
+    unknown_case_ids: list[str]
     unavailable_reason: str | None = None
 
 
@@ -90,6 +96,12 @@ def main() -> None:
         help="Vector backend for vector/hybrid modes. Defaults to VECTOR_BACKEND env.",
     )
     parser.add_argument(
+        "--answer-mode",
+        choices=ANSWER_MODE_CHOICES,
+        default="oracle",
+        help="Use oracle placeholder answers or generate answers with the configured model.",
+    )
+    parser.add_argument(
         "--json",
         action="store_true",
         help="Print JSON summary after the table.",
@@ -108,6 +120,7 @@ def main() -> None:
             top_k=args.top_k,
             retrieval_scope=args.retrieval_scope,
             vector_backend=args.vector_backend,
+            answer_mode=args.answer_mode,
             resource_cache=resource_cache,
         )
         for mode in args.modes
@@ -123,6 +136,7 @@ def evaluate_mode(
     top_k: int = 4,
     retrieval_scope: str = "isolated",
     vector_backend: str | None = None,
+    answer_mode: str = "oracle",
     resource_cache: dict[str, EvalResources | RetrievalModeUnavailable] | None = None,
 ) -> ModeComparisonResult:
     """Run one context mode and aggregate deterministic metrics."""
@@ -132,6 +146,7 @@ def evaluate_mode(
             retrieval_scope=retrieval_scope,
             cases=cases,
             vector_backend=vector_backend,
+            answer_mode=answer_mode,
             resource_cache=resource_cache,
         )
         results = [
@@ -141,6 +156,7 @@ def evaluate_mode(
                 top_k=top_k,
                 resources=resources,
                 retrieval_scope=retrieval_scope,
+                answer_mode=answer_mode,
             )
             for case in cases
         ]
@@ -153,8 +169,12 @@ def evaluate_mode(
             context_evidence_hit_rate=0.0,
             context_answer_anchor_hit_rate=0.0,
             context_expected_answer_hit_rate=0.0,
+            answer_mode=answer_mode,
+            model_name=None,
+            answer_unknown_rate=0.0,
             skipped=True,
             failed_case_ids=[],
+            unknown_case_ids=[],
             unavailable_reason=str(error),
         )
     return aggregate_mode_results(mode=mode, results=results)
@@ -165,19 +185,21 @@ def resources_for_mode(
     retrieval_scope: str,
     cases: list[dict],
     vector_backend: str | None,
+    answer_mode: str,
     resource_cache: dict[str, EvalResources | RetrievalModeUnavailable] | None,
 ) -> EvalResources:
     """Return shared semantic resources for vector/hybrid comparison modes."""
     if retrieval_scope == "corpus":
-        cache_key = f"corpus:{mode}:{vector_backend or 'env'}"
+        cache_key = f"corpus:{mode}:{vector_backend or 'env'}:{answer_mode}"
     elif mode in {"vector_retrieval", "hybrid_retrieval"}:
-        cache_key = f"semantic_retrieval:{vector_backend or 'env'}"
+        cache_key = f"semantic_retrieval:{vector_backend or 'env'}:{answer_mode}"
     else:
         return build_eval_resources(
             mode,
             retrieval_scope=retrieval_scope,
             cases=cases,
             vector_backend=vector_backend,
+            answer_mode=answer_mode,
         )
 
     if resource_cache is None:
@@ -186,6 +208,7 @@ def resources_for_mode(
             retrieval_scope=retrieval_scope,
             cases=cases,
             vector_backend=vector_backend,
+            answer_mode=answer_mode,
         )
 
     cached = resource_cache.get(cache_key)
@@ -200,6 +223,7 @@ def resources_for_mode(
             retrieval_scope=retrieval_scope,
             cases=cases,
             vector_backend=vector_backend,
+            answer_mode=answer_mode,
         )
     except RetrievalModeUnavailable as error:
         resource_cache[cache_key] = error
@@ -221,6 +245,7 @@ def aggregate_mode_results(mode: str, results: list[EvalResult]) -> ModeComparis
             and result.context_expected_answer_hit
         )
     ]
+    unknown_case_ids = [result.case_id for result in results if result.answer_unknown]
     return ModeComparisonResult(
         mode=mode,
         total_cases=len(results),
@@ -229,8 +254,12 @@ def aggregate_mode_results(mode: str, results: list[EvalResult]) -> ModeComparis
         context_evidence_hit_rate=rate(results, "context_evidence_hit"),
         context_answer_anchor_hit_rate=rate(results, "context_answer_anchor_hit"),
         context_expected_answer_hit_rate=rate(results, "context_expected_answer_hit"),
+        answer_mode=results[0].answer_mode if results else "oracle",
+        model_name=results[0].model_name if results else None,
+        answer_unknown_rate=rate(results, "answer_unknown"),
         skipped=False,
         failed_case_ids=failed_case_ids,
+        unknown_case_ids=unknown_case_ids,
     )
 
 
@@ -238,12 +267,14 @@ def print_comparison_table(results: list[ModeComparisonResult]) -> None:
     """Print side-by-side retrieval metrics."""
     headers = [
         "mode",
+        "answer_mode",
         "cases",
         "ctx_evidence",
         "ctx_anchor",
         "ctx_expected",
         "ans_anchor",
         "exp_answer",
+        "unknown",
         "skipped",
         "failed",
         "reason",
@@ -269,12 +300,14 @@ def comparison_row(result: ModeComparisonResult) -> list[str]:
         reason = f"{reason[:77]}..."
     return [
         result.mode,
+        result.answer_mode,
         str(result.total_cases),
         f"{result.context_evidence_hit_rate:.2f}",
         f"{result.context_answer_anchor_hit_rate:.2f}",
         f"{result.context_expected_answer_hit_rate:.2f}",
         f"{result.answer_anchor_match_rate:.2f}",
         f"{result.expected_answer_match_rate:.2f}",
+        f"{result.answer_unknown_rate:.2f}",
         "yes" if result.skipped else "no",
         ",".join(result.failed_case_ids) if result.failed_case_ids else "[]",
         reason,
@@ -296,8 +329,12 @@ def result_to_dict(result: ModeComparisonResult) -> dict:
         "context_expected_answer_hit_rate": result.context_expected_answer_hit_rate,
         "answer_anchor_match_rate": result.answer_anchor_match_rate,
         "expected_answer_match_rate": result.expected_answer_match_rate,
+        "answer_mode": result.answer_mode,
+        "model_name": result.model_name,
+        "answer_unknown_rate": result.answer_unknown_rate,
         "skipped": result.skipped,
         "failed_case_ids": result.failed_case_ids,
+        "unknown_case_ids": result.unknown_case_ids,
         "unavailable_reason": result.unavailable_reason,
     }
 

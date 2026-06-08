@@ -5,8 +5,15 @@ scaffold.
 
 It can run against document-memory retrieval modes: plain-text keyword
 retrieval by default, plus optional vector and hybrid retrieval when embeddings
-and a vector store are available. The project still does not implement PDF
-parsing, RAGAS metrics, or generated-answer evaluation.
+and a vector store are available. It also supports optional model-generated
+answers for a basic end-to-end RAG check. The project still does not implement
+PDF parsing or RAGAS metrics.
+
+Document ingestion uses a splitter abstraction. The stable default is the custom
+paragraph-preserving splitter. `DOCUMENT_CHUNKER=langchain_recursive` enables
+LangChain's `RecursiveCharacterTextSplitter` when the optional package is
+installed; otherwise ingestion falls back to the custom splitter and records
+fallback metadata on stored chunks.
 
 ## Current Purpose
 
@@ -14,12 +21,15 @@ The scaffold defines:
 
 - a local hand-written QA dataset format
 - an optional SQuAD subset preparation script
-- deterministic placeholder metrics
+- deterministic retrieval and answer-string metrics
 - a RAGAS-style row shape with `question`, `contexts`, `answer`, and
   `ground_truth`
 
-For now, the runner uses `expected_answer` as the oracle placeholder answer.
-Generation quality is still future work. Retrieval can be tested with
+By default, the runner uses `expected_answer` as the oracle placeholder answer.
+This keeps the eval fast and makes retrieval metrics the meaningful signal.
+With `--answer-mode model`, the runner sends retrieved contexts to the
+configured chat model and checks whether the generated answer contains the
+expected answer/anchor strings. Retrieval can be tested with
 `keyword_retrieval`, `vector_retrieval`, or `hybrid_retrieval`.
 
 ## Dataset Format
@@ -91,6 +101,36 @@ Run the real baseline document retriever over temporary SQLite chunks:
 uv run python evals/document_qa/run_document_qa_eval.py --context-mode keyword_retrieval
 ```
 
+By default this uses oracle answer mode:
+
+```bash
+uv run python evals/document_qa/run_document_qa_eval.py \
+  --context-mode keyword_retrieval \
+  --answer-mode oracle
+```
+
+Oracle mode is a retrieval-only benchmark. The answer is copied from
+`expected_answer`, so `answer_anchor_match` and `expected_answer_match` are
+sanity checks, not generated-answer quality metrics.
+
+Use model answer mode for a basic end-to-end RAG check:
+
+```bash
+uv run python evals/document_qa/run_document_qa_eval.py \
+  --dataset evals/document_qa/datasets/squad_subset.jsonl \
+  --context-mode vector_retrieval \
+  --retrieval-scope corpus \
+  --top-k 3 \
+  --vector-backend sqlite_vec \
+  --answer-mode model \
+  --limit 5
+```
+
+Model mode builds a grounded QA prompt from retrieved contexts and calls the
+configured model through the existing model wrapper. It requires a configured
+local/API model such as Ollama. The prompt tells the model to answer only from
+the provided contexts and to say `I don't know` when the answer is absent.
+
 By default, retrieval evals use `--retrieval-scope isolated`. That means each
 case ingests only its own document before asking its question. This is useful as
 a smoke test for ingestion/retriever plumbing, but it is not a real retrieval
@@ -148,16 +188,119 @@ uv run python evals/document_qa/compare_retrieval_modes.py \
   --top-k 4
 ```
 
-The comparison table reports retrieval hit rates side by side. Keyword retrieval
-is the default baseline. Vector and hybrid modes require embedding/indexing
-availability and may be marked as skipped on machines without the optional
-backend.
+Comparison mode also supports generated answers:
+
+```bash
+uv run python evals/document_qa/compare_retrieval_modes.py \
+  --dataset evals/document_qa/datasets/squad_subset.jsonl \
+  --modes keyword_retrieval vector_retrieval hybrid_retrieval \
+  --retrieval-scope corpus \
+  --top-k 3 \
+  --vector-backend sqlite_vec \
+  --answer-mode model \
+  --limit 10
+```
+
+The comparison table reports retrieval hit rates and answer string-match rates
+side by side. Keyword retrieval is the default baseline. Vector and hybrid modes
+require embedding/indexing availability and may be marked as skipped on machines
+without the optional backend. Model answer mode may also be skipped if the
+configured model endpoint is unavailable.
+
+## RAGAS-Compatible Export
+
+The current deterministic metrics remain the primary reliable metrics. You can
+also export RAGAS-compatible rows for later optional evaluator runs:
+
+```bash
+uv run python evals/document_qa/run_document_qa_eval.py \
+  --dataset evals/document_qa/datasets/squad_subset.jsonl \
+  --context-mode vector_retrieval \
+  --retrieval-scope corpus \
+  --top-k 3 \
+  --vector-backend sqlite_vec \
+  --answer-mode model \
+  --limit 10 \
+  --export-ragas-jsonl evals/document_qa/outputs/ragas_sample.jsonl
+```
+
+Each exported JSONL row has this shape:
+
+```json
+{
+  "question": "...",
+  "contexts": ["..."],
+  "answer": "...",
+  "ground_truth": "...",
+  "case_id": "...",
+  "metadata": {
+    "retrieval_mode": "vector_retrieval",
+    "retrieval_scope": "corpus",
+    "top_k": 3,
+    "vector_backend": "sqlite_vec",
+    "answer_mode": "model",
+    "source": "squad",
+    "document_id": "...",
+    "ctx_anchor_hit": true,
+    "ctx_expected_hit": true,
+    "ctx_evidence_hit": true
+  }
+}
+```
+
+RAGAS export works without installing RAGAS. Oracle answer mode can also be
+exported, but it is not meaningful for RAGAS answer-quality metrics because the
+answer is copied from the ground truth placeholder.
+
+Optional RAGAS execution is isolated in a separate script:
+
+```bash
+uv run python evals/document_qa/run_ragas_eval.py \
+  --input evals/document_qa/outputs/ragas_sample.jsonl
+```
+
+If RAGAS is not installed, the script exits with a clear message. RAGAS metrics
+such as faithfulness, answer relevancy, context precision, and context recall
+usually require evaluator model configuration; they are optional and are not
+part of normal pytest.
 
 Corpus mode is the actual retrieval benchmark mode because every question is
 retrieved against a shared corpus containing distractor documents. The primary
 metrics are `context_answer_anchor_hit@k` and `context_expected_answer_hit@k`.
 `context_evidence_hit@k` is also reported, but it can be strict for SQuAD
 because supporting evidence is currently the full paragraph.
+
+## Compare Hit@k Curves
+
+Use the top-k curve runner to see how retrieval hit rates change as more chunks
+are allowed into the retrieved context:
+
+```bash
+uv run python evals/document_qa/compare_topk_curves.py \
+  --dataset evals/document_qa/datasets/squad_subset.jsonl \
+  --modes keyword_retrieval vector_retrieval hybrid_retrieval \
+  --retrieval-scope corpus \
+  --top-k-values 1 3 5 10 \
+  --vector-backend sqlite_vec
+```
+
+The output reports:
+
+- `ctx_evidence`: whether retrieved contexts contain the supporting evidence
+- `ctx_anchor`: whether retrieved contexts contain the answer anchor
+- `ctx_expected`: whether retrieved contexts contain the expected answer
+
+Use `--retrieval-scope corpus` for meaningful retrieval benchmarking. Isolated
+scope remains useful only as a smoke test because it has no distractor
+documents.
+
+The top-k curve runner reuses the existing eval logic. For simplicity, it may
+reload/index resources across mode/k combinations; this is acceptable for the
+small local benchmarks and can be optimized later if needed.
+
+Top-k curves intentionally remain retrieval-only and use oracle answer mode.
+They are meant to answer whether a relevant chunk appears in the top `k`
+contexts, not whether the model writes a good answer.
 
 ## Future Use
 
@@ -166,9 +309,18 @@ expected answer, and supporting evidence. Keyword mode uses term overlap.
 Vector/hybrid modes index temporary chunk embeddings first when the optional
 backend is available.
 
-The runner still uses oracle placeholder answers, so answer-anchor and expected
-answer match rates are not generated-answer quality metrics yet. Retrieval hit
-rate is the meaningful metric at this stage.
+In oracle mode, answer-anchor and expected-answer match rates are not
+generated-answer quality metrics. Retrieval hit rate is the meaningful metric in
+that mode. In model mode, answer metrics become simple deterministic checks over
+the generated answer text; they are useful smoke tests but not a replacement for
+RAGAS or human review.
+
+Metric groups:
+
+- retrieval metrics: `ctx_anchor`, `ctx_expected`, `ctx_evidence`
+- deterministic answer metrics: `ans_anchor`, `exp_answer`
+- optional RAGAS metrics: faithfulness, answer relevancy, context precision,
+  context recall
 
 Later, RAGAS can consume the generated rows with:
 
@@ -184,4 +336,7 @@ Future work:
 - production sqlite-vec virtual table wiring
 - RAGAS metrics
 - PDF and richer document parsing
-- real generated-answer evaluation
+- Markdown/header-aware splitting
+- token-aware and page-aware chunks
+- parent-child chunks
+- richer generated-answer evaluation

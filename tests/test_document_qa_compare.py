@@ -11,6 +11,7 @@ from evals.document_qa.compare_retrieval_modes import (
 )
 from evals.document_qa.run_document_qa_eval import (
     EvalResult,
+    EvalResources,
     build_eval_resources,
     create_vector_store,
     evaluate_case,
@@ -27,6 +28,9 @@ def make_result(
     context_evidence_hit: bool = True,
     context_answer_anchor_hit: bool = True,
     context_expected_answer_hit: bool = True,
+    answer: str = "answer",
+    answer_mode: str = "oracle",
+    answer_unknown: bool = False,
 ) -> EvalResult:
     """Build a deterministic document QA eval result."""
     return EvalResult(
@@ -36,6 +40,10 @@ def make_result(
         context_evidence_hit=context_evidence_hit,
         context_answer_anchor_hit=context_answer_anchor_hit,
         context_expected_answer_hit=context_expected_answer_hit,
+        answer=answer,
+        answer_mode=answer_mode,
+        model_name=None,
+        answer_unknown=answer_unknown,
         ragas_row={},
     )
 
@@ -56,6 +64,8 @@ def test_aggregate_mode_results_computes_rates_and_failed_cases() -> None:
     assert result.context_evidence_hit_rate == 0.5
     assert result.context_answer_anchor_hit_rate == 1.0
     assert result.context_expected_answer_hit_rate == 1.0
+    assert result.answer_mode == "oracle"
+    assert result.answer_unknown_rate == 0.0
     assert result.failed_case_ids == ["case-2"]
     assert not result.skipped
 
@@ -69,16 +79,21 @@ def test_comparison_row_marks_skipped_mode_with_reason() -> None:
         context_evidence_hit_rate=0.0,
         context_answer_anchor_hit_rate=0.0,
         context_expected_answer_hit_rate=0.0,
+        answer_mode="model",
+        model_name="test-model",
+        answer_unknown_rate=0.0,
         skipped=True,
         failed_case_ids=[],
+        unknown_case_ids=[],
         unavailable_reason="sentence-transformers is unavailable",
     )
 
     row = comparison_row(result)
 
     assert row[0] == "vector_retrieval"
-    assert row[7] == "yes"
-    assert "sentence-transformers" in row[9]
+    assert row[1] == "model"
+    assert row[9] == "yes"
+    assert "sentence-transformers" in row[11]
 
 
 def test_format_row_uses_fixed_width_columns() -> None:
@@ -96,16 +111,63 @@ def test_result_to_dict_is_json_ready() -> None:
         context_evidence_hit_rate=1.0,
         context_answer_anchor_hit_rate=1.0,
         context_expected_answer_hit_rate=1.0,
+        answer_mode="oracle",
+        model_name=None,
+        answer_unknown_rate=0.0,
         skipped=False,
         failed_case_ids=[],
+        unknown_case_ids=[],
     )
 
     payload = result_to_dict(result)
 
     assert payload["mode"] == "hybrid_retrieval"
+    assert payload["answer_mode"] == "oracle"
     assert payload["context_evidence_hit_rate"] == 1.0
     assert payload["context_expected_answer_hit_rate"] == 1.0
     assert payload["failed_case_ids"] == []
+
+
+class FakeAnswerGenerator:
+    @property
+    def model_name(self) -> str:
+        return "fake-answer-model"
+
+    def generate(self, question: str, contexts: list[str]) -> str:
+        del question, contexts
+        return "Luminara"
+
+
+def test_model_answer_mode_uses_answer_generator() -> None:
+    case = {
+        "case_id": "answer-case",
+        "source": "test",
+        "document_id": "doc-answer",
+        "document_text": "The Luminara protocol stores the key.",
+        "question": "Which protocol stores the key?",
+        "expected_answer": "Luminara",
+        "supporting_evidence": "The Luminara protocol stores the key.",
+        "answer_anchor": "Luminara",
+        "category": "synthetic",
+    }
+    resources = EvalResources(
+        answer_generator=FakeAnswerGenerator(),
+        answer_mode="model",
+        model_name="fake-answer-model",
+    )
+
+    result = evaluate_case(
+        case,
+        context_mode="document_text",
+        resources=resources,
+        answer_mode="model",
+    )
+
+    assert result.answer == "Luminara"
+    assert result.answer_mode == "model"
+    assert result.model_name == "fake-answer-model"
+    assert result.answer_anchor_match
+    assert result.expected_answer_match
 
 
 def test_corpus_scope_retrieves_relevant_document_with_distractors() -> None:

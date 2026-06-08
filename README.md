@@ -93,7 +93,7 @@ This is intentionally based on fixed message counts for now. The memory module a
 Document memory currently supports plain text only:
 
 - `DocumentIngestionService.ingest_text_document(...)`
-- paragraph-preserving chunking
+- splitter abstraction with custom paragraph-preserving chunking by default
 - SQLite `documents` and `document_chunks` tables
 - keyword retrieval as the default document retrieval mode
 
@@ -111,13 +111,20 @@ DocumentRetriever
 
 Optional semantic retrieval is available behind abstractions:
 
+- `DOCUMENT_CHUNKER=custom|langchain_recursive`
+- `DOCUMENT_CHUNK_SIZE=1000`
+- `DOCUMENT_CHUNK_OVERLAP=150`
 - `DOCUMENT_RETRIEVAL_MODE=keyword|vector|hybrid`
 - `EMBEDDING_MODEL_NAME=sentence-transformers/all-MiniLM-L6-v2`
 - `DOCUMENT_TOP_K=4`
 - `VECTOR_BACKEND=sqlite_json|sqlite_vec|in_memory`
 
-Defaults keep `DOCUMENT_RETRIEVAL_MODE=keyword`, so app startup does not require
-`sentence-transformers`, internet access, or `sqlite-vec`. Vector and hybrid
+Defaults keep `DOCUMENT_CHUNKER=custom` and `DOCUMENT_RETRIEVAL_MODE=keyword`,
+so app startup does not require LangChain, `sentence-transformers`, internet
+access, or `sqlite-vec`. `DOCUMENT_CHUNKER=langchain_recursive` uses
+LangChain's `RecursiveCharacterTextSplitter` when `langchain-text-splitters`
+or LangChain is installed; if unavailable, ingestion falls back to the custom
+paragraph splitter and records fallback metadata on chunks. Vector and hybrid
 modes require document chunks to be indexed first with
 `DocumentEmbeddingIndexer`. The `sqlite_json` backend stores vectors in normal
 SQLite JSON as a fallback; `sqlite-vec` is the intended future SQLite-native

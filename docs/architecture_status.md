@@ -3,9 +3,12 @@
 This project is a Chainlit + SQLite chatbot with current-chat short-term memory.
 The new agent classes are production-shaped wrappers around the existing behavior.
 Document memory is implemented as a plain-text chunk baseline with SQLite
-storage and keyword retrieval by default. Optional vector/hybrid retrieval
-interfaces now exist, but app startup and tests do not require embeddings,
-sqlite-vec, or external document frameworks.
+storage and keyword retrieval by default. A splitter abstraction now sits behind
+`DocumentIngestionService`; the custom paragraph splitter remains the default,
+and a LangChain recursive splitter can be enabled when the optional package is
+installed. Optional vector/hybrid retrieval interfaces now exist, but app
+startup and tests do not require embeddings, sqlite-vec, or external document
+frameworks.
 
 ## Current Pipeline
 
@@ -164,8 +167,13 @@ Stub retrievers exist for disabled future sources:
 Document memory is a first baseline implementation:
 
 - plain text is ingested through `DocumentIngestionService`
-- documents are split into paragraph-preserving chunks of roughly 500-1000
-  characters
+- documents are split through `src/documents/splitters.py`
+- `DOCUMENT_CHUNKER=custom` uses the stable paragraph-preserving splitter
+- `DOCUMENT_CHUNKER=langchain_recursive` uses LangChain's
+  `RecursiveCharacterTextSplitter` when available and falls back to the custom
+  splitter if unavailable
+- chunk metadata records `splitter_name`, `chunk_size`, `chunk_overlap`,
+  `fallback_used`, and character offsets when available
 - chunks are stored in SQLite tables `documents` and `document_chunks`
 - `DocumentRetriever` performs simple lowercase keyword overlap by default
 - matching chunks become `MemoryCandidate(source="document_memory", ...)`
@@ -191,6 +199,9 @@ Optional semantic retrieval components:
 
 Configuration:
 
+- `DOCUMENT_CHUNKER=custom|langchain_recursive`
+- `DOCUMENT_CHUNK_SIZE=1000`
+- `DOCUMENT_CHUNK_OVERLAP=150`
 - `DOCUMENT_RETRIEVAL_MODE=keyword|vector|hybrid`
 - `EMBEDDING_MODEL_NAME=sentence-transformers/all-MiniLM-L6-v2`
 - `DOCUMENT_TOP_K=4`
@@ -203,6 +214,9 @@ Still missing:
 - production sqlite-vec virtual table wiring
 - semantic reranking
 - PDF or document-file parsing
+- Markdown/header-aware chunking
+- token-aware chunking
+- page-aware and parent-child chunks
 - RAGAS dependency and full generated-answer evaluation
 
 ## Termination

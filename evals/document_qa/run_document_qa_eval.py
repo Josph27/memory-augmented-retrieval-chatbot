@@ -10,6 +10,11 @@ from tempfile import TemporaryDirectory
 from typing import Any
 
 try:
+    from .answer_generation import (
+        AnswerGenerator,
+        answer_is_unknown,
+        build_default_answer_generator,
+    )
     from .metrics import (
         answer_contains_anchor,
         answer_contains_expected,
@@ -17,7 +22,13 @@ try:
         context_contains_evidence,
         ragas_compatible_row,
     )
+    from .ragas_export import results_to_ragas_rows, write_ragas_jsonl
 except ImportError:
+    from answer_generation import (
+        AnswerGenerator,
+        answer_is_unknown,
+        build_default_answer_generator,
+    )
     from metrics import (
         answer_contains_anchor,
         answer_contains_expected,
@@ -25,11 +36,13 @@ except ImportError:
         context_contains_evidence,
         ragas_compatible_row,
     )
+    from ragas_export import results_to_ragas_rows, write_ragas_jsonl
 
 
 DEFAULT_DATASET = Path(__file__).parent / "datasets" / "squad_style_sample.jsonl"
 RETRIEVAL_CONTEXT_MODES = {"keyword_retrieval", "vector_retrieval", "hybrid_retrieval"}
 VECTOR_BACKEND_CHOICES = ("sqlite_json", "sqlite_vec", "in_memory")
+ANSWER_MODE_CHOICES = ("oracle", "model")
 
 
 @dataclass(frozen=True)
@@ -42,6 +55,10 @@ class EvalResult:
     context_evidence_hit: bool
     context_answer_anchor_hit: bool
     context_expected_answer_hit: bool
+    answer: str
+    answer_mode: str
+    model_name: str | None
+    answer_unknown: bool
     ragas_row: dict[str, Any]
 
 
@@ -54,6 +71,9 @@ class EvalResources:
     corpus_vector_store: Any | None = None
     temp_directory: Any | None = None
     vector_backend: str | None = None
+    answer_generator: AnswerGenerator | None = None
+    answer_mode: str = "oracle"
+    model_name: str | None = None
 
 
 def main() -> None:
@@ -101,6 +121,23 @@ def main() -> None:
         default=None,
         help="Vector backend for vector/hybrid evals. Defaults to VECTOR_BACKEND env.",
     )
+    parser.add_argument(
+        "--answer-mode",
+        choices=ANSWER_MODE_CHOICES,
+        default="oracle",
+        help="Use oracle placeholder answers or generate answers with the configured model.",
+    )
+    parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Print RAGAS-compatible JSON rows after the summary.",
+    )
+    parser.add_argument(
+        "--export-ragas-jsonl",
+        type=Path,
+        default=None,
+        help="Write RAGAS-compatible rows to JSONL without requiring RAGAS.",
+    )
     args = parser.parse_args()
 
     cases = load_jsonl(args.dataset)
@@ -112,6 +149,7 @@ def main() -> None:
             retrieval_scope=args.retrieval_scope,
             cases=cases,
             vector_backend=args.vector_backend,
+            answer_mode=args.answer_mode,
         )
         results = [
             evaluate_case(
@@ -120,6 +158,7 @@ def main() -> None:
                 top_k=args.top_k,
                 resources=resources,
                 retrieval_scope=args.retrieval_scope,
+                answer_mode=args.answer_mode,
             )
             for case in cases
         ]
@@ -132,7 +171,22 @@ def main() -> None:
         retrieval_scope=args.retrieval_scope,
         top_k=args.top_k,
         vector_backend=resources.vector_backend,
+        answer_mode=args.answer_mode,
+        model_name=resources.model_name,
     )
+    ragas_rows = results_to_ragas_rows(
+        results=results,
+        cases=cases,
+        retrieval_mode=args.context_mode,
+        retrieval_scope=args.retrieval_scope,
+        top_k=args.top_k,
+        vector_backend=resources.vector_backend,
+    )
+    if args.export_ragas_jsonl is not None:
+        write_ragas_jsonl(ragas_rows, args.export_ragas_jsonl)
+        print(f"exported RAGAS-compatible rows: {args.export_ragas_jsonl}")
+    if args.json:
+        print(json.dumps(ragas_rows, indent=2))
 
 
 def load_jsonl(path: Path) -> list[dict[str, Any]]:
@@ -157,8 +211,9 @@ def evaluate_case(
     top_k: int = 4,
     resources: EvalResources | None = None,
     retrieval_scope: str = "isolated",
+    answer_mode: str = "oracle",
 ) -> EvalResult:
-    """Evaluate one case with oracle placeholders."""
+    """Evaluate one case with oracle or model-generated answer mode."""
     contexts = placeholder_contexts(
         case,
         context_mode=context_mode,
@@ -166,7 +221,13 @@ def evaluate_case(
         resources=resources,
         retrieval_scope=retrieval_scope,
     )
-    answer = str(case["expected_answer"])
+    answer = answer_for_case(
+        question=str(case["question"]),
+        contexts=contexts,
+        expected_answer=str(case["expected_answer"]),
+        answer_mode=answer_mode,
+        resources=resources,
+    )
     expected_answer = str(case["expected_answer"])
     answer_anchor = str(case["answer_anchor"])
     supporting_evidence = str(case["supporting_evidence"])
@@ -180,7 +241,8 @@ def evaluate_case(
         metadata={
             "document_id": case.get("document_id"),
             "category": case.get("category"),
-            "mode": "scaffold_oracle_placeholder",
+            "answer_mode": answer_mode,
+            "model_name": resources.model_name if resources else None,
         },
     )
     return EvalResult(
@@ -190,8 +252,27 @@ def evaluate_case(
         context_evidence_hit=context_contains_evidence(contexts, supporting_evidence),
         context_answer_anchor_hit=context_contains_answer_anchor(contexts, answer_anchor),
         context_expected_answer_hit=context_contains_answer_anchor(contexts, expected_answer),
+        answer=answer,
+        answer_mode=answer_mode,
+        model_name=resources.model_name if resources else None,
+        answer_unknown=answer_is_unknown(answer),
         ragas_row=ragas_row,
     )
+
+
+def answer_for_case(
+    question: str,
+    contexts: list[str],
+    expected_answer: str,
+    answer_mode: str,
+    resources: EvalResources | None,
+) -> str:
+    """Return oracle or model-generated answer for one eval case."""
+    if answer_mode == "oracle":
+        return expected_answer
+    if resources is None or resources.answer_generator is None:
+        raise RetrievalModeUnavailable("Model answer mode requires an answer generator.")
+    return resources.answer_generator.generate(question=question, contexts=contexts)
 
 
 def placeholder_contexts(
@@ -230,10 +311,22 @@ def build_eval_resources(
     retrieval_scope: str = "isolated",
     cases: list[dict[str, Any]] | None = None,
     vector_backend: str | None = None,
+    answer_mode: str = "oracle",
 ) -> EvalResources:
     """Create reusable resources once for an eval run."""
     embedder = None
     selected_vector_backend = normalize_vector_backend(vector_backend)
+    answer_generator = None
+    model_name = None
+
+    if answer_mode == "model":
+        ensure_repo_root_on_path()
+        try:
+            answer_generator = build_default_answer_generator()
+            model_name = answer_generator.model_name
+        except Exception as error:
+            msg = f"Skipping model answer eval: {type(error).__name__}: {error}"
+            raise RetrievalModeUnavailable(msg) from error
 
     if context_mode in {"vector_retrieval", "hybrid_retrieval"}:
         ensure_repo_root_on_path()
@@ -250,7 +343,13 @@ def build_eval_resources(
             raise RetrievalModeUnavailable(msg) from error
 
     if retrieval_scope != "corpus" or context_mode not in RETRIEVAL_CONTEXT_MODES:
-        return EvalResources(embedder=embedder, vector_backend=selected_vector_backend)
+        return EvalResources(
+            embedder=embedder,
+            vector_backend=selected_vector_backend,
+            answer_generator=answer_generator,
+            answer_mode=answer_mode,
+            model_name=model_name,
+        )
 
     if cases is None:
         raise RetrievalModeUnavailable("Corpus retrieval requires dataset cases.")
@@ -260,6 +359,9 @@ def build_eval_resources(
         context_mode=context_mode,
         embedder=embedder,
         vector_backend=selected_vector_backend,
+        answer_generator=answer_generator,
+        answer_mode=answer_mode,
+        model_name=model_name,
     )
 
 
@@ -268,6 +370,9 @@ def build_corpus_resources(
     context_mode: str,
     embedder: Any | None = None,
     vector_backend: str = "sqlite_json",
+    answer_generator: AnswerGenerator | None = None,
+    answer_mode: str = "oracle",
+    model_name: str | None = None,
 ) -> EvalResources:
     """Ingest the full eval dataset into one temporary document corpus."""
     ensure_repo_root_on_path()
@@ -312,6 +417,9 @@ def build_corpus_resources(
         corpus_vector_store=vector_store,
         temp_directory=temp_directory,
         vector_backend=vector_backend,
+        answer_generator=answer_generator,
+        answer_mode=answer_mode,
+        model_name=model_name,
     )
 
 
@@ -457,11 +565,16 @@ def print_summary(
     retrieval_scope: str = "isolated",
     top_k: int = 4,
     vector_backend: str | None = None,
+    answer_mode: str = "oracle",
+    model_name: str | None = None,
 ) -> None:
     """Print a concise deterministic summary."""
     total = len(results)
     print("Document QA eval scaffold")
-    print("Mode: scaffold / oracle-placeholder answer")
+    print("Mode: document QA eval")
+    print(f"Answer mode: {answer_mode}")
+    if model_name:
+        print(f"Model: {model_name}")
     print(f"Retrieval scope: {retrieval_scope}")
     if context_mode in {"vector_retrieval", "hybrid_retrieval"}:
         print(f"Vector backend: {vector_backend or normalize_vector_backend(None)}")
@@ -471,12 +584,16 @@ def print_summary(
         print(f"Retrieval: optional {context_mode.replace('_', ' ')}.")
     else:
         print("Retrieval: placeholder context, not real retrieval.")
-    print("This does not evaluate real answer generation yet.")
+    if answer_mode == "oracle":
+        print("Oracle answers are placeholders; retrieval metrics are meaningful.")
+    else:
+        print("Model answers are generated from retrieved contexts.")
     print(f"Placeholder context mode: {context_mode}")
     print(f"top_k: {top_k}")
     print(f"total cases: {total}")
     print(f"answer_anchor_match rate: {rate(results, 'answer_anchor_match'):.2f}")
     print(f"expected_answer_match rate: {rate(results, 'expected_answer_match'):.2f}")
+    print(f"answer_unknown rate: {rate(results, 'answer_unknown'):.2f}")
     print(f"context_evidence_hit@{top_k} rate: {rate(results, 'context_evidence_hit'):.2f}")
     print(
         f"context_answer_anchor_hit@{top_k} rate: "
@@ -498,6 +615,8 @@ def print_summary(
         )
     ]
     print(f"failed case IDs: {failed_case_ids}")
+    unknown_case_ids = [result.case_id for result in results if result.answer_unknown]
+    print(f"unknown case IDs: {unknown_case_ids}")
 
 
 def rate(results: list[EvalResult], field: str) -> float:
