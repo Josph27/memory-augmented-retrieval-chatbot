@@ -39,6 +39,36 @@
 ## Section 2 - Current state of the codebase
 
 ![alt text](current_pipeline.png)
+```mermaid
+flowchart TD
+    U[User message] --> C[CoordinatorAgent]
+
+    C --> QR[QueryAnalyzer / RoutePlanner]
+    QR --> RD[RetrieverDispatcher]
+
+    RD --> RM[RecentMessagesRetriever]
+    RD --> SM[StructuredMemoryRetriever]
+    RD --> DM[LangChainChromaRetriever<br/>document memory / RAG]
+
+    RM --> MC[MemoryCandidate list]
+    SM --> MC
+    DM --> MC
+
+    MC --> RR[MemoryReranker<br/>baseline heuristic]
+    RR --> BA[ContextBudgetAllocator<br/>approx. token budget]
+    BA --> CB[ContextBuilder]
+    CB --> CP[ContextPacket<br/>validated prompt contract]
+
+    CP --> PV[Prompt validation / fallback]
+    PV --> LLM[ChatAgent / ModelWrapper]
+    LLM --> RESP[Assistant response saved]
+
+    RESP --> MU[Structured MemoryUpdate<br/>LLM JSON ops + validation]
+    MU --> DONE[Turn completes]
+
+    LEG[Legacy custom DocumentRetriever<br/>keyword / vector / hybrid] -. fallback / comparison .-> RD
+```
+
 we refactored the code to follow the agentic pipeline, but most components are still lightweight deterministic services rather than
 autonomous agents. The architecture is in place, traceable, and test-covered, but retrieval/routing/ranking are still simple baselines.
 
