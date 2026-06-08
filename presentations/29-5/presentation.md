@@ -38,6 +38,8 @@
 
 ## Section 2 - Current state of the codebase
 
+The system is still linear, but agentic in workflow structure. It has separate modules for routing, retrieval, context construction, model call, and memory update.
+
 ![alt text](current_pipeline.png)
 ```mermaid
 flowchart TD
@@ -48,47 +50,51 @@ flowchart TD
 
     RD --> RM[RecentMessagesRetriever]
     RD --> SM[StructuredMemoryRetriever]
-    RD --> DM[LangChainChromaRetriever<br/>document memory / RAG]
+    RD --> DM[LangChainChromaRetriever<br/>Document memory / RAG]
 
     RM --> MC[MemoryCandidate list]
     SM --> MC
     DM --> MC
 
     MC --> RR[MemoryReranker<br/>baseline heuristic]
-    RR --> BA[ContextBudgetAllocator<br/>approx. token budget]
+    RR --> BA[ContextBudgetAllocator<br/>approximate token budget]
     BA --> CB[ContextBuilder]
     CB --> CP[ContextPacket<br/>validated prompt contract]
 
-    CP --> PV[Prompt validation / fallback]
     PV --> LLM[ChatAgent / ModelWrapper]
     LLM --> RESP[Assistant response saved]
 
     RESP --> MU[Structured MemoryUpdate<br/>LLM JSON ops + validation]
     MU --> DONE[Turn completes]
-
-    LEG[Legacy custom DocumentRetriever<br/>keyword / vector / hybrid] -. fallback / comparison .-> RD
 ```
 
 we refactored the code to follow the agentic pipeline, but most components are still lightweight deterministic services rather than
 autonomous agents. The architecture is in place, traceable, and test-covered, but retrieval/routing/ranking are still simple baselines.
 
-| Stage         | Status                   | Notes                                                                                                            |
-| ------------- | ------------------------ | ---------------------------------------------------------------------------------------------------------------- |
-| User          | Working                  | Chainlit sends user messages into `ChatService`.                                                                 |
-| Coordinator   | Working                  | `CoordinatorAgent` orchestrates the turn and records trace.                                                      |
-| Router        | Baseline / working       | `QueryAnalyzer` + `RoutePlanner` use simple lexical rules; useful for routing shape and future sources.          |
-| Retriever     | Working, limited sources | Retrieves active sources: recent messages and structured memory. Future retrievers are stubs.                    |
-| Reranker      | Baseline / working       | Scores candidates and records breakdowns. More meaningful once chunks/docs/gists exist.                          |
-| Budget        | Baseline / working       | Allocates approximate token budget by profile; currently low pressure with only two sources.                     |
-| ContextPacket | Working                  | Default final prompt path. Handles structured memory, chronological recent messages, and latest user once.       |
-| LLM           | Working, slow locally    | Uses `ModelWrapper` with OpenAI-compatible endpoint, currently `qwen2.5:3b` via Ollama. Main latency bottleneck. |
-| MemoryUpdate  | Working                  | Extracts structured memory from older messages. Currently synchronous and may add latency when triggered.        |
-| END           | Working                  | Trace records `termination_reason=response_generated_and_messages_saved`.                                        |
+| Step | Component | Role type | What it means |
+|---:|---|---|---|
+| 1 | `CoordinatorAgent` | **Orchestrator** | Main one-turn controller. Coordinates routing, retrieval, context construction, model call, and memory update. Still linear; could later become LangGraph if workflow becomes branchy. |
+| 2 | `QueryAnalyzer` | **Decision module / baseline** | Detects query signals using simple rules/keywords. Provides the query-understanding stage, but is not yet semantic or LLM-based intent classification. |
+| 3 | `RoutePlanner` | **Decision module / baseline** | Decides which memory sources to activate. The routing interface is useful, but the current policy is still simple. |
+| 4 | `RetrieverDispatcher` | **Retrieval coordinator** | Dispatches retrieval to enabled memory sources and keeps the multi-source retrieval pipeline organized. |
+| 5a | `RecentMessagesRetriever` | **Memory tool** | Retrieves recent raw conversation messages in chronological order. |
+| 5b | `StructuredMemoryRetriever` | **Memory tool** | Retrieves structured current-chat memory records from SQLite. |
+| 5c | `LangChainChromaRetriever` | **RAG tool / library-backed** | Uses LangChain-Chroma for document memory retrieval and converts retrieved documents into `MemoryCandidate`s. |
+| 6 | `MemoryCandidate` | **Data contract** | Shared representation for retrieved context from recent messages, structured memory, and document RAG. |
+| 7 | `MemoryReranker` | **Decision module / baseline** | Heuristic ranking of retrieved candidates. Future candidate for CrossEncoder, BGE, or rank-fusion reranking. |
+| 8 | `ContextBudgetAllocator` | **Decision module / baseline** | Allocates approximate context budget. Later should use model-specific tokenizer-aware budgeting. |
+| 9 | `ContextBuilder` | **Context assembly module** | Builds ordered context from selected memory candidates. |
+| 10 | `ContextPacket` | **Data contract** | Explicit prompt/context package used for final model input. Helps make context construction traceable and validated. |
+| 11 | `ChatAgent / ModelWrapper` | **Model interface** | Calls an OpenAI-compatible model endpoint. Local Ollama and larger cluster models can be configured. |
+| 12 | `MemoryUpdate` | **State update module / baseline** | Extracts structured memory updates as JSON operations. Works, but currently synchronous and can add latency. |
+| 13 | Turn completes | **Conceptual endpoint** | End of one linear turn. Not a real LangGraph `END` node yet. |
+```
 
 Implemented memory:
 
 - recent raw messages
 - structured current-chat memory
+- basic rag document memory
 
 Structured memory stores:
 
@@ -102,23 +108,23 @@ Structured memory stores:
 
 Not implemented yet:
 
-- gists
-- chunks
-- document memory
-- embeddings
-- vector DB
+- make baseline/decision module components agentic
+- gists and more polished short-term-memory
 - cross-chat long-term memory
 
-next steps
+Near-term:
+1. Verify document chunks are fully incorporated into ContextPacket in the runtime path.
+2. Add stronger standard RAG benchmarks: Natural Questions / HotpotQA.
+3. Run model-answer evaluation with larger school-cluster models.
+4. Run optional RAGAS scoring using exported rows.
 
-1. Add document ingestion:
-   upload → parse → chunk → metadata.
-
-2. Add embeddings/sqlite-vec:
-   memory_items + vectors.
-
-3. Add current-chat gist/chunk memory:
-   older chat turns become source-grounded retrievable memory items.
+Memory-focused next steps:
+1. Add previous-chat / gist memory.
+2. Add PerLTQA-style memory evaluation:
+   - memory source classification
+   - memory retrieval Recall@K
+   - memory synthesis / answer quality
+3. Evaluate old-chat multi-thread memory.
 
 ## Example images:
 
