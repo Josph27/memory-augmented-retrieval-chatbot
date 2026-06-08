@@ -94,6 +94,8 @@ This is intentionally based on fixed message counts for now. The memory module a
 Document memory currently supports plain text only:
 
 - `DocumentIngestionService.ingest_text_document(...)`
+- local file loading for `.txt` and `.md`, with optional `.pdf` support when a
+  PDF library is installed
 - splitter abstraction with custom paragraph-preserving chunking by default
 - SQLite `documents` and `document_chunks` tables
 - LangChain-Chroma as the preferred document retrieval mode
@@ -136,6 +138,17 @@ modes require document chunks to be indexed first with
 `DocumentEmbeddingIndexer`. The `sqlite_json` backend stores vectors in normal
 SQLite JSON as a legacy fallback; `sqlite-vec` remains available for the legacy
 custom semantic path.
+
+Index a local file into the LangChain-Chroma document backend without starting
+the Chainlit UI:
+
+```bash
+uv run python scripts/index_document_file.py tests/fixtures/docs/sample_report.txt
+```
+
+Supported loader formats are `.txt`, `.md`, and `.pdf` when either `pypdf` or
+PyMuPDF is installed. Loaded-file metadata preserves file path, file name,
+extension, loader name, and PDF page count when available.
 
 ## Manual Memory Verification
 

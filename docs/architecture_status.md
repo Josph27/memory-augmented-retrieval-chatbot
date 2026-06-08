@@ -171,6 +171,9 @@ Stub retrievers exist for disabled future sources:
 Document memory has a preferred LangChain-Chroma path plus legacy custom paths:
 
 - plain text is ingested through `DocumentIngestionService`
+- local `.txt` and `.md` files can be loaded through `src/documents/loaders.py`
+  and indexed into the LangChain-Chroma backend; `.pdf` loading is optional when
+  `pypdf` or PyMuPDF is installed
 - documents are split through `src/documents/splitters.py`
 - `DOCUMENT_CHUNKER=custom` uses the stable paragraph-preserving splitter
 - `DOCUMENT_CHUNKER=langchain_recursive` uses LangChain's
@@ -181,6 +184,8 @@ Document memory has a preferred LangChain-Chroma path plus legacy custom paths:
 - chunks are stored in SQLite tables `documents` and `document_chunks`
 - `LangChainChromaRetriever` indexes document text/chunks into Chroma and uses
   LangChain retrieval as the preferred `document_memory` backend
+- `scripts/index_document_file.py` is a small development utility for indexing
+  local files into the LangChain-Chroma document backend without the Chainlit UI
 - retrieved LangChain `Document` objects are converted into
   `MemoryCandidate(source="document_memory", ...)`
 - legacy `DocumentRetriever` still performs simple lowercase keyword overlap or
@@ -227,6 +232,7 @@ Still missing or legacy:
 
 - replacing legacy custom vector/hybrid internals after LangChain-Chroma evals
 - production file loaders for non-text documents
+- richer file loading/parsing beyond `.txt`, `.md`, and optional `.pdf`
 - semantic reranking
 - PDF or document-file parsing
 - Markdown/header-aware chunking

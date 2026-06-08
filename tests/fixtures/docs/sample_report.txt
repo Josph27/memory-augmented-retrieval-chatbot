@@ -1,0 +1,3 @@
+The sample report says the unique planning code is ALPHA-47.
+
+This file is used for manual document-memory indexing smoke tests.
