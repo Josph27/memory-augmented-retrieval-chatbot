@@ -14,9 +14,7 @@ try:
     )
     from .run_document_qa_eval import (
         DEFAULT_DATASET,
-        VECTOR_BACKEND_CHOICES,
         load_jsonl,
-        normalize_vector_backend,
     )
 except ImportError:
     from compare_retrieval_modes import (
@@ -27,9 +25,7 @@ except ImportError:
     )
     from run_document_qa_eval import (
         DEFAULT_DATASET,
-        VECTOR_BACKEND_CHOICES,
         load_jsonl,
-        normalize_vector_backend,
     )
 
 
@@ -78,12 +74,6 @@ def main() -> None:
         help="One or more top-k values to evaluate.",
     )
     parser.add_argument(
-        "--vector-backend",
-        choices=VECTOR_BACKEND_CHOICES,
-        default=None,
-        help="Vector backend for vector/hybrid modes. Defaults to VECTOR_BACKEND env.",
-    )
-    parser.add_argument(
         "--limit",
         type=int,
         default=None,
@@ -105,7 +95,6 @@ def main() -> None:
         cases=cases,
         top_k_values=args.top_k_values,
         retrieval_scope=args.retrieval_scope,
-        vector_backend=args.vector_backend,
     )
     print_topk_table(results)
     if args.json:
@@ -117,10 +106,8 @@ def evaluate_topk_curves(
     cases: list[dict],
     top_k_values: list[int],
     retrieval_scope: str = "corpus",
-    vector_backend: str | None = None,
 ) -> list[TopKCurveResult]:
     """Evaluate each mode across the requested k values."""
-    backend = normalize_vector_backend(vector_backend)
     results: list[TopKCurveResult] = []
     for mode in modes:
         for top_k in normalized_top_k_values(top_k_values):
@@ -129,11 +116,10 @@ def evaluate_topk_curves(
                 cases=cases,
                 top_k=top_k,
                 retrieval_scope=retrieval_scope,
-                vector_backend=backend,
                 answer_mode="oracle",
                 resource_cache={},
             )
-            results.append(topk_result_from_comparison(comparison, top_k, backend))
+            results.append(topk_result_from_comparison(comparison, top_k))
     return results
 
 
@@ -150,12 +136,11 @@ def normalized_top_k_values(top_k_values: list[int]) -> list[int]:
 def topk_result_from_comparison(
     comparison: ModeComparisonResult,
     top_k: int,
-    backend: str,
 ) -> TopKCurveResult:
     """Convert an existing mode comparison row into a hit@k row."""
     return TopKCurveResult(
         mode=comparison.mode,
-        backend=backend_for_mode(comparison.mode, backend),
+        backend=backend_for_mode(comparison.mode),
         k=top_k,
         cases=comparison.total_cases,
         context_evidence_hit_rate=comparison.context_evidence_hit_rate,
@@ -167,12 +152,10 @@ def topk_result_from_comparison(
     )
 
 
-def backend_for_mode(mode: str, backend: str) -> str:
+def backend_for_mode(mode: str) -> str:
     """Return the vector backend label for table output."""
     if mode == "langchain_chroma":
         return "chroma"
-    if mode in {"vector_retrieval", "hybrid_retrieval"}:
-        return backend
     return "-"
 
 

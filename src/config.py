@@ -22,7 +22,6 @@ class AppConfig:
     document_retrieval_mode: str
     embedding_model_name: str
     document_top_k: int
-    vector_backend: str
     document_chunker: str
     document_chunk_size: int
     document_chunk_overlap: int
@@ -53,7 +52,6 @@ class AppConfig:
                 "sentence-transformers/all-MiniLM-L6-v2",
             ),
             document_top_k=int(os.getenv("DOCUMENT_TOP_K", "4")),
-            vector_backend=os.getenv("VECTOR_BACKEND", "sqlite_json"),
             document_chunker=os.getenv("DOCUMENT_CHUNKER", "custom"),
             document_chunk_size=int(os.getenv("DOCUMENT_CHUNK_SIZE", "1000")),
             document_chunk_overlap=int(os.getenv("DOCUMENT_CHUNK_OVERLAP", "150")),

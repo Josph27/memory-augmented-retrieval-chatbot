@@ -12,7 +12,6 @@ try:
         EvalResources,
         RetrievalModeUnavailable,
         ANSWER_MODE_CHOICES,
-        VECTOR_BACKEND_CHOICES,
         build_eval_resources,
         evaluate_case,
         load_jsonl,
@@ -25,7 +24,6 @@ except ImportError:
         EvalResources,
         RetrievalModeUnavailable,
         ANSWER_MODE_CHOICES,
-        VECTOR_BACKEND_CHOICES,
         build_eval_resources,
         evaluate_case,
         load_jsonl,
@@ -33,12 +31,7 @@ except ImportError:
     )
 
 
-DEFAULT_MODES = (
-    "langchain_chroma",
-    "keyword_retrieval",
-    "vector_retrieval",
-    "hybrid_retrieval",
-)
+DEFAULT_MODES = ("langchain_chroma",)
 
 
 @dataclass(frozen=True)
@@ -95,12 +88,6 @@ def main() -> None:
         help="Use one document per case or retrieve from a shared dataset corpus.",
     )
     parser.add_argument(
-        "--vector-backend",
-        choices=VECTOR_BACKEND_CHOICES,
-        default=None,
-        help="Vector backend for vector/hybrid modes. Defaults to VECTOR_BACKEND env.",
-    )
-    parser.add_argument(
         "--answer-mode",
         choices=ANSWER_MODE_CHOICES,
         default="oracle",
@@ -124,7 +111,6 @@ def main() -> None:
             cases=cases,
             top_k=args.top_k,
             retrieval_scope=args.retrieval_scope,
-            vector_backend=args.vector_backend,
             answer_mode=args.answer_mode,
             resource_cache=resource_cache,
         )
@@ -140,7 +126,6 @@ def evaluate_mode(
     cases: list[dict],
     top_k: int = 4,
     retrieval_scope: str = "isolated",
-    vector_backend: str | None = None,
     answer_mode: str = "oracle",
     resource_cache: dict[str, EvalResources | RetrievalModeUnavailable] | None = None,
 ) -> ModeComparisonResult:
@@ -150,7 +135,6 @@ def evaluate_mode(
             mode=mode,
             retrieval_scope=retrieval_scope,
             cases=cases,
-            vector_backend=vector_backend,
             answer_mode=answer_mode,
             resource_cache=resource_cache,
         )
@@ -189,21 +173,17 @@ def resources_for_mode(
     mode: str,
     retrieval_scope: str,
     cases: list[dict],
-    vector_backend: str | None,
     answer_mode: str,
     resource_cache: dict[str, EvalResources | RetrievalModeUnavailable] | None,
 ) -> EvalResources:
-    """Return shared semantic resources for vector/hybrid comparison modes."""
+    """Return shared resources for comparison modes."""
     if retrieval_scope == "corpus":
-        cache_key = f"corpus:{mode}:{vector_backend or 'env'}:{answer_mode}"
-    elif mode in {"vector_retrieval", "hybrid_retrieval"}:
-        cache_key = f"semantic_retrieval:{vector_backend or 'env'}:{answer_mode}"
+        cache_key = f"corpus:{mode}:{answer_mode}"
     else:
         return build_eval_resources(
             mode,
             retrieval_scope=retrieval_scope,
             cases=cases,
-            vector_backend=vector_backend,
             answer_mode=answer_mode,
         )
 
@@ -212,7 +192,6 @@ def resources_for_mode(
             mode,
             retrieval_scope=retrieval_scope,
             cases=cases,
-            vector_backend=vector_backend,
             answer_mode=answer_mode,
         )
 
@@ -227,7 +206,6 @@ def resources_for_mode(
             context_mode=mode,
             retrieval_scope=retrieval_scope,
             cases=cases,
-            vector_backend=vector_backend,
             answer_mode=answer_mode,
         )
     except RetrievalModeUnavailable as error:

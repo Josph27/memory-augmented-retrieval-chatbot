@@ -155,5 +155,5 @@ def source_reason(
 ) -> str:
     """Return a per-query reason for a source plan."""
     if source_policy.source == "document_memory" and analysis.signals.asks_about_documents:
-        return "Document-like query detected; enabling keyword document retrieval."
+        return "Document-like query detected; enabling LangChain-Chroma document retrieval."
     return source_policy.reason

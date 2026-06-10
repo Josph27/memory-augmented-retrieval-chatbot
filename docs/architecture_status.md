@@ -2,12 +2,10 @@
 
 This project is a Chainlit + SQLite chatbot with current-chat short-term memory.
 The new agent classes are production-shaped wrappers around the existing behavior.
-Document memory now prefers a LangChain-Chroma retrieval backend while keeping
+Document memory now uses a LangChain-Chroma retrieval backend while keeping
 the project-specific memory architecture unchanged. SQLite still stores chats,
-raw messages, structured memory, and legacy document chunks. `MemoryCandidate`,
-`ContextPacket`, and `WorkflowTrace` remain custom. The older custom
-keyword/vector/hybrid document retrievers remain available as legacy fallback
-paths.
+raw messages, structured memory, and document metadata/chunks. `MemoryCandidate`,
+`ContextPacket`, and `WorkflowTrace` remain custom.
 
 ## Current Pipeline
 
@@ -18,7 +16,7 @@ Chainlit app.py
 -> QueryAnalyzer / RoutePlanner
 -> Database.save_message(user)
 -> RetrieverDispatcher
--> RecentMessagesRetriever / StructuredMemoryRetriever / DocumentRetriever
+-> RecentMessagesRetriever / StructuredMemoryRetriever / LangChainChromaRetriever
 -> MemoryReranker
 -> ContextBudgetAllocator
 -> ContextBuilder / ContextPacket
@@ -67,11 +65,6 @@ Chainlit UI. `ChatService.handle_user_turn` exposes the richer
   - Preferred document-memory retriever. Indexes document text/chunks into
     Chroma with LangChain, retrieves top-k LangChain documents, and converts
     them into `MemoryCandidate(source="document_memory", ...)`.
-- `src/retrieval/document_retriever.py`
-  - Legacy/fallback document retriever. Loads plain-text document chunks from
-    SQLite. Keyword mode ranks them with simple keyword overlap. Optional vector
-    and hybrid modes use the legacy embedding/vector-store abstraction when
-    configured and indexed.
 - `src/retrieval/reranker.py`
   - Scores retrieved `MemoryCandidate` objects and returns ranked copies with
     score breakdown metadata. This is trace-only and does not affect prompts.
@@ -168,7 +161,7 @@ Stub retrievers exist for disabled future sources:
 
 ## Current Document Memory
 
-Document memory has a preferred LangChain-Chroma path plus legacy custom paths:
+Document memory uses the LangChain-Chroma path:
 
 - plain text is ingested through `DocumentIngestionService`
 - local `.txt` and `.md` files can be loaded through `src/documents/loaders.py`
@@ -188,49 +181,29 @@ Document memory has a preferred LangChain-Chroma path plus legacy custom paths:
   local files into the LangChain-Chroma document backend without the Chainlit UI
 - retrieved LangChain `Document` objects are converted into
   `MemoryCandidate(source="document_memory", ...)`
-- legacy `DocumentRetriever` still performs simple lowercase keyword overlap or
-  optional custom vector/hybrid retrieval when selected
 - document candidates flow through `RetrieverDispatcher`, `MemoryReranker`,
   `ContextBudgetAllocator`, `ContextBuilder`, and `ContextPacket`
 
 Document chunks appear in the retrieved/document memory section of the prompt,
 not as recent messages.
 
-Optional semantic retrieval components:
-
-- `src/embeddings/base.py` defines the embedding interface
-- `src/embeddings/sentence_transformer_embedder.py` is the intended real backend
-  using `sentence-transformers/all-MiniLM-L6-v2`
-- `src/embeddings/fake_embedder.py` supports offline deterministic tests
-- `src/vectorstores/base.py` defines vector store search/upsert contracts
-- `src/vectorstores/sqlite_json_store.py` stores vectors as JSON in normal SQLite
-  for fallback/testing
-- `src/vectorstores/sqlite_vec_store.py` checks for sqlite-vec availability and
-  fails clearly if unavailable
-- `src/documents/embedding_indexer.py` indexes stored chunks separately from
-  ingestion
-
 Configuration:
 
 - `DOCUMENT_CHUNKER=custom|langchain_recursive`
 - `DOCUMENT_CHUNK_SIZE=1000`
 - `DOCUMENT_CHUNK_OVERLAP=150`
-- `DOCUMENT_RETRIEVAL_MODE=langchain_chroma|keyword|vector|hybrid`
+- `DOCUMENT_RETRIEVAL_MODE=langchain_chroma`
 - `LANGCHAIN_CHROMA_PERSIST_DIR=data/chroma`
 - `LANGCHAIN_CHUNK_SIZE=1000`
 - `LANGCHAIN_CHUNK_OVERLAP=150`
 - `EMBEDDING_MODEL_NAME=sentence-transformers/all-MiniLM-L6-v2`
 - `DOCUMENT_TOP_K=4`
-- `VECTOR_BACKEND=sqlite_json|sqlite_vec|in_memory`
 
-`langchain_chroma` is the preferred document RAG mode. If optional
-LangChain-Chroma dependencies or the embedding model are unavailable, retrieval
-falls back to the legacy keyword retriever with a concise warning. Keyword,
-vector, and hybrid remain selectable legacy modes.
+`langchain_chroma` is the document RAG mode. If `DOCUMENT_RETRIEVAL_MODE` is set
+to another value, the dispatcher logs a warning and uses LangChain-Chroma.
 
 Still missing or legacy:
 
-- replacing legacy custom vector/hybrid internals after LangChain-Chroma evals
 - production file loaders for non-text documents
 - richer file loading/parsing beyond `.txt`, `.md`, and optional `.pdf`
 - semantic reranking

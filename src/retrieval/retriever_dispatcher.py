@@ -6,7 +6,6 @@ from typing import Protocol
 from src.core.contracts import MemoryCandidate, RoutePlan, SourcePlan
 from src.database import Database
 from src.memory.constants import RAW_MESSAGE_LIMIT
-from src.retrieval.document_retriever import DocumentRetriever
 from src.retrieval.langchain_chroma_retriever import LangChainChromaRetriever
 from src.retrieval.recent_messages_retriever import RecentMessagesRetriever
 from src.retrieval.structured_memory_retriever import StructuredMemoryRetriever
@@ -29,11 +28,10 @@ class RetrieverDispatcher:
         raw_message_limit: int = RAW_MESSAGE_LIMIT,
         retrievers: dict[str, SourceRetriever] | None = None,
     ) -> None:
-        legacy_document_retriever = DocumentRetriever.from_env(database)
         self.retrievers: dict[str, SourceRetriever] = retrievers or {
             "recent_messages": RecentMessagesRetriever(database, default_limit=raw_message_limit),
             "structured_memory": StructuredMemoryRetriever(database),
-            "document_memory": document_retriever_for_env(database, legacy_document_retriever),
+            "document_memory": langchain_chroma_retriever_for_env(database),
         }
 
     def retrieve(self, chat_id: str, route_plan: RoutePlan) -> list[MemoryCandidate]:
@@ -51,16 +49,12 @@ class RetrieverDispatcher:
         return candidates
 
 
-def document_retriever_for_env(
-    database: Database,
-    legacy_document_retriever: DocumentRetriever | None = None,
-) -> SourceRetriever:
-    """Select primary LangChain-Chroma or legacy document retrieval backend."""
-    legacy = legacy_document_retriever or DocumentRetriever.from_env(database)
+def langchain_chroma_retriever_for_env(database: Database) -> SourceRetriever:
+    """Select the LangChain-Chroma document retrieval backend."""
     mode = os.getenv("DOCUMENT_RETRIEVAL_MODE", "langchain_chroma").strip().lower()
-    if mode == "langchain_chroma":
-        return LangChainChromaRetriever.from_env(
-            database=database,
-            fallback_retriever=DocumentRetriever(database=database, retrieval_mode="keyword"),
+    if mode != "langchain_chroma":
+        print(
+            "unsupported_document_retrieval_mode "
+            f"mode={mode!r} falling_back_to='langchain_chroma'"
         )
-    return legacy
+    return LangChainChromaRetriever.from_env(database=database)

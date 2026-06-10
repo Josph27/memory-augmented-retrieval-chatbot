@@ -16,10 +16,31 @@ from src.documents.splitters import (
     LangChainSplitterUnavailable,
     split_document_text,
 )
-from src.retrieval.document_retriever import DocumentRetriever
 from src.retrieval.retriever_dispatcher import RetrieverDispatcher
 from src.retrieval.reranker import MemoryReranker
 from src.routing.route_planner import RoutePlanner
+
+
+class FakeDocumentMemoryRetriever:
+    def __init__(self, content: str) -> None:
+        self.content = content
+
+    def retrieve(self, chat_id: str, source_plan: SourcePlan):
+        del chat_id, source_plan
+        from src.core.contracts import MemoryCandidate
+
+        return [
+            MemoryCandidate(
+                source="document_memory",
+                content=self.content,
+                record_id="fake-document",
+                metadata={
+                    "title": "Fake Document",
+                    "retrieval_backend": "langchain_chroma",
+                    "status": "active",
+                },
+            )
+        ]
 
 
 def test_split_text_into_chunks_preserves_paragraphs() -> None:
@@ -107,49 +128,20 @@ def test_document_ingestion_stores_document_and_chunks(tmp_path: Path) -> None:
     assert metadata["fallback_used"] is False
 
 
-def test_document_retriever_returns_relevant_chunk_with_metadata(tmp_path: Path) -> None:
-    database = Database(tmp_path / "chatbot.db")
-    DocumentIngestionService(database, target_chars=80).ingest_text_document(
-        title="Storage Notes",
-        text="SQLite stores raw messages.\n\nThe UI is built with Chainlit.",
-        source="test",
-    )
-
-    candidates = DocumentRetriever(database).retrieve(
-        chat_id="chat",
-        source_plan=SourcePlan(
-            source="document_memory",
-            enabled=True,
-            query="Which database stores raw messages?",
-            limit=2,
-        ),
-    )
-
-    assert candidates
-    assert candidates[0].source == "document_memory"
-    assert "SQLite stores raw messages" in candidates[0].content
-    assert candidates[0].metadata["title"] == "Storage Notes"
-    assert candidates[0].metadata["chunk_id"] == candidates[0].record_id
-    assert candidates[0].metadata["similarity_score"] > 0
-    assert "database" in candidates[0].metadata["matched_terms"] or "stores" in candidates[
-        0
-    ].metadata["matched_terms"]
-
-
 def test_document_retrieval_flows_through_dispatcher_when_enabled(
     tmp_path: Path,
-    monkeypatch,
 ) -> None:
-    monkeypatch.setenv("DOCUMENT_RETRIEVAL_MODE", "keyword")
     database = Database(tmp_path / "chatbot.db")
-    DocumentIngestionService(database).ingest_text_document(
-        title="Model Notes",
-        text="The configured local model is qwen2.5:3b.",
-        source="test",
-    )
     route_plan = RoutePlanner().plan("According to the document, which model is configured?")
 
-    candidates = RetrieverDispatcher(database).retrieve("chat", route_plan)
+    candidates = RetrieverDispatcher(
+        database,
+        retrievers={
+            "document_memory": FakeDocumentMemoryRetriever(
+                "The configured local model is qwen2.5:3b."
+            )
+        },
+    ).retrieve("chat", route_plan)
 
     document_candidates = [
         candidate for candidate in candidates if candidate.source == "document_memory"
@@ -160,17 +152,17 @@ def test_document_retrieval_flows_through_dispatcher_when_enabled(
 
 def test_document_candidates_reach_context_packet_document_section(
     tmp_path: Path,
-    monkeypatch,
 ) -> None:
-    monkeypatch.setenv("DOCUMENT_RETRIEVAL_MODE", "keyword")
     database = Database(tmp_path / "chatbot.db")
-    DocumentIngestionService(database).ingest_text_document(
-        title="Context Notes",
-        text="The latest user message must appear exactly once at the end.",
-        source="test",
-    )
     route_plan = RoutePlanner().plan("According to the document, where is the latest user message?")
-    retrieved = RetrieverDispatcher(database).retrieve("chat", route_plan)
+    retrieved = RetrieverDispatcher(
+        database,
+        retrievers={
+            "document_memory": FakeDocumentMemoryRetriever(
+                "The latest user message must appear exactly once at the end."
+            )
+        },
+    ).retrieve("chat", route_plan)
     ranked = MemoryReranker().rank(retrieved, route_plan.ranking_profile)
     budget = ContextBudgetAllocator().allocate(
         route_plan=route_plan,

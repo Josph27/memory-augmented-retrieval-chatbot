@@ -11,7 +11,7 @@ from src.retrieval.langchain_chroma_retriever import (
     langchain_document_to_memory_candidate,
     metadata_for_stored_chunk,
 )
-from src.retrieval.retriever_dispatcher import document_retriever_for_env
+from src.retrieval.retriever_dispatcher import langchain_chroma_retriever_for_env
 
 
 class FakeDocument:
@@ -103,7 +103,7 @@ def test_dispatcher_selects_langchain_chroma_by_default(monkeypatch, tmp_path: P
     database = Database(tmp_path / "chatbot.db")
     monkeypatch.delenv("DOCUMENT_RETRIEVAL_MODE", raising=False)
 
-    retriever = document_retriever_for_env(database)
+    retriever = langchain_chroma_retriever_for_env(database)
 
     assert isinstance(retriever, LangChainChromaRetriever)
 

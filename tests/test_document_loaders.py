@@ -11,6 +11,8 @@ from src.documents.loaders import (
     index_loaded_document,
     load_document_file,
 )
+from src.core.contracts import SourcePlan
+from src.retrieval.langchain_chroma_retriever import LangChainChromaRetriever
 
 
 class FakeIndexer:
@@ -33,6 +35,36 @@ class FakeIndexer:
             }
         )
         return {"document_id": "fake-doc", "chunk_count": 1}
+
+
+class FakeVectorStore:
+    def __init__(self) -> None:
+        self.documents = []
+        self.ids = []
+
+    def add_documents(self, documents, ids):
+        self.documents.extend(documents)
+        self.ids.extend(ids)
+
+    def similarity_search_with_score(self, query: str, k: int):
+        query_terms = {term.lower().strip("?.:,") for term in query.split()}
+        scored = []
+        for document in self.documents:
+            content = document.page_content.lower()
+            score = 0.1
+            if any(term and term in content for term in query_terms):
+                score = 0.95
+            scored.append((document, score))
+        return sorted(scored, key=lambda item: item[1], reverse=True)[:k]
+
+
+class FakeLangChainChromaRetriever(LangChainChromaRetriever):
+    def __init__(self) -> None:
+        super().__init__(persist_dir="unused")
+        self.fake_vector_store = FakeVectorStore()
+
+    def _vectorstore(self):
+        return self.fake_vector_store
 
 
 def test_txt_loader_preserves_text_and_metadata(tmp_path: Path) -> None:
@@ -108,6 +140,30 @@ def test_index_file_document_loads_then_indexes(tmp_path: Path) -> None:
     assert indexer.calls[0]["text"] == "Manual body"
     assert indexer.calls[0]["source"] == "file"
     assert indexer.calls[0]["metadata"]["file_name"] == "manual.md"
+
+
+def test_loaded_file_indexes_and_retrieves_document_memory_candidate() -> None:
+    path = Path("tests/fixtures/docs/sample_report.txt")
+    retriever = FakeLangChainChromaRetriever()
+
+    index_file_document(path, retriever)
+    candidates = retriever.retrieve(
+        chat_id="chat",
+        source_plan=SourcePlan(
+            source="document_memory",
+            enabled=True,
+            query="What is the unique planning code ALPHA-47?",
+            limit=1,
+        ),
+    )
+
+    assert len(candidates) == 1
+    candidate = candidates[0]
+    assert candidate.source == "document_memory"
+    assert "ALPHA-47" in candidate.content
+    assert candidate.metadata["file_name"] == "sample_report.txt"
+    assert candidate.metadata["file_extension"] == ".txt"
+    assert candidate.metadata["retrieval_backend"] == "langchain_chroma"
 
 
 def test_pdf_loader_skips_when_pdf_dependency_unavailable(tmp_path: Path) -> None:

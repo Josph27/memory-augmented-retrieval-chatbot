@@ -57,10 +57,10 @@ def test_result_to_ragas_row_adds_required_fields_and_metadata() -> None:
     row = result_to_ragas_row(
         result=fake_result(),
         case=fake_case(),
-        retrieval_mode="vector_retrieval",
+        retrieval_mode="langchain_chroma",
         retrieval_scope="corpus",
         top_k=3,
-        vector_backend="sqlite_vec",
+        vector_backend=None,
     )
 
     assert row["question"] == "What color is the access key?"
@@ -68,10 +68,10 @@ def test_result_to_ragas_row_adds_required_fields_and_metadata() -> None:
     assert row["answer"] == "blue"
     assert row["ground_truth"] == "blue"
     assert row["case_id"] == "case-1"
-    assert row["metadata"]["retrieval_mode"] == "vector_retrieval"
+    assert row["metadata"]["retrieval_mode"] == "langchain_chroma"
     assert row["metadata"]["retrieval_scope"] == "corpus"
     assert row["metadata"]["top_k"] == 3
-    assert row["metadata"]["vector_backend"] == "sqlite_vec"
+    assert row["metadata"]["vector_backend"] is None
     assert row["metadata"]["answer_mode"] == "model"
     assert row["metadata"]["source"] == "unit-test"
     assert row["metadata"]["document_id"] == "doc-1"
@@ -84,13 +84,13 @@ def test_results_to_ragas_rows_preserves_alignment() -> None:
     rows = results_to_ragas_rows(
         results=[fake_result()],
         cases=[fake_case()],
-        retrieval_mode="keyword_retrieval",
+        retrieval_mode="langchain_chroma",
         retrieval_scope="isolated",
         top_k=1,
     )
 
     assert len(rows) == 1
-    assert rows[0]["metadata"]["retrieval_mode"] == "keyword_retrieval"
+    assert rows[0]["metadata"]["retrieval_mode"] == "langchain_chroma"
     assert rows[0]["metadata"]["top_k"] == 1
 
 
@@ -100,7 +100,7 @@ def test_write_ragas_jsonl_writes_without_ragas_dependency(tmp_path: Path) -> No
         result_to_ragas_row(
             result=fake_result(),
             case=fake_case(),
-            retrieval_mode="keyword_retrieval",
+            retrieval_mode="langchain_chroma",
             retrieval_scope="corpus",
             top_k=2,
         )

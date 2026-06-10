@@ -37,13 +37,12 @@ def test_normalized_top_k_values_keeps_positive_unique_values() -> None:
 
 def test_topk_result_from_comparison_copies_retrieval_metrics() -> None:
     result = topk_result_from_comparison(
-        comparison=make_comparison("vector_retrieval"),
+        comparison=make_comparison("langchain_chroma"),
         top_k=5,
-        backend="sqlite_vec",
     )
 
-    assert result.mode == "vector_retrieval"
-    assert result.backend == "sqlite_vec"
+    assert result.mode == "langchain_chroma"
+    assert result.backend == "chroma"
     assert result.k == 5
     assert result.cases == 3
     assert result.context_evidence_hit_rate == 0.5
@@ -52,16 +51,15 @@ def test_topk_result_from_comparison_copies_retrieval_metrics() -> None:
     assert result.failed_case_ids == ["case-2"]
 
 
-def test_backend_for_mode_only_labels_vector_modes() -> None:
-    assert backend_for_mode("keyword_retrieval", "sqlite_vec") == "-"
-    assert backend_for_mode("vector_retrieval", "sqlite_vec") == "sqlite_vec"
-    assert backend_for_mode("hybrid_retrieval", "sqlite_vec") == "sqlite_vec"
+def test_backend_for_mode_labels_chroma_only() -> None:
+    assert backend_for_mode("langchain_chroma") == "chroma"
+    assert backend_for_mode("document_text") == "-"
 
 
 def test_topk_row_and_json_output_are_stable() -> None:
     result = TopKCurveResult(
-        mode="keyword_retrieval",
-        backend="-",
+        mode="langchain_chroma",
+        backend="chroma",
         k=3,
         cases=4,
         context_evidence_hit_rate=0.25,
@@ -72,8 +70,8 @@ def test_topk_row_and_json_output_are_stable() -> None:
     )
 
     assert topk_row(result) == [
-        "keyword_retrieval",
-        "-",
+        "langchain_chroma",
+        "chroma",
         "3",
         "4",
         "0.25",
@@ -98,16 +96,14 @@ def test_evaluate_topk_curves_aggregates_modes_and_k_values(monkeypatch) -> None
     )
 
     results = evaluate_topk_curves(
-        modes=["keyword_retrieval", "vector_retrieval"],
+        modes=["langchain_chroma"],
         cases=[{"case_id": "case-1"}],
         top_k_values=[1, 3],
         retrieval_scope="corpus",
-        vector_backend="sqlite_json",
     )
 
-    assert len(results) == 4
-    assert [result.k for result in results] == [1, 3, 1, 3]
+    assert len(results) == 2
+    assert [result.k for result in results] == [1, 3]
     assert calls[0]["top_k"] == 1
     assert calls[1]["top_k"] == 3
-    assert calls[2]["mode"] == "vector_retrieval"
-    assert calls[2]["vector_backend"] == "sqlite_json"
+    assert calls[0]["mode"] == "langchain_chroma"
