@@ -224,3 +224,4 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+evals/document_qa/datasets/nq_subset.jsonl
