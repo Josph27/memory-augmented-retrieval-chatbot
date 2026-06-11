@@ -37,7 +37,7 @@ class AppConfig:
         return cls(
             openai_api_key=os.getenv("OPENAI_API_KEY", "dummy"),
             openai_base_url=os.getenv("OPENAI_BASE_URL", "http://localhost:11434/v1"),
-            model_name=os.getenv("MODEL_NAME", "qwen2.5:3b"),
+            model_name=os.getenv("MODEL_NAME", "google/gemma-4-31B-it"),
             database_path=Path(os.getenv("DATABASE_PATH", "data/chatbot.db")),
             raw_message_limit=int(os.getenv("RAW_MESSAGE_LIMIT", str(RAW_MESSAGE_LIMIT))),
             memory_update_batch_size=int(

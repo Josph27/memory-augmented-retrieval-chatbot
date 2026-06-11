@@ -26,6 +26,17 @@ class StoredMessage:
 
 
 @dataclass(frozen=True)
+class StoredChat:
+    """A chat thread loaded from SQLite."""
+
+    id: str
+    title: str | None
+    created_at: str
+    updated_at: str
+    model_name: str | None
+
+
+@dataclass(frozen=True)
 class StoredDocumentChunk:
     """A plain-text document chunk loaded from SQLite."""
 
@@ -66,7 +77,8 @@ class Database:
                     id TEXT PRIMARY KEY,
                     title TEXT,
                     created_at TEXT NOT NULL,
-                    updated_at TEXT NOT NULL
+                    updated_at TEXT NOT NULL,
+                    model_name TEXT
                 );
 
                 CREATE TABLE IF NOT EXISTS messages (
@@ -128,6 +140,7 @@ class Database:
                 """
             )
             self._ensure_messages_summarized_column(connection)
+            self._ensure_chats_model_name_column(connection)
             connection.execute(
                 """
                 CREATE INDEX IF NOT EXISTS idx_messages_chat_summarized
@@ -146,17 +159,140 @@ class Database:
                 "ALTER TABLE messages ADD COLUMN summarized INTEGER NOT NULL DEFAULT 0"
             )
 
-    def create_chat(self, chat_id: str, title: str | None = None) -> None:
+    def _ensure_chats_model_name_column(self, connection: sqlite3.Connection) -> None:
+        """Add `chats.model_name` for databases created before model profiles."""
+        columns = {
+            row["name"]
+            for row in connection.execute("PRAGMA table_info(chats)").fetchall()
+        }
+        if "model_name" not in columns:
+            connection.execute("ALTER TABLE chats ADD COLUMN model_name TEXT")
+
+    def create_chat(
+        self,
+        chat_id: str,
+        title: str | None = None,
+        model_name: str | None = None,
+    ) -> None:
         """Insert a chat row if Chainlit starts a new session."""
         timestamp = utc_now()
         with self.connect() as connection:
             connection.execute(
                 """
-                INSERT OR IGNORE INTO chats (id, title, created_at, updated_at)
-                VALUES (?, ?, ?, ?)
+                INSERT OR IGNORE INTO chats (id, title, created_at, updated_at, model_name)
+                VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(id) DO UPDATE SET
+                    title = COALESCE(excluded.title, chats.title),
+                    model_name = COALESCE(excluded.model_name, chats.model_name)
                 """,
-                (chat_id, title, timestamp, timestamp),
+                (chat_id, title, timestamp, timestamp, model_name),
             )
+
+    def get_chat(self, chat_id: str) -> StoredChat | None:
+        """Load one chat thread by id."""
+        with self.connect() as connection:
+            row = connection.execute(
+                """
+                SELECT id, title, created_at, updated_at, model_name
+                FROM chats
+                WHERE id = ?
+                """,
+                (chat_id,),
+            ).fetchone()
+        return self._chat_from_row(row) if row else None
+
+    def list_chats(
+        self,
+        limit: int,
+        cursor: str | None = None,
+        search: str | None = None,
+        require_messages: bool = False,
+    ) -> list[StoredChat]:
+        """List chat threads for Chainlit history."""
+        parameters: list[object] = []
+        clauses: list[str] = []
+        if require_messages:
+            clauses.append("EXISTS (SELECT 1 FROM messages WHERE messages.chat_id = chats.id)")
+        if cursor:
+            cursor_chat = self.get_chat(cursor)
+            if cursor_chat:
+                clauses.append("updated_at < ?")
+                parameters.append(cursor_chat.updated_at)
+        if search:
+            clauses.append("(title LIKE ? OR id LIKE ?)")
+            pattern = f"%{search}%"
+            parameters.extend([pattern, pattern])
+
+        where_clause = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+        parameters.append(limit)
+        with self.connect() as connection:
+            rows = connection.execute(
+                f"""
+                SELECT id, title, created_at, updated_at, model_name
+                FROM chats
+                {where_clause}
+                ORDER BY updated_at DESC, created_at DESC
+                LIMIT ?
+                """,
+                parameters,
+            ).fetchall()
+
+        return [self._chat_from_row(row) for row in rows]
+
+    def update_chat_title(self, chat_id: str, title: str) -> None:
+        """Update the visible thread title."""
+        timestamp = utc_now()
+        with self.connect() as connection:
+            connection.execute(
+                """
+                UPDATE chats
+                SET title = ?, updated_at = ?
+                WHERE id = ?
+                """,
+                (title, timestamp, chat_id),
+            )
+
+    def update_chat_model(self, chat_id: str, model_name: str) -> None:
+        """Persist the model selected for a chat."""
+        with self.connect() as connection:
+            connection.execute(
+                "UPDATE chats SET model_name = ? WHERE id = ?",
+                (model_name, chat_id),
+            )
+
+    def message_count(self, chat_id: str) -> int:
+        """Return the number of persisted messages for a chat."""
+        with self.connect() as connection:
+            row = connection.execute(
+                "SELECT COUNT(*) AS count FROM messages WHERE chat_id = ?",
+                (chat_id,),
+            ).fetchone()
+        return int(row["count"] if row else 0)
+
+    def messages_for_chat(self, chat_id: str) -> list[StoredMessage]:
+        """Load all raw messages for one chat in chronological order."""
+        with self.connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT id, role, content, created_at, summarized
+                FROM messages
+                WHERE chat_id = ?
+                ORDER BY id ASC
+                """,
+                (chat_id,),
+            ).fetchall()
+
+        return [self._message_from_row(row) for row in rows]
+
+    def delete_chat(self, chat_id: str) -> None:
+        """Delete one chat and its derived current-chat memory."""
+        with self.connect() as connection:
+            connection.execute("DELETE FROM messages WHERE chat_id = ?", (chat_id,))
+            connection.execute(
+                "DELETE FROM chat_memory_state WHERE chat_id = ?",
+                (chat_id,),
+            )
+            connection.execute("DELETE FROM chats WHERE id = ?", (chat_id,))
 
     def save_message(self, chat_id: str, role: str, content: str) -> int:
         """Persist one chat message."""
@@ -479,6 +615,15 @@ class Database:
                 """,
                 (embedding_model,),
             ).fetchall()
+
+    def _chat_from_row(self, row: sqlite3.Row) -> StoredChat:
+        return StoredChat(
+            id=row["id"],
+            title=row["title"],
+            created_at=row["created_at"],
+            updated_at=row["updated_at"],
+            model_name=row["model_name"],
+        )
 
     def _message_from_row(self, row: sqlite3.Row) -> StoredMessage:
         return StoredMessage(

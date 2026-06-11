@@ -12,8 +12,8 @@ class ModelWrapper:
     `/v1/chat/completions` endpoint by changing environment variables.
     """
 
-    def __init__(self, config: AppConfig) -> None:
-        self.model_name = config.model_name
+    def __init__(self, config: AppConfig, model_name: str | None = None) -> None:
+        self.model_name = model_name or config.model_name
         self.client = OpenAI(
             api_key=config.openai_api_key,
             base_url=config.openai_base_url,
