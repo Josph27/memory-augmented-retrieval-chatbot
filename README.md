@@ -209,6 +209,36 @@ uv run python evals/test_short_term_memory.py
 
 The script prints each test name, expected answer, actual answer, whether the fact appeared in structured memory, whether it was outside the recent raw window, and a final `Passed X/Y tests` summary.
 
+## Verifying Natural Cross-Chat Memory
+
+Use this script to verify the real wiring for the demo flow:
+
+1. Chat 1 receives a memory-bearing message.
+2. Additional turns push that message outside the recent raw window.
+3. Normal turn processing runs `update_memory_if_needed`.
+4. LangMem-backed structured memory writes to `long_term_memories`.
+5. Chat 2 retrieves structured memory from shared namespaces.
+
+Fast wiring check (simulated Chat 1 fillers, real memory update/retrieval):
+
+```bash
+uv run python scripts/verify_natural_long_term_memory_flow.py --mode staged --filler-turns 6 --skip-chat2-answer
+```
+
+Full natural-turn demo check (real ChatService turns):
+
+```bash
+uv run python scripts/verify_natural_long_term_memory_flow.py --mode natural --filler-turns 6
+```
+
+Expected success signals in output:
+
+- `long_term_memories_count` greater than `0`
+- `chat2_structured_candidates_count` greater than `0`
+- `verification_summary extraction_ran=True long_term_written=True chat2_retrieved=True`
+
+If it fails, check `OPENAI_BASE_URL`, `MODEL_NAME`, and endpoint availability.
+
 ## Local Setup With pip
 
 ```bash
