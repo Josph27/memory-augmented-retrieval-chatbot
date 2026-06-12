@@ -34,14 +34,29 @@ class RoutePlannerPolicy:
     )
     future_sources: tuple[SourceRoutingPolicy, ...] = (
         SourceRoutingPolicy(
+            source="current_chat_gist",
+            enabled=False,
+            reason="Current-chat gist retrieval is not implemented yet.",
+        ),
+        SourceRoutingPolicy(
+            source="previous_chat_gist",
+            enabled=False,
+            reason="Previous-chat gist retrieval is not implemented yet.",
+        ),
+        SourceRoutingPolicy(
+            source="raw_message_span",
+            enabled=False,
+            reason="Raw-message span drill-down is not enabled by default.",
+        ),
+        SourceRoutingPolicy(
             source="current_chat_chunks",
             enabled=False,
-            reason="Gist/chunk retrieval is not implemented yet.",
+            reason="Legacy alias; prefer current_chat_gist for new memory code.",
         ),
         SourceRoutingPolicy(
             source="previous_chat_memory",
             enabled=False,
-            reason="Long-term memory across chats is not implemented yet.",
+            reason="Legacy alias; prefer previous_chat_gist for new memory code.",
         ),
         SourceRoutingPolicy(
             source="document_memory",

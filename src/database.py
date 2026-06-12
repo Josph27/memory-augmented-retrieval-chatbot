@@ -19,6 +19,7 @@ class StoredMessage:
     """A chat message loaded from SQLite."""
 
     id: int
+    chat_id: str
     role: str
     content: str
     created_at: str
@@ -46,6 +47,24 @@ class StoredDocumentChunk:
     chunk_index: int
     text: str
     created_at: str
+    metadata_json: str
+
+
+@dataclass(frozen=True)
+class StoredChatGist:
+    """A compressed chat-memory gist with pointers back to raw messages."""
+
+    id: int
+    chat_id: str
+    source_type: str
+    gist_text: str
+    topics_json: str
+    decisions_json: str
+    open_tasks_json: str
+    start_message_id: int | None
+    end_message_id: int | None
+    created_at: str
+    updated_at: str
     metadata_json: str
 
 
@@ -128,6 +147,22 @@ class Database:
                     FOREIGN KEY (chunk_id) REFERENCES document_chunks(id) ON DELETE CASCADE
                 );
 
+                CREATE TABLE IF NOT EXISTS chat_gists (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    chat_id TEXT NOT NULL,
+                    source_type TEXT NOT NULL,
+                    gist_text TEXT NOT NULL,
+                    topics_json TEXT NOT NULL DEFAULT '[]',
+                    decisions_json TEXT NOT NULL DEFAULT '[]',
+                    open_tasks_json TEXT NOT NULL DEFAULT '[]',
+                    start_message_id INTEGER,
+                    end_message_id INTEGER,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    metadata_json TEXT NOT NULL DEFAULT '{}',
+                    FOREIGN KEY (chat_id) REFERENCES chats(id) ON DELETE CASCADE
+                );
+
                 CREATE INDEX IF NOT EXISTS idx_messages_chat_created
                 ON messages(chat_id, created_at);
 
@@ -136,6 +171,37 @@ class Database:
 
                 CREATE INDEX IF NOT EXISTS idx_document_chunk_embeddings_model
                 ON document_chunk_embeddings(embedding_model);
+
+                CREATE INDEX IF NOT EXISTS idx_chat_gists_chat_source
+                ON chat_gists(chat_id, source_type);
+
+                CREATE INDEX IF NOT EXISTS idx_chat_gists_source
+                ON chat_gists(source_type);
+
+                CREATE TABLE IF NOT EXISTS long_term_memories (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    namespace_json TEXT NOT NULL,
+                    namespace_path TEXT NOT NULL,
+                    memory_id TEXT NOT NULL,
+                    category TEXT NOT NULL,
+                    key TEXT NOT NULL,
+                    value TEXT NOT NULL,
+                    confidence REAL NOT NULL DEFAULT 0.5,
+                    status TEXT NOT NULL DEFAULT 'active',
+                    source_chat_id TEXT,
+                    source_message_ids_json TEXT NOT NULL DEFAULT '[]',
+                    source_gist_id INTEGER,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    metadata_json TEXT NOT NULL DEFAULT '{}',
+                    UNIQUE(namespace_path, memory_id)
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_long_term_memories_namespace
+                ON long_term_memories(namespace_path, status, updated_at);
+
+                CREATE INDEX IF NOT EXISTS idx_long_term_memories_category
+                ON long_term_memories(category);
 
                 """
             )
@@ -274,7 +340,7 @@ class Database:
         with self.connect() as connection:
             rows = connection.execute(
                 """
-                SELECT id, role, content, created_at, summarized
+                SELECT id, chat_id, role, content, created_at, summarized
                 FROM messages
                 WHERE chat_id = ?
                 ORDER BY id ASC
@@ -284,10 +350,35 @@ class Database:
 
         return [self._message_from_row(row) for row in rows]
 
+    def messages_for_chat_span(
+        self,
+        chat_id: str,
+        start_message_id: int,
+        end_message_id: int,
+    ) -> list[StoredMessage]:
+        """Load raw messages for one inclusive message-id span."""
+        lower = min(start_message_id, end_message_id)
+        upper = max(start_message_id, end_message_id)
+        with self.connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT id, chat_id, role, content, created_at, summarized
+                FROM messages
+                WHERE chat_id = ?
+                  AND id >= ?
+                  AND id <= ?
+                ORDER BY id ASC
+                """,
+                (chat_id, lower, upper),
+            ).fetchall()
+
+        return [self._message_from_row(row) for row in rows]
+
     def delete_chat(self, chat_id: str) -> None:
         """Delete one chat and its derived current-chat memory."""
         with self.connect() as connection:
             connection.execute("DELETE FROM messages WHERE chat_id = ?", (chat_id,))
+            connection.execute("DELETE FROM chat_gists WHERE chat_id = ?", (chat_id,))
             connection.execute(
                 "DELETE FROM chat_memory_state WHERE chat_id = ?",
                 (chat_id,),
@@ -316,7 +407,7 @@ class Database:
         with self.connect() as connection:
             rows = connection.execute(
                 """
-                SELECT id, role, content, created_at, summarized
+                SELECT id, chat_id, role, content, created_at, summarized
                 FROM messages
                 WHERE chat_id = ?
                 ORDER BY id DESC
@@ -337,11 +428,11 @@ class Database:
         with self.connect() as connection:
             rows = connection.execute(
                 """
-                SELECT id, role, content, created_at, summarized
+                SELECT id, chat_id, role, content, created_at, summarized
                 FROM messages
                 WHERE chat_id = ?
                   AND id < ?
-                ORDER BY id DESC
+                  ORDER BY id DESC
                 LIMIT ?
                 """,
                 (chat_id, before_message_id, limit),
@@ -359,7 +450,7 @@ class Database:
         with self.connect() as connection:
             rows = connection.execute(
                 """
-                SELECT id, role, content, created_at, summarized
+                SELECT id, chat_id, role, content, created_at, summarized
                 FROM messages
                 WHERE chat_id = ?
                   AND summarized = 0
@@ -388,7 +479,7 @@ class Database:
         with self.connect() as connection:
             rows = connection.execute(
                 """
-                SELECT id, role, content, created_at, summarized
+                SELECT id, chat_id, role, content, created_at, summarized
                 FROM messages
                 WHERE chat_id = ?
                   AND id NOT IN (
@@ -616,6 +707,141 @@ class Database:
                 (embedding_model,),
             ).fetchall()
 
+    def insert_chat_gist(
+        self,
+        chat_id: str,
+        source_type: str,
+        gist_text: str,
+        topics: list[str] | None = None,
+        decisions: list[str] | None = None,
+        open_tasks: list[str] | None = None,
+        start_message_id: int | None = None,
+        end_message_id: int | None = None,
+        metadata: dict | None = None,
+    ) -> int:
+        """Insert one chat gist without generating or validating its content."""
+        timestamp = utc_now()
+        with self.connect() as connection:
+            cursor = connection.execute(
+                """
+                INSERT INTO chat_gists (
+                    chat_id,
+                    source_type,
+                    gist_text,
+                    topics_json,
+                    decisions_json,
+                    open_tasks_json,
+                    start_message_id,
+                    end_message_id,
+                    created_at,
+                    updated_at,
+                    metadata_json
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    chat_id,
+                    source_type,
+                    gist_text,
+                    json.dumps(topics or [], ensure_ascii=True),
+                    json.dumps(decisions or [], ensure_ascii=True),
+                    json.dumps(open_tasks or [], ensure_ascii=True),
+                    start_message_id,
+                    end_message_id,
+                    timestamp,
+                    timestamp,
+                    json.dumps(metadata or {}, ensure_ascii=True),
+                ),
+            )
+            return int(cursor.lastrowid)
+
+    def chat_gist(self, gist_id: int) -> StoredChatGist | None:
+        """Load one chat gist by id."""
+        with self.connect() as connection:
+            row = connection.execute(
+                """
+                SELECT
+                    id,
+                    chat_id,
+                    source_type,
+                    gist_text,
+                    topics_json,
+                    decisions_json,
+                    open_tasks_json,
+                    start_message_id,
+                    end_message_id,
+                    created_at,
+                    updated_at,
+                    metadata_json
+                FROM chat_gists
+                WHERE id = ?
+                """,
+                (gist_id,),
+            ).fetchone()
+        return self._chat_gist_from_row(row) if row else None
+
+    def chat_gists_for_chat(
+        self,
+        chat_id: str,
+        source_type: str | None = None,
+    ) -> list[StoredChatGist]:
+        """List gists for one chat, optionally filtered by source type."""
+        parameters: list[object] = [chat_id]
+        source_clause = ""
+        if source_type:
+            source_clause = "AND source_type = ?"
+            parameters.append(source_type)
+        with self.connect() as connection:
+            rows = connection.execute(
+                f"""
+                SELECT
+                    id,
+                    chat_id,
+                    source_type,
+                    gist_text,
+                    topics_json,
+                    decisions_json,
+                    open_tasks_json,
+                    start_message_id,
+                    end_message_id,
+                    created_at,
+                    updated_at,
+                    metadata_json
+                FROM chat_gists
+                WHERE chat_id = ?
+                {source_clause}
+                ORDER BY updated_at DESC, id DESC
+                """,
+                parameters,
+            ).fetchall()
+        return [self._chat_gist_from_row(row) for row in rows]
+
+    def chat_gists_by_source_type(self, source_type: str) -> list[StoredChatGist]:
+        """List all gists for one source type."""
+        with self.connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT
+                    id,
+                    chat_id,
+                    source_type,
+                    gist_text,
+                    topics_json,
+                    decisions_json,
+                    open_tasks_json,
+                    start_message_id,
+                    end_message_id,
+                    created_at,
+                    updated_at,
+                    metadata_json
+                FROM chat_gists
+                WHERE source_type = ?
+                ORDER BY updated_at DESC, id DESC
+                """,
+                (source_type,),
+            ).fetchall()
+        return [self._chat_gist_from_row(row) for row in rows]
+
     def _chat_from_row(self, row: sqlite3.Row) -> StoredChat:
         return StoredChat(
             id=row["id"],
@@ -628,6 +854,7 @@ class Database:
     def _message_from_row(self, row: sqlite3.Row) -> StoredMessage:
         return StoredMessage(
             id=row["id"],
+            chat_id=row["chat_id"],
             role=row["role"],
             content=row["content"],
             created_at=row["created_at"],
@@ -642,5 +869,21 @@ class Database:
             chunk_index=row["chunk_index"],
             text=row["text"],
             created_at=row["created_at"],
+            metadata_json=row["metadata_json"],
+        )
+
+    def _chat_gist_from_row(self, row: sqlite3.Row) -> StoredChatGist:
+        return StoredChatGist(
+            id=row["id"],
+            chat_id=row["chat_id"],
+            source_type=row["source_type"],
+            gist_text=row["gist_text"],
+            topics_json=row["topics_json"],
+            decisions_json=row["decisions_json"],
+            open_tasks_json=row["open_tasks_json"],
+            start_message_id=row["start_message_id"],
+            end_message_id=row["end_message_id"],
+            created_at=row["created_at"],
+            updated_at=row["updated_at"],
             metadata_json=row["metadata_json"],
         )

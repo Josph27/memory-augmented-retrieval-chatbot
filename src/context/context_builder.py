@@ -9,17 +9,24 @@ from src.core.contracts import ContextBudget, ContextPacket, MemoryCandidate, Ro
 
 CONTEXT_SOURCE_ORDER = (
     "structured_memory",
+    "current_chat_gist",
+    "previous_chat_gist",
+    "document_memory",
+    "raw_message_span",
+    # Backward-compatible aliases for older route plans/tests.
     "current_chat_chunks",
     "previous_chat_memory",
-    "document_memory",
     "recent_messages",
 )
 
 DROPPABLE_OVERFLOW_SOURCES = (
     "structured_memory",
+    "current_chat_gist",
+    "previous_chat_gist",
+    "document_memory",
+    "raw_message_span",
     "current_chat_chunks",
     "previous_chat_memory",
-    "document_memory",
 )
 
 
@@ -200,16 +207,28 @@ class ContextBuilder:
             section
             for section in (
                 format_source_section(
+                    "current_chat_gist",
+                    selected_by_source["current_chat_gist"].selected,
+                ),
+                format_source_section(
+                    "previous_chat_gist",
+                    selected_by_source["previous_chat_gist"].selected,
+                ),
+                format_source_section(
+                    "document_memory",
+                    selected_by_source["document_memory"].selected,
+                ),
+                format_source_section(
+                    "raw_message_span",
+                    selected_by_source["raw_message_span"].selected,
+                ),
+                format_source_section(
                     "current_chat_chunks",
                     selected_by_source["current_chat_chunks"].selected,
                 ),
                 format_source_section(
                     "previous_chat_memory",
                     selected_by_source["previous_chat_memory"].selected,
-                ),
-                format_source_section(
-                    "document_memory",
-                    selected_by_source["document_memory"].selected,
                 ),
             )
             if section
@@ -286,9 +305,12 @@ class ContextBuilder:
         retrieved_sections = {
             source: format_source_section(source, selected_by_source[source].selected)
             for source in (
+                "current_chat_gist",
+                "previous_chat_gist",
+                "document_memory",
+                "raw_message_span",
                 "current_chat_chunks",
                 "previous_chat_memory",
-                "document_memory",
             )
         }
         recent_messages = [

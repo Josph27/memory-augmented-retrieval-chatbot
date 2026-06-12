@@ -28,7 +28,10 @@ class RerankerPolicy:
         default_factory=lambda: {
             "structured_memory": 0.95,
             "recent_messages": 0.9,
+            "current_chat_gist": 0.72,
+            "previous_chat_gist": 0.65,
             "document_memory": 0.6,
+            "raw_message_span": 0.58,
             "previous_chat_memory": 0.6,
             "current_chat_chunks": 0.55,
             "unknown": 0.3,
