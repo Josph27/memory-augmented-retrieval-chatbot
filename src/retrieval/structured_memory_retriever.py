@@ -2,6 +2,12 @@ from __future__ import annotations
 
 from src.core.contracts import MemoryCandidate, SourcePlan
 from src.database import Database
+from src.memory.long_term_store import (
+    SQLiteLongTermMemoryStore,
+    dedupe_memory_records,
+    record_to_candidate,
+    structured_memory_namespaces,
+)
 from src.memory.structured_state import active_memories, load_memory_state
 
 
@@ -10,9 +16,28 @@ class StructuredMemoryRetriever:
 
     def __init__(self, database: Database) -> None:
         self.database = database
+        self.long_term_store = SQLiteLongTermMemoryStore(database)
 
     def retrieve(self, chat_id: str, source_plan: SourcePlan) -> list[MemoryCandidate]:
         """Load active structured memory and normalize records as candidates."""
+        query = source_plan.query
+        store_records = []
+        for namespace in structured_memory_namespaces(chat_id):
+            if query:
+                store_records.extend(
+                    self.long_term_store.search(
+                        namespace_prefix=namespace,
+                        query=query,
+                        limit=source_plan.limit or 10,
+                    )
+                )
+            else:
+                store_records.extend(self.long_term_store.list(namespace))
+
+        store_records = [record for record in dedupe_memory_records(store_records) if record.status == "active"]
+        if store_records:
+            return [record_to_candidate(record) for record in store_records]
+
         del source_plan
         memory_state = load_memory_state(self.database.chat_memory_state(chat_id))
         candidates: list[MemoryCandidate] = []

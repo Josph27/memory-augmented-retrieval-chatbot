@@ -61,6 +61,12 @@ Chainlit UI. `ChatService.handle_user_turn` exposes the richer
     and message metadata.
 - `src/retrieval/structured_memory_retriever.py`
   - Loads active structured memory records from `chat_memory_state`.
+- `src/memory/langmem_structured.py`
+  - Primary structured-memory extraction backend. Uses LangMem
+    `create_memory_manager` with a project Pydantic schema, then normalizes
+    outputs into the existing `chat_memory_state` record format.
+  - Also writes normalized records to the namespace/key long-term store used
+    for cross-chat semantic memory.
 - `src/retrieval/langchain_chroma_retriever.py`
   - Preferred document-memory retriever. Indexes document text/chunks into
     Chroma with LangChain, retrieves top-k LangChain documents, and converts
@@ -102,8 +108,15 @@ For document-like queries, it also enables:
 
 Future sources may appear in the plan as disabled:
 
+- `current_chat_gist`
+- `previous_chat_gist`
+- `raw_message_span`
 - `current_chat_chunks`
 - `previous_chat_memory`
+
+`current_chat_chunks` and `previous_chat_memory` are legacy placeholder names.
+New gist-memory work should prefer `current_chat_gist` and
+`previous_chat_gist`.
 
 The dispatcher now calls retrievers for enabled sources and stores the resulting
 `MemoryCandidate` objects on `WorkflowTrace.retrieved_candidates`.
@@ -156,8 +169,48 @@ and dropped candidate IDs/reasons for compact debugging.
 
 Stub retrievers exist for disabled future sources:
 
+- `current_chat_gist`
+- `previous_chat_gist`
+- `raw_message_span`
 - `current_chat_chunks`
 - `previous_chat_memory`
+
+## Gist Memory Infrastructure
+
+Raw chat messages remain the source of truth. Gists are planned as compressed
+summaries and retrieval pointers over raw message spans, not replacements for
+the transcript.
+
+The current gist infrastructure is present:
+
+- `chat_gists` stores inert gist rows with `source_type`, `gist_text`,
+  optional topic/decision/task JSON, and `start_message_id` /
+  `end_message_id` pointers back to raw messages.
+- `CurrentChatGistSummarizer` can be explicitly called to compact older
+  unsummarized current-chat messages into a `current_chat_gist` row.
+- `current_chat_gist` is the canonical future source for summaries of older
+  parts of the active chat.
+- `previous_chat_gist` is the canonical future source for summaries of older
+  chats.
+- `raw_message_span` is a second-stage drill-down source for fetching the
+  original raw messages behind a gist.
+
+Current limitations:
+
+- no automatic gist generation in the normal chat turn
+- no vector retrieval over gists
+- no background compaction job
+- gist retrievers are disabled by default in routing
+- previous-chat gist generation is not implemented
+
+`CurrentChatGistSummarizer` keeps a configurable recent raw window, excludes
+the newest user message, summarizes only older unsummarized messages, stores a
+gist with raw message span pointers, and marks source messages as summarized
+only after a successful gist insert. The current gist retrievers only read
+stored rows and use temporary lexical filtering when a query is provided.
+Future work should add automatic/flagged compaction, embeddings/vector
+retrieval, previous-chat gists, and optional raw-span drill-down after the
+storage contract is stable.
 
 ## Current Document Memory
 
@@ -232,8 +285,15 @@ Short-term memory remains unchanged:
 - raw messages are stored in SQLite `messages`
 - recent raw messages are included directly in the prompt
 - older processed messages update structured memory in `chat_memory_state`
-- structured memory is generated through `StructuredMemoryState` operations:
-  `upsert`, `supersede`, and `delete`
+- structured memory extraction/consolidation is LangMem-backed through
+  `LangMemStructuredMemoryState`
+- the long-term store is namespaced and can be reused across chats, while
+  `chat_memory_state` remains the compatibility mirror for the current runtime
+- SQLite `chat_memory_state` remains the compatibility storage layer consumed
+  by `StructuredMemoryRetriever`, `MemoryCandidate`, and `ContextPacket`
+- the older custom JSON-operation updater in `structured_state.py` is
+  deprecated compatibility code; project-specific validators and storage
+  helpers remain in use
 
 ## Missing Future Components
 

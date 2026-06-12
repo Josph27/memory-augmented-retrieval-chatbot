@@ -54,6 +54,16 @@ Current chat memory is built from two parts:
 
 Raw messages remain the source of truth. The JSON memory state is a derived cache that can be regenerated later from `messages` if needed.
 
+Structured memory extraction/consolidation is LangMem-backed. LangMem produces
+typed semantic memories, and the app normalizes them into the existing
+`chat_memory_state.memory_json` record format so `StructuredMemoryRetriever`,
+`MemoryCandidate`, and `ContextPacket` stay stable.
+
+Structured memory also writes into a namespace/key long-term store in the same
+SQLite database. The default namespace is stable until real user/project IDs are
+available, so memory can be reused across chats while still mirroring into
+`chat_memory_state` for compatibility.
+
 Final chat prompts are assembled through the production-shaped `ContextPacket`
 path. The current active sources are `recent_messages`, `structured_memory`, and
 `document_memory` for document-like queries. Current-chat chunks and
@@ -79,7 +89,11 @@ The current schema for `chat_memory_state.memory_json` stores typed memory recor
 }
 ```
 
-The memory updater asks the model for validated operations such as `upsert`, `supersede`, and `delete`. Python applies accepted operations deterministically so weak model output cannot rewrite the whole memory state or erase known facts.
+The older custom JSON-operation updater is deprecated. The current primary path
+uses LangMem's `create_memory_manager` with a project schema, then applies
+project-specific validation such as category checks, source-message ID checks,
+transcript-like output rejection, vague-memory rejection, and lexical source
+support before writing both the long-term store and the compatibility mirror.
 
 Supported memory categories are `user_facts`, `project_facts`, `decisions`, `corrections`, `open_tasks`, `preferences`, and `constraints`.
 
