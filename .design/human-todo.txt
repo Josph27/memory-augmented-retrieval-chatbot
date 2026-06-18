@@ -1,0 +1,11 @@
+- projdu kod 
+- for now mrdam testovani rag systemu 
+- zprovoznim ten fucking porject
+- sepisu implementation doc
+
+* Prectu si jak se benchmarkuje RAG. 
+
+Parts of the system that need upgrade:
+- token counting -> use model's tokenizer
+- chunking isn't semantic, it's raw number of characters blocks with overlaps.
+- use MarkItDown 
