@@ -7,13 +7,17 @@ The app uses Chainlit for the browser chat UI, Python for backend logic, SQLite 
 ## Features
 
 - Browser chat UI with Chainlit
+- Chainlit model profiles for selecting a model before a new chat
+- SQLite-backed Chainlit thread history through `SQLiteChainlitDataLayer`
 - OpenAI-compatible model wrapper with one `chat(messages)` method
 - Local/free model defaults for Ollama-compatible endpoints
-- SQLite tables for `chats`, `messages`, and `chat_memory_state`
-- Short-term memory: structured JSON memory state plus recent raw messages
+- SQLite tables for chats, messages, long-term memories, compatibility memory
+  state, document metadata/chunks, and chat gists
+- Recent-message memory plus LangMem-backed structured long-term memory
 - Document memory through LangChain-Chroma
 - Production-shaped prompt assembly through `ContextPacket`, with legacy
   `ShortTermMemory` prompt fallback
+- Demo/debug memory tracing with `DEMO_MEMORY_TRACE=1`
 - Dockerfile with persistent `data/` mount support
 
 ## Local Model Defaults
@@ -35,6 +39,10 @@ ollama serve
 
 ## Local Setup With uv
 
+`pyproject.toml` with `uv` is the main dependency workflow for this project.
+`requirements.txt` is a minimal fallback and is not the authoritative list of
+optional RAG/evaluation dependencies.
+
 ```bash
 cp .env.example .env
 uv sync
@@ -47,22 +55,23 @@ The SQLite database is created at `data/chatbot.db` by default. The database fil
 
 ## Short-Term Memory
 
-Current chat memory is built from two parts:
+Current chat memory is built from three related parts:
 
-- Structured JSON memory derived from older messages and stored in `chat_memory_state`
 - The most recent raw messages from `messages`
+- Structured long-term memories stored in `long_term_memories`
+- A compatibility mirror in `chat_memory_state`
 
 Raw messages remain the source of truth. The JSON memory state is a derived cache that can be regenerated later from `messages` if needed.
 
 Structured memory extraction/consolidation is LangMem-backed. LangMem produces
-typed semantic memories, and the app normalizes them into the existing
-`chat_memory_state.memory_json` record format so `StructuredMemoryRetriever`,
-`MemoryCandidate`, and `ContextPacket` stay stable.
+typed semantic memories, and the app normalizes them into SQLite
+`long_term_memories` plus the existing `chat_memory_state.memory_json`
+compatibility format.
 
-Structured memory also writes into a namespace/key long-term store in the same
-SQLite database. The default namespace is stable until real user/project IDs are
-available, so memory can be reused across chats while still mirroring into
-`chat_memory_state` for compatibility.
+`StructuredMemoryRetriever` reads the namespace/key long-term store first. If
+no active long-term records are available, it falls back to `chat_memory_state`.
+The default namespace is stable until real user/project IDs are available, so
+memory can be reused across chats.
 
 Final chat prompts are assembled through the production-shaped `ContextPacket`
 path. The current active sources are `recent_messages`, `structured_memory`, and
@@ -89,7 +98,7 @@ The current schema for `chat_memory_state.memory_json` stores typed memory recor
 }
 ```
 
-The older custom JSON-operation updater is deprecated. The current primary path
+The older custom JSON-operation updater is deprecated compatibility code. The current primary path
 uses LangMem's `create_memory_manager` with a project schema, then applies
 project-specific validation such as category checks, source-message ID checks,
 transcript-like output rejection, vague-memory rejection, and lexical source
@@ -103,14 +112,16 @@ This is intentionally based on fixed message counts for now. The memory module a
 
 ## Document Memory
 
-Document memory currently supports plain text only:
+Document memory currently supports:
 
-- `DocumentIngestionService.ingest_text_document(...)`
 - local file loading for `.txt` and `.md`, with optional `.pdf` support when a
   PDF library is installed
-- splitter abstraction with custom paragraph-preserving chunking by default
-- SQLite `documents` and `document_chunks` tables
-- LangChain-Chroma document retrieval
+- LangChain recursive splitting in the primary Chroma indexing path
+- LangChain-Chroma document retrieval as the primary runtime backend
+- legacy/compatibility SQLite `documents`, `document_chunks`, and
+  `document_chunk_embeddings` paths
+- `DocumentIngestionService.ingest_text_document(...)` for the SQLite
+  compatibility path
 
 Document-like questions enable `document_memory` and retrieved chunks flow
 through:
@@ -124,7 +135,7 @@ LangChainChromaRetriever
 -> ContextPacket
 ```
 
-Optional semantic retrieval is available behind abstractions:
+Document RAG configuration:
 
 - `DOCUMENT_CHUNKER=custom|langchain_recursive`
 - `DOCUMENT_CHUNK_SIZE=1000`
@@ -231,6 +242,34 @@ Full natural-turn demo check (real ChatService turns):
 uv run python scripts/verify_natural_long_term_memory_flow.py --mode natural --filler-turns 6
 ```
 
+To show saved/retrieved memory in the Chainlit UI during a screen recording,
+enable demo trace mode before starting the app:
+
+```bash
+set -a
+source .env
+set +a
+export DEMO_MEMORY_TRACE=1
+uv run chainlit run app.py -w
+```
+
+Demo flow:
+
+1. Chat 1: say a durable preference, for example that you prefer mature,
+   stable open-source libraries over custom infrastructure.
+2. Continue about 6 turns so the first message leaves the recent raw window.
+3. Observe `🧠 Long-term memory saved` in the UI after the memory update.
+4. Start Chat 2 and ask: `What preferences do I have for this memory chatbot project?`
+5. Observe `🔎 Long-term memory retrieved`, including the source chat ID and
+   source message IDs, then the assistant answer using that memory.
+
+Inspect the long-term memory store directly:
+
+```bash
+uv run python scripts/inspect_long_term_memory.py
+uv run python scripts/inspect_long_term_memory.py --chat-id demo-chat-1 --limit 20
+```
+
 Expected success signals in output:
 
 - `long_term_memories_count` greater than `0`
@@ -240,6 +279,10 @@ Expected success signals in output:
 If it fails, check `OPENAI_BASE_URL`, `MODEL_NAME`, and endpoint availability.
 
 ## Local Setup With pip
+
+The `pip` path is a minimal fallback. Prefer the `uv` workflow above because
+`pyproject.toml` includes the current LangChain, LangMem, Chroma, and
+evaluation dependencies.
 
 ```bash
 python -m venv .venv
@@ -280,8 +323,13 @@ src/config.py           Environment configuration
 src/database.py         SQLite schema and persistence helpers
 src/model_wrapper.py    OpenAI-compatible model client
 src/chat_service.py     Chat orchestration and memory integration
-src/memory/short_term.py  Structured-memory plus recent-message context selection
-src/memory/structured_state.py  JSON memory update and validation
+src/chainlit_data_layer.py  SQLite-backed Chainlit thread history
+src/memory/short_term.py  Recent-message selection and memory update trigger
+src/memory/langmem_structured.py  LangMem-backed structured memory extraction
+src/memory/long_term_store.py  SQLite namespace/key long-term memory store
+src/retrieval/langchain_chroma_retriever.py  Primary document RAG backend
+src/context/context_builder.py  ContextPacket prompt assembly
+evals/document_qa/      Document QA retrieval/model-answer/RAGAS export evals
 data/chatbot.db         Runtime SQLite database, created automatically
 ```
 

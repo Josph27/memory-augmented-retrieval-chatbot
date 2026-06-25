@@ -51,8 +51,9 @@ Chainlit UI. `ChatService.handle_user_turn` exposes the richer
   - Produces normalized query text, coarse intent, lightweight signals, and
     confidence for tracing and future routing.
 - `src/routing/route_planner.py`
-  - Produces a `RoutePlan` for every turn. The plan is included in
-    `WorkflowTrace` but does not change context construction yet.
+  - Produces a `RoutePlan` for every turn. Current routing is mostly
+    rule/keyword based: recent and structured memory are enabled by default,
+    and document memory is enabled for document-like queries.
 - `src/retrieval/retriever_dispatcher.py`
   - Calls enabled source retrievers from the `RoutePlan` and returns normalized
     `MemoryCandidate` objects.
@@ -60,27 +61,29 @@ Chainlit UI. `ChatService.handle_user_turn` exposes the richer
   - Loads recent raw messages from SQLite and preserves role, content, order,
     and message metadata.
 - `src/retrieval/structured_memory_retriever.py`
-  - Loads active structured memory records from `chat_memory_state`.
+  - Loads active structured memory records from SQLite `long_term_memories`
+    first, then falls back to `chat_memory_state` only when no active
+    long-term records are available.
 - `src/memory/langmem_structured.py`
   - Primary structured-memory extraction backend. Uses LangMem
     `create_memory_manager` with a project Pydantic schema, then normalizes
-    outputs into the existing `chat_memory_state` record format.
-  - Also writes normalized records to the namespace/key long-term store used
-    for cross-chat semantic memory.
+    outputs into SQLite `long_term_memories` and mirrors them into the
+    existing `chat_memory_state` compatibility record format.
 - `src/retrieval/langchain_chroma_retriever.py`
   - Preferred document-memory retriever. Indexes document text/chunks into
     Chroma with LangChain, retrieves top-k LangChain documents, and converts
     them into `MemoryCandidate(source="document_memory", ...)`.
 - `src/retrieval/reranker.py`
   - Scores retrieved `MemoryCandidate` objects and returns ranked copies with
-    score breakdown metadata. This is trace-only and does not affect prompts.
+    score breakdown metadata. It is deterministic and metadata-aware, not a
+    cross-encoder or semantic reranker.
 - `src/context/token_estimator.py`
   - Defines a model-aware replaceable token estimator interface plus a
     tokenizer-free approximate implementation. No real tokenizer dependency is
     currently declared, so budgeting uses the approximate fallback until a
     model-specific tokenizer is plugged in.
 - `src/context/context_budget_allocator.py`
-  - Allocates profile-based trace budgets using `RoutePlan`, ranked candidates,
+  - Allocates profile-based budgets using `RoutePlan`, ranked candidates,
     model context limit, answer reserve, and system prompt estimate.
 - `src/context/context_builder.py`
   - Builds a budget-aware `ContextPacket` from ranked candidates and
@@ -88,9 +91,9 @@ Chainlit UI. `ChatService.handle_user_turn` exposes the richer
     validation. It records section-level token accounting and overflow metadata
     for each packet.
 - `src/context/context_comparator.py`
-  - Compares the legacy `ShortTermMemory` prompt messages with the trace-only
-    `ContextPacket`. It records compact prompt-shape metrics and warning codes
-    without printing full prompts by default.
+  - Compares the legacy `ShortTermMemory` prompt messages with the active
+    `ContextPacket` prompt path. It records compact prompt-shape metrics and
+    warning codes without printing full prompts by default.
 - `src/context/prompt_messages.py`
   - Converts validated `ContextPacket` messages to OpenAI-compatible chat
     messages and returns fallback reasons when validation fails.
@@ -125,11 +128,11 @@ The dispatcher now calls retrievers for enabled sources and stores the resulting
 `WorkflowTrace.ranked_candidates`. Score breakdowns include feature values,
 weights, feature contributions, final score, and the `ranking_profile`.
 
-`ContextBudgetAllocator` now stores a trace-only `ContextBudget` on
+`ContextBudgetAllocator` stores a `ContextBudget` on
 `WorkflowTrace.context_budget`. It supports profiles for `general_chat`,
 `memory_recall`, `document_question`, and `mixed_memory_document`.
 
-`ContextBuilder` now stores a `ContextPacket` on
+`ContextBuilder` stores a `ContextPacket` on
 `WorkflowTrace.context_packet`. It orders proposed context as system prompt,
 structured memory, retrieved/document memory, recent raw messages, and latest
 user message. Recent raw messages are chronology-preserving conversation
@@ -216,7 +219,10 @@ storage contract is stable.
 
 Document memory uses the LangChain-Chroma path:
 
-- plain text is ingested through `DocumentIngestionService`
+- runtime file uploads are loaded through `src/documents/loaders.py` and indexed
+  directly into the LangChain-Chroma backend
+- `DocumentIngestionService` remains available for the legacy/compatibility
+  SQLite document chunk path
 - local `.txt` and `.md` files can be loaded through `src/documents/loaders.py`
   and indexed into the LangChain-Chroma backend; `.pdf` loading is optional when
   `pypdf` or PyMuPDF is installed
@@ -227,7 +233,9 @@ Document memory uses the LangChain-Chroma path:
   splitter if unavailable
 - chunk metadata records `splitter_name`, `chunk_size`, `chunk_overlap`,
   `fallback_used`, and character offsets when available
-- chunks are stored in SQLite tables `documents` and `document_chunks`
+- SQLite tables `documents`, `document_chunks`, and
+  `document_chunk_embeddings` remain as metadata, compatibility, and legacy
+  paths
 - `LangChainChromaRetriever` indexes document text/chunks into Chroma and uses
   LangChain retrieval as the preferred `document_memory` backend
 - `scripts/index_document_file.py` is a small development utility for indexing
@@ -257,14 +265,33 @@ to another value, the dispatcher logs a warning and uses LangChain-Chroma.
 
 Still missing or legacy:
 
-- production file loaders for non-text documents
 - richer file loading/parsing beyond `.txt`, `.md`, and optional `.pdf`
 - semantic reranking
 - PDF or document-file parsing
 - Markdown/header-aware chunking
 - token-aware chunking
 - page-aware and parent-child chunks
-- RAGAS dependency and full generated-answer evaluation
+- required RAGAS dependency and full required RAGAS evaluator pipeline
+- generated-answer document QA exists, but deterministic retrieval metrics are
+  still the primary reliable benchmark
+
+## Chainlit Runtime Integration
+
+Implemented runtime integration includes:
+
+- Chainlit chat interface in `app.py`
+- selectable Chainlit model profiles
+- `SQLiteChainlitDataLayer` for SQLite-backed thread history
+- uploaded-file indexing before a chat turn
+- `DEMO_MEMORY_TRACE=1` trace helpers through `src/memory/memory_trace.py`
+- `scripts/inspect_long_term_memory.py` for inspecting stored long-term
+  memories
+- `scripts/verify_natural_long_term_memory_flow.py` for cross-chat memory demo
+  verification
+
+Dependency management should use `pyproject.toml` with `uv sync` as the
+primary workflow. `requirements.txt` is minimal and should not be treated as the
+authoritative dependency list.
 
 ## Termination
 
@@ -284,13 +311,14 @@ Short-term memory remains unchanged:
 
 - raw messages are stored in SQLite `messages`
 - recent raw messages are included directly in the prompt
-- older processed messages update structured memory in `chat_memory_state`
+- older processed messages update structured memory in `long_term_memories` and
+  mirror compatible records into `chat_memory_state`
 - structured memory extraction/consolidation is LangMem-backed through
   `LangMemStructuredMemoryState`
 - the long-term store is namespaced and can be reused across chats, while
   `chat_memory_state` remains the compatibility mirror for the current runtime
-- SQLite `chat_memory_state` remains the compatibility storage layer consumed
-  by `StructuredMemoryRetriever`, `MemoryCandidate`, and `ContextPacket`
+- SQLite `long_term_memories` is read first by `StructuredMemoryRetriever`;
+  `chat_memory_state` remains a compatibility fallback/mirror
 - the older custom JSON-operation updater in `structured_state.py` is
   deprecated compatibility code; project-specific validators and storage
   helpers remain in use
