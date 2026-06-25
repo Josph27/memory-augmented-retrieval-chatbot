@@ -11,6 +11,7 @@ from src.database import StoredMessage
 from src.memory.long_term_store import (
     LongTermMemoryRecord,
     LongTermMemoryStore,
+    LongTermMemoryWrite,
     category_namespace,
     dedupe_memory_records,
     merge_memory_records,
@@ -18,6 +19,7 @@ from src.memory.long_term_store import (
     record_to_write,
     structured_memory_namespaces,
 )
+from src.memory.memory_trace import print_saved_memory_trace
 from src.memory.structured_state import (
     MEMORY_CATEGORIES,
     MemoryUpdateResult,
@@ -116,6 +118,7 @@ class LangMemStructuredMemoryState:
         self._manager = manager
         self._config = config or LangMemBackendConfig.from_env()
         self._long_term_store = long_term_store
+        self.last_saved_records: list[LongTermMemoryWrite] = []
 
     def update(
         self,
@@ -124,6 +127,7 @@ class LangMemStructuredMemoryState:
     ) -> MemoryUpdateResult:
         """Use LangMem output and normalize it into this app's memory record format."""
         normalized_memory = normalize_memory_state(existing_memory)
+        self.last_saved_records = []
         user_messages = [message for message in messages if message.role == "user"]
         if not user_messages:
             return MemoryUpdateResult(
@@ -219,17 +223,18 @@ class LangMemStructuredMemoryState:
         try:
             for record in records:
                 namespace = category_namespace(record["category"], source_chat_id)
-                self._long_term_store.upsert(
-                    record_to_write(
-                        record,
-                        namespace=namespace,
-                        source_chat_id=source_chat_id,
-                        metadata={
-                            "backend": "langmem",
-                            "source_message_ids_seen": sorted(source_message_ids),
-                        },
-                    )
+                write = record_to_write(
+                    record,
+                    namespace=namespace,
+                    source_chat_id=source_chat_id,
+                    metadata={
+                        "backend": "langmem",
+                        "source_message_ids_seen": sorted(source_message_ids),
+                    },
                 )
+                self._long_term_store.upsert(write)
+                self.last_saved_records.append(write)
+                print_saved_memory_trace(source_chat_id, write)
         except Exception as exc:
             raise RuntimeError(
                 f"failed to persist long-term memory:{exc.__class__.__name__}"

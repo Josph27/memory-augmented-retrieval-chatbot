@@ -12,6 +12,11 @@ from src.chat_service import ChatService
 from src.config import AppConfig
 from src.database import Database
 from src.documents.loaders import DocumentLoaderError
+from src.memory.memory_trace import (
+    demo_memory_trace_enabled,
+    format_retrieved_memories_markdown,
+    format_saved_memories_markdown,
+)
 from src.model_wrapper import ModelWrapper
 from src.retrieval.langchain_chroma_retriever import LangChainChromaUnavailable
 
@@ -52,6 +57,12 @@ MODEL_PROFILES = [
         display_name="GPT OSS 120B",
         model_name="openai/gpt-oss-120b",
         description="OpenAI GPT-OSS model profile.",
+    ),
+    ModelProfile(
+        key="mistral-medium",
+        display_name="Mistral Medium 3.5 128B",
+        model_name="mistralai/Mistral-Medium-3.5-128B",
+        description="Mistral model profile.",
     ),
 ]
 DEFAULT_MODEL_PROFILE_KEY = "gemma"
@@ -114,6 +125,8 @@ async def on_chat_start() -> None:
             f"Model: `{model_name}`"
         )
     ).send()
+    if demo_memory_trace_enabled():
+        await cl.Message(content="Demo memory trace is enabled.").send()
 
 
 @cl.on_chat_resume
@@ -148,8 +161,42 @@ async def on_message(message: cl.Message) -> None:
     if not content:
         return
 
-    response = chat_service.handle_user_message(chat_id=chat_id, content=content)
-    await cl.Message(content=response).send()
+    result = chat_service.handle_user_turn(chat_id=chat_id, content=content)
+    if demo_memory_trace_enabled():
+        retrieved_trace = format_retrieved_memories_markdown(retrieved_memory_rows(result))
+        if retrieved_trace:
+            await cl.Message(content=retrieved_trace).send()
+
+    await cl.Message(content=result.answer).send()
+
+    if demo_memory_trace_enabled():
+        saved_trace = format_saved_memories_markdown(saved_memory_rows(result))
+        if saved_trace:
+            await cl.Message(content=saved_trace).send()
+
+
+def saved_memory_rows(result: object) -> list[dict]:
+    """Return saved memory rows from result metadata with trace metadata fallback."""
+    rows = result_metadata_rows(result, "saved_memory_rows")
+    return rows if isinstance(rows, list) else []
+
+
+def retrieved_memory_rows(result: object) -> list[dict]:
+    """Return retrieved memory rows from result metadata with trace metadata fallback."""
+    rows = result_metadata_rows(result, "retrieved_memory_rows")
+    return rows if isinstance(rows, list) else []
+
+
+def result_metadata_rows(result: object, key: str) -> object:
+    """Read one metadata key from AgentTurnResult or its WorkflowTrace."""
+    metadata = getattr(result, "metadata", None)
+    if isinstance(metadata, dict) and key in metadata:
+        return metadata[key]
+    trace = getattr(result, "trace", None)
+    trace_metadata = getattr(trace, "metadata", None)
+    if isinstance(trace_metadata, dict):
+        return trace_metadata.get(key)
+    return None
 
 
 def index_uploaded_files(message: cl.Message, chat_service: ChatService) -> list[str]:
@@ -161,7 +208,7 @@ def index_uploaded_files(message: cl.Message, chat_service: ChatService) -> list
         if not path:
             continue
         try:
-            result = chat_service.index_document_file(path)
+            result = chat_service.index_document_file(path, display_name=name)
         except (DocumentLoaderError, LangChainChromaUnavailable) as error:
             statuses.append(f"Could not index {name}: {error}")
         except Exception as error:

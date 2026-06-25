@@ -13,6 +13,7 @@ from src.memory.constants import (
 )
 from src.memory.langmem_structured import LangMemBackendConfig, LangMemStructuredMemoryState
 from src.memory.long_term_store import SQLiteLongTermMemoryStore
+from src.memory.memory_trace import memory_write_to_trace_row
 from src.memory.structured_state import (
     ChatModel,
     dumps_memory_state,
@@ -66,6 +67,7 @@ class ShortTermMemory:
             config=LangMemBackendConfig.from_env(model_name=selected_model_name),
             long_term_store=SQLiteLongTermMemoryStore(database),
         )
+        self.last_saved_memory_rows: list[dict[str, Any]] = []
 
     def build_context(
         self,
@@ -122,6 +124,7 @@ class ShortTermMemory:
 
     def update_memory_if_needed(self, chat_id: str) -> bool:
         """Update structured memory from one old unsummarized batch if threshold is met."""
+        self.last_saved_memory_rows = []
         started = perf_counter()
         current_memory = load_memory_state(self.database.chat_memory_state(chat_id))
         messages = self.select_unprocessed_batch(chat_id)
@@ -162,6 +165,10 @@ class ShortTermMemory:
 
         self.database.upsert_chat_memory_state(chat_id, dumps_memory_state(result.memory_state))
         self.database.mark_messages_summarized([message.id for message in messages])
+        saved_records = getattr(self.structured_memory, "last_saved_records", [])
+        self.last_saved_memory_rows = [
+            memory_write_to_trace_row(record) for record in saved_records
+        ]
         print(
             "memory_update_timing "
             f"chat_id={chat_id} triggered=True accepted=True "

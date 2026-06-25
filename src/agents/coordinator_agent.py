@@ -14,6 +14,10 @@ from src.context.context_comparator import ContextComparator
 from src.context.prompt_messages import context_packet_to_model_messages
 from src.core.contracts import AgentTurnResult, WorkflowTrace
 from src.database import Database
+from src.memory.memory_trace import (
+    document_memory_candidate_trace_rows,
+    structured_memory_candidate_trace_rows,
+)
 from src.retrieval.reranker import MemoryReranker
 from src.retrieval.retriever_dispatcher import RetrieverDispatcher
 from src.routing.route_planner import RoutePlanner
@@ -161,6 +165,11 @@ class CoordinatorAgent:
             # Memory updates should not break the visible chat response. The next
             # successful turn can retry because messages remain unprocessed.
         timings["total_turn"] = elapsed_ms(total_started)
+        saved_memory_rows = list(
+            getattr(self.memory_agent.memory, "last_saved_memory_rows", [])
+        )
+        retrieved_memory_rows = structured_memory_candidate_trace_rows(retrieved_candidates)
+        retrieved_document_rows = document_memory_candidate_trace_rows(retrieved_candidates)
 
         trace = WorkflowTrace(
             trace_id=trace_id,
@@ -194,6 +203,9 @@ class CoordinatorAgent:
                     "dropped_candidate_reasons"
                 ),
                 "timings_ms": timings,
+                "saved_memory_rows": saved_memory_rows,
+                "retrieved_memory_rows": retrieved_memory_rows,
+                "retrieved_document_rows": retrieved_document_rows,
             },
         )
         self._log_trace(trace)
@@ -204,6 +216,11 @@ class CoordinatorAgent:
             termination_reason=TERMINATION_RESPONSE_SAVED,
             trace=trace,
             assistant_message_id=assistant_message_id,
+            metadata={
+                "saved_memory_rows": saved_memory_rows,
+                "retrieved_memory_rows": retrieved_memory_rows,
+                "retrieved_document_rows": retrieved_document_rows,
+            },
         )
 
     def _log_trace(self, trace: WorkflowTrace) -> None:

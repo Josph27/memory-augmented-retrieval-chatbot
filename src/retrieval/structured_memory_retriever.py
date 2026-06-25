@@ -8,6 +8,7 @@ from src.memory.long_term_store import (
     record_to_candidate,
     structured_memory_namespaces,
 )
+from src.memory.memory_trace import print_retrieved_memory_traces
 from src.memory.structured_state import active_memories, load_memory_state
 
 
@@ -36,6 +37,7 @@ class StructuredMemoryRetriever:
 
         store_records = [record for record in dedupe_memory_records(store_records) if record.status == "active"]
         if store_records:
+            print_retrieved_memory_traces(chat_id, store_records)
             return [record_to_candidate(record) for record in store_records]
 
         del source_plan
