@@ -94,6 +94,19 @@ def test_markdown_loader_preserves_text_and_metadata(tmp_path: Path) -> None:
     assert loaded.metadata["source"] == "file"
 
 
+def test_loader_uses_display_name_for_chainlit_bin_upload(tmp_path: Path) -> None:
+    path = tmp_path / "chainlit-upload.bin"
+    path.write_text("# README\n\nMarkdown fact.", encoding="utf-8")
+
+    loaded = load_document_file(path, display_name="README.md")
+
+    assert loaded.title == "README"
+    assert "# README" in loaded.text
+    assert loaded.metadata["file_path"] == str(path)
+    assert loaded.metadata["file_name"] == "README.md"
+    assert loaded.metadata["file_extension"] == ".md"
+
+
 def test_unsupported_extension_raises_clear_error(tmp_path: Path) -> None:
     path = tmp_path / "image.png"
     path.write_text("not supported", encoding="utf-8")
@@ -140,6 +153,19 @@ def test_index_file_document_loads_then_indexes(tmp_path: Path) -> None:
     assert indexer.calls[0]["text"] == "Manual body"
     assert indexer.calls[0]["source"] == "file"
     assert indexer.calls[0]["metadata"]["file_name"] == "manual.md"
+
+
+def test_index_file_document_accepts_display_name_for_temp_upload(tmp_path: Path) -> None:
+    path = tmp_path / "upload.bin"
+    path.write_text("Temporary markdown body", encoding="utf-8")
+    indexer = FakeIndexer()
+
+    index_file_document(path, indexer, display_name="README.md")
+
+    assert indexer.calls[0]["title"] == "README"
+    assert indexer.calls[0]["text"] == "Temporary markdown body"
+    assert indexer.calls[0]["metadata"]["file_name"] == "README.md"
+    assert indexer.calls[0]["metadata"]["file_extension"] == ".md"
 
 
 def test_loaded_file_indexes_and_retrieves_document_memory_candidate() -> None:

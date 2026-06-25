@@ -37,7 +37,11 @@ class TextDocumentIndexer(Protocol):
         ...
 
 
-def load_document_file(path: str | Path, encoding: str = "utf-8") -> LoadedDocument:
+def load_document_file(
+    path: str | Path,
+    encoding: str = "utf-8",
+    display_name: str | None = None,
+) -> LoadedDocument:
     """Load a supported local file into text for document-memory indexing."""
     file_path = Path(path).expanduser()
     if not file_path.exists():
@@ -45,11 +49,12 @@ def load_document_file(path: str | Path, encoding: str = "utf-8") -> LoadedDocum
     if not file_path.is_file():
         raise DocumentLoaderError(f"Document path is not a file: {file_path}")
 
-    extension = file_path.suffix.lower()
+    display_path = Path(display_name) if display_name else file_path
+    extension = display_path.suffix.lower()
     if extension in SUPPORTED_TEXT_EXTENSIONS:
-        return load_text_file(file_path, encoding=encoding)
+        return load_text_file(file_path, encoding=encoding, display_name=display_name)
     if extension == ".pdf":
-        return load_pdf_file(file_path)
+        return load_pdf_file(file_path, display_name=display_name)
 
     supported = ", ".join(sorted(SUPPORTED_EXTENSIONS))
     raise DocumentLoaderError(
@@ -57,7 +62,11 @@ def load_document_file(path: str | Path, encoding: str = "utf-8") -> LoadedDocum
     )
 
 
-def load_text_file(path: Path, encoding: str = "utf-8") -> LoadedDocument:
+def load_text_file(
+    path: Path,
+    encoding: str = "utf-8",
+    display_name: str | None = None,
+) -> LoadedDocument:
     """Load a UTF-8 text or markdown file."""
     try:
         text = path.read_text(encoding=encoding)
@@ -65,14 +74,14 @@ def load_text_file(path: Path, encoding: str = "utf-8") -> LoadedDocument:
         msg = f"Could not decode {path} with encoding {encoding!r}."
         raise DocumentLoaderError(msg) from error
     return LoadedDocument(
-        title=path.stem,
+        title=display_stem(path, display_name),
         text=text,
         source="file",
-        metadata=base_file_metadata(path, loader_name="path_read_text"),
+        metadata=base_file_metadata(path, loader_name="path_read_text", display_name=display_name),
     )
 
 
-def load_pdf_file(path: Path) -> LoadedDocument:
+def load_pdf_file(path: Path, display_name: str | None = None) -> LoadedDocument:
     """Load PDF text with a mature PDF library when one is installed."""
     try:
         text, page_count, loader_name = load_pdf_with_pypdf(path)
@@ -85,10 +94,10 @@ def load_pdf_file(path: Path) -> LoadedDocument:
             )
             raise DocumentLoaderError(msg) from error
 
-    metadata = base_file_metadata(path, loader_name=loader_name)
+    metadata = base_file_metadata(path, loader_name=loader_name, display_name=display_name)
     metadata["page_count"] = page_count
     return LoadedDocument(
-        title=path.stem,
+        title=display_stem(path, display_name),
         text=text,
         source="file",
         metadata=metadata,
@@ -120,12 +129,13 @@ def load_pdf_with_pymupdf(path: Path) -> tuple[str, int, str]:
     return "\n\n".join(text for text in page_texts if text), page_count, "pymupdf"
 
 
-def base_file_metadata(path: Path, loader_name: str) -> dict:
+def base_file_metadata(path: Path, loader_name: str, display_name: str | None = None) -> dict:
     """Return common file metadata for loaded documents."""
+    display_path = Path(display_name) if display_name else path
     return {
         "file_path": str(path),
-        "file_name": path.name,
-        "file_extension": path.suffix.lower(),
+        "file_name": display_path.name,
+        "file_extension": display_path.suffix.lower(),
         "loader_name": loader_name,
         "source": "file",
     }
@@ -141,6 +151,15 @@ def index_loaded_document(loaded: LoadedDocument, indexer: TextDocumentIndexer):
     )
 
 
-def index_file_document(path: str | Path, indexer: TextDocumentIndexer):
+def index_file_document(
+    path: str | Path,
+    indexer: TextDocumentIndexer,
+    display_name: str | None = None,
+):
     """Load and index one local document file."""
-    return index_loaded_document(load_document_file(path), indexer)
+    return index_loaded_document(load_document_file(path, display_name=display_name), indexer)
+
+
+def display_stem(path: Path, display_name: str | None = None) -> str:
+    """Return the original upload stem when provided, otherwise the filesystem stem."""
+    return Path(display_name).stem if display_name else path.stem

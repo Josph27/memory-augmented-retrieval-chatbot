@@ -84,20 +84,24 @@ class ChatService:
             title = f"{title[:57].rstrip()}..."
         self.database.update_chat_title(chat_id=chat_id, title=title)
 
-    def index_document_file(self, path: str | Path) -> DocumentFileIndexResult:
+    def index_document_file(
+        self,
+        path: str | Path,
+        display_name: str | None = None,
+    ) -> DocumentFileIndexResult:
         """Load and index an uploaded local file into document memory."""
         file_path = Path(path)
         indexer = self.document_indexer or LangChainChromaRetriever.from_env(
             database=self.database
         )
-        result = index_file_document(file_path, indexer)
+        result = index_file_document(file_path, indexer, display_name=display_name)
         document_id = str(getattr(result, "document_id", ""))
         chunk_count = int(getattr(result, "chunk_count", 0))
         if isinstance(result, dict):
             document_id = str(result.get("document_id", document_id))
             chunk_count = int(result.get("chunk_count", chunk_count))
         return DocumentFileIndexResult(
-            file_name=file_path.name,
+            file_name=display_name or file_path.name,
             document_id=document_id,
             chunk_count=chunk_count,
         )
