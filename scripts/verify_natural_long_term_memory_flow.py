@@ -4,6 +4,7 @@ import argparse
 import sqlite3
 import tempfile
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 
 from openai import OpenAIError
@@ -24,6 +25,55 @@ MEMORY_BEARING_MESSAGE = (
     "stable open-source libraries over custom implementations for standard infrastructure."
 )
 CHAT2_QUERY = "What engineering style do I prefer for this memory chatbot project?"
+
+
+@dataclass(frozen=True)
+class DemoScenario:
+    """One verification scenario with exact turn content."""
+
+    name: str
+    chat1_messages: tuple[str, ...]
+    chat2_questions: tuple[str, ...]
+    expected_phrases: tuple[str, ...]
+
+
+SCENARIOS: dict[str, DemoScenario] = {
+    "default": DemoScenario(
+        name="default",
+        chat1_messages=(
+            MEMORY_BEARING_MESSAGE,
+        ),
+        chat2_questions=(CHAT2_QUERY,),
+        expected_phrases=(
+            "mature, stable open-source libraries",
+            "concise, practical engineering explanations",
+        ),
+    ),
+    "demo-dialogue": DemoScenario(
+        name="demo-dialogue",
+        chat1_messages=(
+            "I’m preparing a demo for my memory chatbot project tomorrow. For this project, I strongly prefer mature, stable open-source libraries over custom infrastructure when the problem is already solved. I also prefer concise, practical engineering explanations rather than long theoretical answers. For the demo, I want to focus on cross-chat long-term memory instead of document RAG.",
+            "Can you explain semantic memory in this project in simple terms?",
+            "How is episodic memory different from semantic memory?",
+            "Where does LangMem fit into the architecture?",
+            "How does document memory differ from chat memory?",
+            "How should I describe the long-term memory store in my demo?",
+            "Can you summarize the current memory pipeline in three short bullet points?",
+        ),
+        chat2_questions=(
+            "What preferences do I have for this memory chatbot project?",
+            "What should my demo focus on?",
+            "What engineering style do I prefer?",
+        ),
+        expected_phrases=(
+            "mature, stable open-source libraries over custom infrastructure",
+            "concise, practical engineering explanations",
+            "cross-chat long-term memory instead of document RAG",
+            "mature open-source libraries",
+            "production-shaped components over custom infrastructure",
+        ),
+    ),
+}
 
 
 def parse_args() -> argparse.Namespace:
@@ -54,6 +104,12 @@ def parse_args() -> argparse.Namespace:
         "--skip-chat2-answer",
         action="store_true",
         help="Skip the final Chat 2 model call and only verify retrieval wiring.",
+    )
+    parser.add_argument(
+        "--scenario",
+        choices=tuple(SCENARIOS),
+        default="default",
+        help="Choose the turn sequence to verify (default: default).",
     )
     return parser.parse_args()
 
@@ -96,6 +152,35 @@ def long_term_rows(database: Database) -> list[sqlite3.Row]:
         ).fetchall()
 
 
+def structured_candidates(database: Database, chat_id: str, query: str) -> list[object]:
+    retriever = StructuredMemoryRetriever(database)
+    return retriever.retrieve(
+        chat_id=chat_id,
+        source_plan=SourcePlan(
+            source="structured_memory",
+            query=query,
+            limit=10,
+        ),
+    )
+
+
+def print_expected_summary(
+    *,
+    expected_phrases: tuple[str, ...],
+    long_term_text: str,
+    retrieved_text: str,
+    chat2_answers: list[tuple[str, str]],
+) -> None:
+    for phrase in expected_phrases:
+        print(
+            "expected_check "
+            f"phrase={phrase!r} "
+            f"in_long_term={phrase.lower() in long_term_text.lower()} "
+            f"in_retrieved={phrase.lower() in retrieved_text.lower()} "
+            f"in_chat2_answer={any(phrase.lower() in answer.lower() for _, answer in chat2_answers)}"
+        )
+
+
 def summarized_count(database: Database, chat_id: str) -> int:
     with database.connect() as connection:
         row = connection.execute(
@@ -109,6 +194,7 @@ def main() -> None:
     args = parse_args()
     config = AppConfig.from_env()
     require_env(config)
+    scenario = SCENARIOS[args.scenario]
 
     with tempfile.TemporaryDirectory(prefix="memory_demo_") as tmpdir:
         db_path = Path(tmpdir) / "demo_chatbot.db"
@@ -127,21 +213,23 @@ def main() -> None:
         print(f"memory_update_batch_size={config.memory_update_batch_size}")
 
         model_ok = True
+        chat1_turns = list(scenario.chat1_messages)
         if args.mode == "natural":
-            _, model_ok = run_turn(chat_service, chat1_id, MEMORY_BEARING_MESSAGE)
+            for index, content in enumerate(chat1_turns):
+                _, current_ok = run_turn(chat_service, chat1_id, content)
+                model_ok = model_ok and current_ok
             for index in range(args.filler_turns):
-                run_turn(
-                    chat_service,
-                    chat1_id,
-                    f"Filler turn {index + 1}: continue normal planning for the same project.",
-                )
+                filler = f"Filler turn {index + 1}: continue normal planning for the same project."
+                _, current_ok = run_turn(chat_service, chat1_id, filler)
+                model_ok = model_ok and current_ok
         else:
-            database.save_message(chat1_id, "user", MEMORY_BEARING_MESSAGE)
-            database.save_message(
-                chat1_id,
-                "assistant",
-                "Acknowledged. I will keep that engineering preference in mind.",
-            )
+            for content in chat1_turns:
+                database.save_message(chat1_id, "user", content)
+                database.save_message(
+                    chat1_id,
+                    "assistant",
+                    "Acknowledged. I will keep that in mind.",
+                )
             for index in range(args.filler_turns):
                 database.save_message(
                     chat1_id,
@@ -175,15 +263,7 @@ def main() -> None:
         chat2_id = chat_service.start_chat(chat_id="demo-chat-2")
         print(f"chat2_id={chat2_id}")
 
-        retriever = StructuredMemoryRetriever(database)
-        candidates = retriever.retrieve(
-            chat_id=chat2_id,
-            source_plan=SourcePlan(
-                source="structured_memory",
-                query=CHAT2_QUERY,
-                limit=10,
-            ),
-        )
+        candidates = structured_candidates(database, chat2_id, scenario.chat2_questions[0])
         print(f"chat2_structured_candidates_count={len(candidates)}")
         for candidate in candidates[:5]:
             print(
@@ -195,28 +275,44 @@ def main() -> None:
                 f"content={candidate.content}"
             )
 
+        chat2_answers: list[tuple[str, str]] = []
         answered_with_model = False
-        if args.skip_chat2_answer:
-            print("chat2_answer=SKIPPED (--skip-chat2-answer)")
-        else:
-            chat2_result = chat_service.handle_user_turn(chat_id=chat2_id, content=CHAT2_QUERY)
-            structured_in_trace = [
-                candidate
-                for candidate in chat2_result.trace.retrieved_candidates
-                if candidate.source == "structured_memory"
-            ]
-            print(f"chat2_prompt_source={chat2_result.trace.metadata.get('prompt_source')}")
-            print(f"chat2_fallback_reason={chat2_result.trace.metadata.get('fallback_reason')}")
-            print(f"chat2_trace_structured_candidates={len(structured_in_trace)}")
-            print(f"chat2_answer={chat2_result.answer}")
-            answered_with_model = model_ok and "Model error:" not in chat2_result.answer
+        for index, question in enumerate(scenario.chat2_questions):
+            if args.skip_chat2_answer:
+                answer = "SKIPPED (--skip-chat2-answer)"
+                print(f"chat2_answer[{index}]={answer}")
+            else:
+                chat2_result = chat_service.handle_user_turn(chat_id=chat2_id, content=question)
+                structured_in_trace = [
+                    candidate
+                    for candidate in chat2_result.trace.retrieved_candidates
+                    if candidate.source == "structured_memory"
+                ]
+                print(f"chat2_prompt_source[{index}]={chat2_result.trace.metadata.get('prompt_source')}")
+                print(f"chat2_fallback_reason[{index}]={chat2_result.trace.metadata.get('fallback_reason')}")
+                print(f"chat2_trace_structured_candidates[{index}]={len(structured_in_trace)}")
+                print(f"chat2_answer[{index}]={chat2_result.answer}")
+                answer = chat2_result.answer
+                answered_with_model = answered_with_model or (
+                    model_ok and "Model error:" not in chat2_result.answer
+                )
+            chat2_answers.append((question, answer))
 
         extraction_ran = summarized > 0
         long_term_written = len(rows) > 0
         chat2_retrieved = len(candidates) > 0
+        long_term_text = "\n".join(str(row["value"]) for row in rows)
+        retrieved_text = "\n".join(candidate.content for candidate in candidates)
+        print_expected_summary(
+            expected_phrases=scenario.expected_phrases,
+            long_term_text=long_term_text,
+            retrieved_text=retrieved_text,
+            chat2_answers=chat2_answers,
+        )
         print(
             "verification_summary "
             f"mode={args.mode} "
+            f"scenario={scenario.name} "
             f"extraction_ran={extraction_ran} "
             f"long_term_written={long_term_written} "
             f"chat2_retrieved={chat2_retrieved} "
