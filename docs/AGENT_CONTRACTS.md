@@ -90,7 +90,8 @@ hybrid rule + LLM
 
 A hybrid or fully LLM-backed router is future / intended. The current
 implementation is the safer rule-based path and records its structured decision
-in WorkflowTrace metadata.
+in WorkflowTrace metadata. Representative deterministic routing cases are
+covered in tests before any LLM or hybrid routing is introduced.
 
 3. DocumentIngestionAgent
 Responsibility
