@@ -3,7 +3,8 @@
 This directory contains small deterministic benchmarks for structured long-term
 memory.
 
-The current runner evaluates cross-chat memory wiring:
+The current runner evaluates cross-chat memory wiring and a small memory
+lifecycle mini benchmark:
 
 ```text
 Chat 1 messages
@@ -21,6 +22,9 @@ Run:
 
 ```bash
 uv run python evals/structured_memory/run_structured_memory_eval.py --mode mock
+uv run python evals/structured_memory/run_structured_memory_eval.py \
+  --dataset evals/structured_memory/datasets/lifecycle_sample.jsonl \
+  --mode mock
 ```
 
 Metrics:
@@ -29,6 +33,19 @@ Metrics:
 - `memory_retrieval_hit`
 - `answer_uses_memory`
 - `answer_avoids_false_memory`
+- `write_action_correct`
+- `noop_correct`
+- `update_correct`
+- `retrieval_hit`
+- `answer_uses_correct_memory`
+
+Lifecycle cases:
+
+- ADD durable preference or constraint
+- NOOP temporary irrelevant fact
+- UPDATE changed preference
+- RETRIEVE memory in a new chat
+- ABSTAIN when no memory exists
 
 Limitations:
 

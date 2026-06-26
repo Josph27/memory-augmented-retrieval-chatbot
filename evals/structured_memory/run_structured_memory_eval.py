@@ -22,7 +22,9 @@ from src.core.contracts import SourcePlan  # noqa: E402
 from src.database import Database  # noqa: E402
 from src.memory.langmem_structured import LangMemStructuredMemoryState  # noqa: E402
 from src.memory.long_term_store import (  # noqa: E402
+    LongTermMemoryWrite,
     SQLiteLongTermMemoryStore,
+    category_namespace,
     structured_memory_namespaces,
 )
 from src.memory.short_term import ShortTermMemory  # noqa: E402
@@ -109,6 +111,7 @@ def run_case(case: dict[str, Any]) -> EvalCaseResult:
         chat2_id = f"{case['case_id']}-chat-2"
         database.create_chat(chat1_id)
         database.create_chat(chat2_id)
+        seed_initial_memories(store, chat1_id, case.get("initial_memory_records") or [])
 
         for message in case.get("chat1_messages") or []:
             database.save_message(chat1_id, "user", str(message))
@@ -154,6 +157,35 @@ def run_case(case: dict[str, Any]) -> EvalCaseResult:
             retrieved_memory_text=retrieved_memory_text,
             answer=answer,
             score=score,
+        )
+
+
+def seed_initial_memories(
+    store: SQLiteLongTermMemoryStore,
+    source_chat_id: str,
+    records: list[dict[str, Any]],
+) -> None:
+    """Seed existing long-term memories for update/retrieval lifecycle cases."""
+    for record in records:
+        category = str(record["category"])
+        key = str(record["key"])
+        store.upsert(
+            LongTermMemoryWrite(
+                namespace=category_namespace(category, source_chat_id),
+                memory_id=f"{category}:{key}",
+                category=category,
+                key=key,
+                value=str(record["value"]),
+                confidence=float(record.get("confidence", 0.7)),
+                status=str(record.get("status", "active")),
+                source_chat_id=source_chat_id,
+                source_message_ids=[
+                    source_id
+                    for source_id in record.get("source_message_ids", [])
+                    if isinstance(source_id, int)
+                ],
+                metadata={"seeded_by": "structured_memory_eval"},
+            )
         )
 
 

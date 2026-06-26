@@ -85,6 +85,47 @@ def test_structured_memory_summary_rates_ignore_unavailable_answer_metrics() -> 
     assert summary["answer_avoids_false_memory"] == 1.0
 
 
+def test_lifecycle_metrics_score_update_and_stale_memory() -> None:
+    case = {
+        "case_id": "update",
+        "operation": "UPDATE",
+        "expected_memory_substrings": ["concise practical answers"],
+        "stale_memory_substrings": ["prefers long theoretical answers."],
+        "expected_answer_substrings": ["concise practical answers"],
+        "should_write_memory": True,
+        "should_retrieve_memory": True,
+        "should_answer_with_memory": True,
+    }
+
+    score = score_case(
+        case,
+        stored_memory_text="User prefers concise practical answers instead.",
+        retrieved_memory_text="User prefers concise practical answers instead.",
+        answer="You prefer concise practical answers.",
+    )
+
+    assert score.write_action_correct is True
+    assert score.update_correct is True
+    assert score.retrieval_hit is True
+    assert score.answer_uses_correct_memory is True
+
+
+def test_lifecycle_eval_runs_local_sample_dataset() -> None:
+    cases = load_jsonl(Path("evals/structured_memory/datasets/lifecycle_sample.jsonl"))
+
+    results = run_cases(cases)
+    summary = summarize_scores([result.score for result in results])
+
+    assert summary["total_cases"] == 5
+    assert summary["write_action_correct"] == 1.0
+    assert summary["noop_correct"] == 1.0
+    assert summary["update_correct"] == 1.0
+    assert summary["retrieval_hit"] == 1.0
+    assert summary["answer_uses_correct_memory"] == 1.0
+    assert summary["answer_avoids_false_memory"] == 1.0
+    assert summary["failed_case_ids"] == []
+
+
 def test_structured_memory_eval_runs_local_sample_dataset() -> None:
     cases = load_jsonl(Path("evals/structured_memory/datasets/cross_chat_sample.jsonl"))
 

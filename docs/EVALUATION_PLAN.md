@@ -159,7 +159,8 @@ This directly evaluates the main memory-augmented chatbot feature.
 6. Suite D — Memory Lifecycle Mini Benchmark
 Status
 
-Future / recommended small benchmark.
+Implemented as a small deterministic mock/oracle benchmark in
+`evals/structured_memory/datasets/lifecycle_sample.jsonl`.
 
 Purpose
 
@@ -187,9 +188,11 @@ update_correct
 retrieval_hit
 answer_uses_correct_memory
 answer_avoids_false_memory
-Scale
+Current Scale
 
-A small benchmark with 15–30 scripted cases is acceptable before the deadline.
+The current local sample covers the five core lifecycle actions once each. A
+larger 15–30 case set remains useful for stronger reporting before the final
+deadline.
 
 7. Suite E — Source Selection Evaluation
 Status
