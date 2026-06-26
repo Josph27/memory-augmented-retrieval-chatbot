@@ -101,7 +101,7 @@ RAGAS-compatible export
 Partially implemented:
 
 current_chat_gist storage and explicit summarizer service
-previous_chat_gist retriever stub
+previous_chat_gist generator and retriever, disabled by default
 raw_message_span explicit lookup
 document metadata/chunk SQLite compatibility path
 

@@ -296,5 +296,8 @@ def chat_service_for_model(model_name: str) -> ChatService:
             raw_message_limit=config.raw_message_limit,
             memory_update_batch_size=config.memory_update_batch_size,
             routing_mode=config.routing_mode,
+            previous_chat_gist_generation_enabled=(
+                config.previous_chat_gist_generation_enabled
+            ),
         )
     return chat_services[model_name]

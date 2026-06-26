@@ -11,6 +11,7 @@ from src.agents.document_ingestion_agent import DocumentIngestionAgent
 from src.agents.short_term_memory_agent import ShortTermMemoryAgent
 from src.core.contracts import AgentTurnResult
 from src.database import Database
+from src.memory.previous_chat_gist import PreviousChatGistGenerator
 from src.memory.short_term import ShortTermMemory
 from src.model_wrapper import ModelWrapper
 from src.retrieval.retriever_dispatcher import RetrieverDispatcher
@@ -44,11 +45,15 @@ class ChatService:
         memory_update_batch_size: int,
         document_indexer: object | None = None,
         routing_mode: str = "rule",
+        previous_chat_gist_generation_enabled: bool = False,
+        previous_chat_gist_generator: PreviousChatGistGenerator | None = None,
     ) -> None:
         self.database = database
         self.model = model
         self.document_indexer = document_indexer
         self.routing_mode = routing_mode
+        self.previous_chat_gist_generation_enabled = previous_chat_gist_generation_enabled
+        self.previous_chat_gist_generator = previous_chat_gist_generator
         self.document_ingestion_agent = DocumentIngestionAgent(
             database=database,
             indexer=document_indexer,
@@ -80,6 +85,12 @@ class ChatService:
             title="Chainlit chat",
             model_name=getattr(self.model, "model_name", None),
         )
+        if self.previous_chat_gist_generation_enabled:
+            generator = self.previous_chat_gist_generator or PreviousChatGistGenerator(
+                database=self.database,
+                model=self.model,
+            )
+            generator.generate_for_existing_chats(active_chat_id=chat_id)
         return chat_id
 
     def ensure_chat_title_from_message(self, chat_id: str, content: str) -> None:

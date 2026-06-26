@@ -32,6 +32,8 @@ class AppConfig:
     structured_memory_retrieval_mode: str
     long_term_memory_chroma_persist_dir: Path
     long_term_memory_collection: str
+    previous_chat_gist_generation_enabled: bool
+    previous_chat_gist_retrieval_enabled: bool
 
     @classmethod
     def from_env(cls) -> "AppConfig":
@@ -79,4 +81,20 @@ class AppConfig:
                 "LONG_TERM_MEMORY_COLLECTION",
                 "long_term_memory",
             ),
+            previous_chat_gist_generation_enabled=env_bool(
+                "PREVIOUS_CHAT_GIST_GENERATION_ENABLED",
+                default=False,
+            ),
+            previous_chat_gist_retrieval_enabled=env_bool(
+                "PREVIOUS_CHAT_GIST_RETRIEVAL_ENABLED",
+                default=False,
+            ),
         )
+
+
+def env_bool(name: str, default: bool = False) -> bool:
+    """Read a boolean-like environment variable."""
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}

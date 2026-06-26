@@ -170,7 +170,7 @@ packet is missing or invalid, the coordinator falls back to the legacy
 context limit, answer reserve, safety margin, overflow status, overflow tokens,
 and dropped candidate IDs/reasons for compact debugging.
 
-Stub retrievers exist for disabled future sources:
+Retrievers exist for disabled-by-default optional sources:
 
 - `current_chat_gist`
 - `previous_chat_gist`
@@ -186,34 +186,43 @@ the transcript.
 
 The current gist infrastructure is present:
 
-- `chat_gists` stores inert gist rows with `source_type`, `gist_text`,
+- `chat_gists` stores gist rows with `source_type`, `gist_text`,
   optional topic/decision/task JSON, and `start_message_id` /
   `end_message_id` pointers back to raw messages.
 - `CurrentChatGistSummarizer` can be explicitly called to compact older
   unsummarized current-chat messages into a `current_chat_gist` row.
+- `PreviousChatGistGenerator` can generate `previous_chat_gist` rows for
+  existing chats, either through a deterministic offline extractor or an
+  optional model-backed extractor.
 - `current_chat_gist` is the canonical future source for summaries of older
   parts of the active chat.
-- `previous_chat_gist` is the canonical future source for summaries of older
-  chats.
+- `previous_chat_gist` is the canonical source for summaries of older chats.
 - `raw_message_span` is a second-stage drill-down source for fetching the
   original raw messages behind a gist.
 
 Current limitations:
 
-- no automatic gist generation in the normal chat turn
+- automatic previous-chat gist generation is disabled by default and must be
+  enabled with `PREVIOUS_CHAT_GIST_GENERATION_ENABLED=1`
 - no vector retrieval over gists
 - no background compaction job
-- gist retrievers are disabled by default in routing
-- previous-chat gist generation is not implemented
+- gist retrievers are disabled by default in routing; previous-chat gist
+  retrieval can be enabled with `PREVIOUS_CHAT_GIST_RETRIEVAL_ENABLED=1`
 
 `CurrentChatGistSummarizer` keeps a configurable recent raw window, excludes
 the newest user message, summarizes only older unsummarized messages, stores a
 gist with raw message span pointers, and marks source messages as summarized
-only after a successful gist insert. The current gist retrievers only read
-stored rows and use temporary lexical filtering when a query is provided.
-Future work should add automatic/flagged compaction, embeddings/vector
-retrieval, previous-chat gists, and optional raw-span drill-down after the
-storage contract is stable.
+only after a successful gist insert. The current gist retrievers read stored
+rows and use temporary lexical filtering when a query is provided. Future work
+should add embeddings/vector retrieval over gists, a background compaction job,
+and richer optional raw-span drill-down after the storage contract is stable.
+
+Useful commands:
+
+```bash
+uv run python scripts/rebuild_previous_chat_gists.py --mode deterministic
+PREVIOUS_CHAT_GIST_RETRIEVAL_ENABLED=1 uv run chainlit run app.py
+```
 
 ## Current Document Memory
 
