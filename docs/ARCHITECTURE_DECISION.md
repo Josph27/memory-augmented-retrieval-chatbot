@@ -187,12 +187,15 @@ old chat messages
 
 Raw message spans provide provenance for compressed gists.
 
-Possible future flow:
+Implemented explicit lookup:
 
 retrieved gist
 -> raw span metadata
 -> raw message span lookup
 -> MemoryCandidate(source="raw_message_span")
+
+This lookup is still a second-stage provenance tool. It is not automatically
+enabled in normal routing by default.
 5. Agent Design
 
 The system is multi-agent at the responsibility level.

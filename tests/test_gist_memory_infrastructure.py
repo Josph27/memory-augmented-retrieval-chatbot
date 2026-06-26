@@ -7,7 +7,10 @@ from src.core.contracts import MemoryCandidate, MemorySourceType, SourcePlan
 from src.database import Database
 from src.retrieval.current_chat_gist_retriever import CurrentChatGistRetriever
 from src.retrieval.previous_chat_gist_retriever import PreviousChatGistRetriever
-from src.retrieval.raw_message_span_retriever import RawMessageSpanRetriever
+from src.retrieval.raw_message_span_retriever import (
+    RawMessageSpanRetriever,
+    source_plan_for_gist_candidate,
+)
 
 
 def test_memory_source_labels_include_gist_sources() -> None:
@@ -181,7 +184,9 @@ def test_raw_message_span_retriever_returns_source_messages_from_gist_span(
     assert "user: My project uses Chainlit." in candidate.content
     assert "assistant: Noted." in candidate.content
     assert candidate.source_message_ids == [first_id, second_id]
+    assert candidate.metadata["source_chat_id"] == "chat-1"
     assert candidate.metadata["gist_id"] == gist_id
+    assert candidate.metadata["truncated"] is False
 
 
 def test_raw_message_span_retriever_accepts_direct_span_filters(tmp_path: Path) -> None:
@@ -205,3 +210,87 @@ def test_raw_message_span_retriever_accepts_direct_span_filters(tmp_path: Path) 
     assert len(candidates) == 1
     assert candidates[0].source_message_ids == [first_id, second_id]
     assert candidates[0].content == "user: alpha\nassistant: beta"
+
+
+def test_raw_message_span_retriever_accepts_alias_span_filters(tmp_path: Path) -> None:
+    db = Database(tmp_path / "chatbot.db")
+    db.create_chat("chat-1")
+    first_id = db.save_message("chat-1", "user", "alpha")
+    second_id = db.save_message("chat-1", "assistant", "beta")
+
+    candidates = RawMessageSpanRetriever(db).retrieve(
+        chat_id="ignored-current-chat",
+        source_plan=SourcePlan(
+            source="raw_message_span",
+            enabled=True,
+            filters={
+                "chat_id": "chat-1",
+                "message_start_id": first_id,
+                "message_end_id": second_id,
+            },
+        ),
+    )
+
+    assert len(candidates) == 1
+    assert candidates[0].chat_id == "chat-1"
+    assert candidates[0].source_message_ids == [first_id, second_id]
+
+
+def test_raw_message_span_retriever_truncates_long_spans(tmp_path: Path) -> None:
+    db = Database(tmp_path / "chatbot.db")
+    db.create_chat("chat-1")
+    first_id = db.save_message("chat-1", "user", "alpha " * 20)
+    second_id = db.save_message("chat-1", "assistant", "beta " * 20)
+
+    candidates = RawMessageSpanRetriever(db, max_chars=60).retrieve(
+        chat_id="chat-1",
+        source_plan=SourcePlan(
+            source="raw_message_span",
+            enabled=True,
+            filters={
+                "start_message_id": first_id,
+                "end_message_id": second_id,
+            },
+        ),
+    )
+
+    assert len(candidates) == 1
+    assert len(candidates[0].content) <= 60
+    assert "raw message span truncated" in candidates[0].content
+    assert candidates[0].metadata["truncated"] is True
+
+
+def test_raw_message_span_plan_can_be_derived_from_gist_candidate(tmp_path: Path) -> None:
+    db = Database(tmp_path / "chatbot.db")
+    db.create_chat("old-chat")
+    first_id = db.save_message("old-chat", "user", "Use mature libraries.")
+    second_id = db.save_message("old-chat", "assistant", "Noted.")
+    gist_id = db.insert_chat_gist(
+        chat_id="old-chat",
+        source_type="previous_chat_gist",
+        gist_text="The user prefers mature libraries.",
+        start_message_id=first_id,
+        end_message_id=second_id,
+    )
+
+    gist_candidates = PreviousChatGistRetriever(db).retrieve(
+        chat_id="new-chat",
+        source_plan=SourcePlan(
+            source="previous_chat_gist",
+            enabled=True,
+            query="What mature libraries preference appeared before?",
+        ),
+    )
+    span_plan = source_plan_for_gist_candidate(gist_candidates[0])
+
+    assert span_plan is not None
+    assert span_plan.source == "raw_message_span"
+    assert span_plan.filters == {"gist_id": gist_id}
+
+    raw_candidates = RawMessageSpanRetriever(db).retrieve(
+        chat_id="new-chat",
+        source_plan=span_plan,
+    )
+    assert raw_candidates[0].source == "raw_message_span"
+    assert raw_candidates[0].metadata["gist_id"] == gist_id
+    assert "user: Use mature libraries." in raw_candidates[0].content

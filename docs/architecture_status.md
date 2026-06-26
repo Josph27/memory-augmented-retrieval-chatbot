@@ -198,7 +198,9 @@ The current gist infrastructure is present:
   parts of the active chat.
 - `previous_chat_gist` is the canonical source for summaries of older chats.
 - `raw_message_span` is a second-stage drill-down source for fetching the
-  original raw messages behind a gist.
+  original raw messages behind a gist. It can resolve a `chat_gists.id` or an
+  explicit `chat_id` / message-id range into
+  `MemoryCandidate(source="raw_message_span")` with provenance metadata.
 
 Current limitations:
 
@@ -208,6 +210,8 @@ Current limitations:
 - no background compaction job
 - gist retrievers are disabled by default in routing; previous-chat gist
   retrieval can be enabled with `PREVIOUS_CHAT_GIST_RETRIEVAL_ENABLED=1`
+- raw-message span lookup is explicit/provenance-oriented and is not injected
+  automatically by default
 
 `CurrentChatGistSummarizer` keeps a configurable recent raw window, excludes
 the newest user message, summarizes only older unsummarized messages, stores a
@@ -215,12 +219,14 @@ gist with raw message span pointers, and marks source messages as summarized
 only after a successful gist insert. The current gist retrievers read stored
 rows and use temporary lexical filtering when a query is provided. Future work
 should add embeddings/vector retrieval over gists, a background compaction job,
-and richer optional raw-span drill-down after the storage contract is stable.
+and richer optional automatic raw-span drill-down after the storage contract is
+stable.
 
 Useful commands:
 
 ```bash
 uv run python scripts/rebuild_previous_chat_gists.py --mode deterministic
+uv run python scripts/inspect_raw_message_span.py --gist-id 1
 PREVIOUS_CHAT_GIST_RETRIEVAL_ENABLED=1 uv run chainlit run app.py
 ```
 
