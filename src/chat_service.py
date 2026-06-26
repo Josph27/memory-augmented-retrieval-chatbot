@@ -7,13 +7,12 @@ from uuid import uuid4
 from src.agents.chat_agent import ChatAgent
 from src.agents.context_builder_agent import ContextBuilderAgent
 from src.agents.coordinator_agent import CoordinatorAgent
+from src.agents.document_ingestion_agent import DocumentIngestionAgent
 from src.agents.short_term_memory_agent import ShortTermMemoryAgent
 from src.core.contracts import AgentTurnResult
 from src.database import Database
-from src.documents.loaders import index_file_document
 from src.memory.short_term import ShortTermMemory
 from src.model_wrapper import ModelWrapper
-from src.retrieval.langchain_chroma_retriever import LangChainChromaRetriever
 from src.retrieval.retriever_dispatcher import RetrieverDispatcher
 
 
@@ -47,6 +46,10 @@ class ChatService:
         self.database = database
         self.model = model
         self.document_indexer = document_indexer
+        self.document_ingestion_agent = DocumentIngestionAgent(
+            database=database,
+            indexer=document_indexer,
+        )
         self.memory = ShortTermMemory(
             database=database,
             model=model,
@@ -90,20 +93,14 @@ class ChatService:
         display_name: str | None = None,
     ) -> DocumentFileIndexResult:
         """Load and index an uploaded local file into document memory."""
-        file_path = Path(path)
-        indexer = self.document_indexer or LangChainChromaRetriever.from_env(
-            database=self.database
+        result = self.document_ingestion_agent.index_file(
+            path,
+            display_name=display_name,
         )
-        result = index_file_document(file_path, indexer, display_name=display_name)
-        document_id = str(getattr(result, "document_id", ""))
-        chunk_count = int(getattr(result, "chunk_count", 0))
-        if isinstance(result, dict):
-            document_id = str(result.get("document_id", document_id))
-            chunk_count = int(result.get("chunk_count", chunk_count))
         return DocumentFileIndexResult(
-            file_name=display_name or file_path.name,
-            document_id=document_id,
-            chunk_count=chunk_count,
+            file_name=result.file_name,
+            document_id=result.document_id,
+            chunk_count=result.chunk_count,
         )
 
     def handle_user_message(self, chat_id: str, content: str) -> str:

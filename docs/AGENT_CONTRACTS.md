@@ -100,9 +100,9 @@ Indexes uploaded documents.
 
 Current status
 
-Implemented as deterministic services, not a separate concrete agent class.
-Runtime file upload uses document loaders plus LangChainChromaRetriever
-indexing. SQLite document chunk/embedding tables remain compatibility,
+Implemented as a thin deterministic DocumentIngestionAgent wrapper over the
+document loaders plus LangChainChromaRetriever indexing. Runtime file upload
+uses this wrapper. SQLite document chunk/embedding tables remain compatibility,
 metadata, or legacy paths rather than the primary runtime vector index.
 
 Input
