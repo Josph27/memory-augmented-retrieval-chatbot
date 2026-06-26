@@ -7,6 +7,7 @@ from openai import OpenAIError
 
 from src.agents.chat_agent import ChatAgent
 from src.agents.context_builder_agent import ContextBuilderAgent
+from src.agents.context_manager_agent import ContextManagerAgent
 from src.agents.short_term_memory_agent import ShortTermMemoryAgent
 from src.context.context_budget_allocator import ContextBudgetAllocator
 from src.context.context_builder import ContextBuilder as TraceContextBuilder
@@ -44,6 +45,7 @@ class CoordinatorAgent:
         trace_context_builder: TraceContextBuilder | None = None,
         context_comparator: ContextComparator | None = None,
         routing_agent: RoutingAgent | None = None,
+        context_manager_agent: ContextManagerAgent | None = None,
     ) -> None:
         self.database = database
         self.memory_agent = memory_agent
@@ -55,6 +57,7 @@ class CoordinatorAgent:
         self.memory_reranker = memory_reranker or MemoryReranker()
         self.context_budget_allocator = context_budget_allocator or ContextBudgetAllocator()
         self.trace_context_builder = trace_context_builder or TraceContextBuilder()
+        self.context_manager_agent = context_manager_agent
         self.context_comparator = context_comparator or ContextComparator()
 
     def run_turn(self, chat_id: str, content: str) -> AgentTurnResult:
@@ -85,23 +88,24 @@ class CoordinatorAgent:
             ranking_profile=route_plan.ranking_profile,
         )
         timings["reranking"] = elapsed_ms(stage_started)
-        stage_started = perf_counter()
-        context_budget = self.context_budget_allocator.allocate(
-            route_plan=route_plan,
-            ranked_candidates=ranked_candidates,
-            system_prompt=self.system_prompt,
-        )
-        timings["context_budget_allocation"] = elapsed_ms(stage_started)
         latest_user_message = {"role": "user", "content": content}
         stage_started = perf_counter()
-        trace_context_packet = self.trace_context_builder.build(
+        context_manager = self.context_manager_agent or ContextManagerAgent(
+            budget_allocator=self.context_budget_allocator,
+            context_builder=self.trace_context_builder,
+        )
+        context_manager_result = context_manager.build_context_packet(
             system_prompt=self.system_prompt,
             latest_user_message=latest_user_message,
             ranked_candidates=ranked_candidates,
-            context_budget=context_budget,
             route_plan=route_plan,
         )
-        timings["context_packet_building"] = elapsed_ms(stage_started)
+        context_budget = context_manager_result.context_budget
+        trace_context_packet = context_manager_result.context_packet
+        context_manager_metadata = context_manager_result.metadata
+        elapsed_context_manager = elapsed_ms(stage_started)
+        timings["context_budget_allocation"] = elapsed_context_manager
+        timings["context_packet_building"] = elapsed_context_manager
 
         stage_started = perf_counter()
         context = self.memory_agent.build_context(
@@ -187,6 +191,7 @@ class CoordinatorAgent:
             metadata={
                 "context_comparison": context_comparison.to_dict(),
                 "routing_decision": routing_decision.to_trace_dict(),
+                "context_manager": context_manager_metadata,
                 "prompt_source": prompt_source,
                 "fallback_reason": fallback_reason,
                 "estimated_prompt_tokens": trace_context_packet.metadata.get(
@@ -225,6 +230,7 @@ class CoordinatorAgent:
                 "retrieved_memory_rows": retrieved_memory_rows,
                 "retrieved_document_rows": retrieved_document_rows,
                 "routing_decision": routing_decision.to_trace_dict(),
+                "context_manager": context_manager_metadata,
             },
         )
 

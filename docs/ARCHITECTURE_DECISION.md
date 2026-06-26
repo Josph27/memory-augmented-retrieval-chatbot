@@ -14,7 +14,7 @@ User query
 -> source-specific retrievers
 -> MemoryCandidate[]
 -> MemoryReranker
--> ContextBudgetAllocator / ContextBuilder
+-> ContextManagerAgent / ContextBudgetAllocator / ContextBuilder
 -> ContextPacket
 -> ModelWrapper
 -> LangMem-backed memory update
@@ -215,7 +215,7 @@ DocumentIngestionAgent / current document loaders and LangChainChromaRetriever i
 DocumentRetrievalAgent / current LangChainChromaRetriever
 StructuredMemoryAgent / current StructuredMemoryRetriever
 RerankerAgent / current MemoryReranker
-ContextManagerAgent / current ContextBudgetAllocator + ContextBuilder
+ContextManagerAgent / thin wrapper over current ContextBudgetAllocator + ContextBuilder
 
 Not every agent needs to call an LLM. This is intentional.
 

@@ -292,10 +292,10 @@ Controls context budgeting and prompt construction.
 
 Current status
 
-Implemented through ContextBudgetAllocator, ContextBuilder, and
-prompt_messages. ContextPacket is the active prompt path after validation. If
-validation fails, the coordinator falls back to the legacy ShortTermMemory
-prompt.
+Implemented as a thin ContextManagerAgent wrapper over
+ContextBudgetAllocator, ContextBuilder, and prompt_messages. ContextPacket is
+the active prompt path after validation. If validation fails, the coordinator
+falls back to the legacy ShortTermMemory prompt.
 
 Input
 ranked MemoryCandidate objects

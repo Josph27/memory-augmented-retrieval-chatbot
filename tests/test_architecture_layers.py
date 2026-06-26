@@ -319,6 +319,18 @@ def test_coordinator_trace_contains_all_trace_only_layers(tmp_path: Path) -> Non
     assert routing_decision["use_document_memory"] is False
     assert routing_decision["fallback_mode"] is False
     assert routing_decision["reason"]
+    context_manager = result.trace.metadata["context_manager"]
+    assert context_manager["context_manager_used"] is True
+    assert "recent_messages" in context_manager["source_budgets"]
+    assert "included_candidate_counts_by_source" in context_manager
+    assert "dropped_candidate_counts_by_source" in context_manager
+    assert context_manager["final_prompt_sections"] == [
+        "system",
+        "structured_memory",
+        "retrieved_memory",
+        "recent_messages",
+        "latest_user_message",
+    ]
     assert model.calls[0] == result.trace.context_packet.model_messages
 
 
