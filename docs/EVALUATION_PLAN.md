@@ -126,9 +126,10 @@ RAGAS/ARES-style metrics may require evaluator LLMs, so they should complement d
 5. Suite C — Structured Cross-Chat Memory
 Status
 
-Partially implemented through tests/verifier scripts. Cross-chat memory works
-through long_term_memories and StructuredMemoryRetriever, but a formal benchmark
-suite with scored cases is still a next step.
+Implemented as a small deterministic mock/oracle benchmark in
+`evals/structured_memory`. Cross-chat memory also has tests/verifier scripts.
+The benchmark exercises SQLite `long_term_memories` and
+`StructuredMemoryRetriever` without live model calls.
 
 Purpose
 
