@@ -50,8 +50,8 @@ Decides which memory sources should be active for a query.
 
 Current status
 
-Partially implemented. Runtime uses QueryAnalyzer + RoutePlanner. Routing is
-mostly rule/keyword based:
+Implemented as a thin RoutingAgent responsibility wrapper over QueryAnalyzer +
+RoutePlanner. Routing is mostly rule/keyword based:
 
 recent_messages = enabled by default
 structured_memory = enabled by default
@@ -88,8 +88,9 @@ rule-based
 LLM-backed with structured output
 hybrid rule + LLM
 
-A hybrid router is future / intended. The current implementation is the safer
-rule-based path.
+A hybrid or fully LLM-backed router is future / intended. The current
+implementation is the safer rule-based path and records its structured decision
+in WorkflowTrace metadata.
 
 3. DocumentIngestionAgent
 Responsibility

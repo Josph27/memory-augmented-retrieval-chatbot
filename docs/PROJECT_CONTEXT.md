@@ -23,7 +23,7 @@ Runtime flow:
 Chainlit UI
 -> ChatService
 -> CoordinatorAgent
--> QueryAnalyzer / RoutePlanner
+-> RoutingAgent / QueryAnalyzer / RoutePlanner
 -> RetrieverDispatcher
 -> source retrievers
 -> MemoryCandidate[]

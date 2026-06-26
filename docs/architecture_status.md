@@ -13,7 +13,7 @@ raw messages, structured memory, and document metadata/chunks. `MemoryCandidate`
 Chainlit app.py
 -> ChatService
 -> CoordinatorAgent
--> QueryAnalyzer / RoutePlanner
+-> RoutingAgent / QueryAnalyzer / RoutePlanner
 -> Database.save_message(user)
 -> RetrieverDispatcher
 -> RecentMessagesRetriever / StructuredMemoryRetriever / LangChainChromaRetriever

@@ -21,6 +21,7 @@ from src.memory.memory_trace import (
 from src.retrieval.reranker import MemoryReranker
 from src.retrieval.retriever_dispatcher import RetrieverDispatcher
 from src.routing.route_planner import RoutePlanner
+from src.routing.routing_agent import RoutingAgent
 
 
 TERMINATION_RESPONSE_SAVED = "response_generated_and_messages_saved"
@@ -42,13 +43,14 @@ class CoordinatorAgent:
         context_budget_allocator: ContextBudgetAllocator | None = None,
         trace_context_builder: TraceContextBuilder | None = None,
         context_comparator: ContextComparator | None = None,
+        routing_agent: RoutingAgent | None = None,
     ) -> None:
         self.database = database
         self.memory_agent = memory_agent
         self.context_builder = context_builder
         self.chat_agent = chat_agent
         self.system_prompt = system_prompt
-        self.route_planner = route_planner or RoutePlanner()
+        self.routing_agent = routing_agent or RoutingAgent(route_planner or RoutePlanner())
         self.retriever_dispatcher = retriever_dispatcher or RetrieverDispatcher(database)
         self.memory_reranker = memory_reranker or MemoryReranker()
         self.context_budget_allocator = context_budget_allocator or ContextBudgetAllocator()
@@ -61,7 +63,8 @@ class CoordinatorAgent:
         timings: dict[str, float] = {}
         trace_id = str(uuid4())
         stage_started = perf_counter()
-        route_plan = self.route_planner.plan(content)
+        routing_decision = self.routing_agent.route(content)
+        route_plan = routing_decision.route_plan
         timings["route_planning"] = elapsed_ms(stage_started)
         stage_started = perf_counter()
         user_message_id = self.database.save_message(
@@ -183,6 +186,7 @@ class CoordinatorAgent:
             errors=errors,
             metadata={
                 "context_comparison": context_comparison.to_dict(),
+                "routing_decision": routing_decision.to_trace_dict(),
                 "prompt_source": prompt_source,
                 "fallback_reason": fallback_reason,
                 "estimated_prompt_tokens": trace_context_packet.metadata.get(
@@ -220,6 +224,7 @@ class CoordinatorAgent:
                 "saved_memory_rows": saved_memory_rows,
                 "retrieved_memory_rows": retrieved_memory_rows,
                 "retrieved_document_rows": retrieved_document_rows,
+                "routing_decision": routing_decision.to_trace_dict(),
             },
         )
 
@@ -229,12 +234,18 @@ class CoordinatorAgent:
         if trace.context_packet is not None:
             recent_ids = trace.context_packet.recent_message_ids
         route_intent = None
+        routing_reason = None
+        routing_fallback = None
         active_sources = []
         if trace.route_plan is not None:
             route_intent = trace.route_plan.intent
             active_sources = [
                 source.source for source in trace.route_plan.sources if source.enabled
             ]
+        routing_decision = trace.metadata.get("routing_decision")
+        if isinstance(routing_decision, dict):
+            routing_reason = routing_decision.get("reason")
+            routing_fallback = routing_decision.get("fallback_mode")
         context_profile = None
         if trace.context_budget is not None:
             context_profile = trace.context_budget.metadata.get("context_profile")
@@ -254,6 +265,8 @@ class CoordinatorAgent:
             f"chat_id={trace.chat_id} "
             f"intent={route_intent} "
             f"active_sources={active_sources} "
+            f"routing_fallback={routing_fallback} "
+            f"routing_reason={routing_reason!r} "
             f"retrieved_candidates={len(trace.retrieved_candidates)} "
             f"ranked_candidates={len(trace.ranked_candidates)} "
             f"context_profile={context_profile} "

@@ -10,7 +10,7 @@ The intended responsibility flow is:
 
 User query
 -> CoordinatorAgent
--> QueryAnalyzer / RoutePlanner
+-> RoutingAgent / QueryAnalyzer / RoutePlanner
 -> source-specific retrievers
 -> MemoryCandidate[]
 -> MemoryReranker
@@ -204,7 +204,7 @@ turning deterministic infrastructure into free-form LLM calls.
 
 LLM-backed or policy agents:
 
-RoutingAgent / current QueryAnalyzer + RoutePlanner
+RoutingAgent / thin wrapper over current QueryAnalyzer + RoutePlanner
 MemoryManagerAgent / current LangMemStructuredMemoryState
 MemoryCriticAgent if implemented
 AnswerAgent / current ModelWrapper
