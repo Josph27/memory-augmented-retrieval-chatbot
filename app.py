@@ -295,5 +295,6 @@ def chat_service_for_model(model_name: str) -> ChatService:
             model=ModelWrapper(config, model_name=model_name),
             raw_message_limit=config.raw_message_limit,
             memory_update_batch_size=config.memory_update_batch_size,
+            routing_mode=config.routing_mode,
         )
     return chat_services[model_name]

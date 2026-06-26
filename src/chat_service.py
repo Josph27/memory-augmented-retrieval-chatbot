@@ -14,6 +14,7 @@ from src.database import Database
 from src.memory.short_term import ShortTermMemory
 from src.model_wrapper import ModelWrapper
 from src.retrieval.retriever_dispatcher import RetrieverDispatcher
+from src.routing.routing_agent import RoutingAgent
 
 
 SYSTEM_PROMPT = (
@@ -42,10 +43,12 @@ class ChatService:
         raw_message_limit: int,
         memory_update_batch_size: int,
         document_indexer: object | None = None,
+        routing_mode: str = "rule",
     ) -> None:
         self.database = database
         self.model = model
         self.document_indexer = document_indexer
+        self.routing_mode = routing_mode
         self.document_ingestion_agent = DocumentIngestionAgent(
             database=database,
             indexer=document_indexer,
@@ -66,6 +69,7 @@ class ChatService:
                 database=database,
                 raw_message_limit=raw_message_limit,
             ),
+            routing_agent=RoutingAgent(mode=routing_mode, model=model),
         )
 
     def start_chat(self, chat_id: str | None = None) -> str:

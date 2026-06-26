@@ -75,23 +75,26 @@ Output
 }
 Failure Behavior
 
-If routing fails, returns invalid output, or confidence is too low, use safe broad retrieval:
+If routing fails, returns invalid output, or confidence is too low, use a safe
+fallback route:
 
 recent_messages = true
 structured_memory = true
-document_memory = true if documents are indexed
+document_memory follows the deterministic rule route when LLM/hybrid routing
+falls back; hard planner failures keep it disabled
 Implementation Notes
 
-The router may be:
+The router supports:
 
-rule-based
-LLM-backed with structured output
-hybrid rule + LLM
+rule-based routing
+optional LLM-backed routing with structured JSON output
+optional hybrid rule + LLM routing
 
-A hybrid or fully LLM-backed router is future / intended. The current
-implementation is the safer rule-based path and records its structured decision
-in WorkflowTrace metadata. Representative deterministic routing cases are
-covered in tests before any LLM or hybrid routing is introduced.
+The default implementation is the safer rule-based path. Optional LLM/hybrid
+routing is enabled only with ROUTING_MODE=llm or ROUTING_MODE=hybrid, and falls
+back to the rule route on missing model config, model errors, invalid JSON, or
+low confidence. Routing decisions and fallback reasons are recorded in
+WorkflowTrace metadata.
 
 3. DocumentIngestionAgent
 Responsibility
