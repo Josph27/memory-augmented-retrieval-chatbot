@@ -29,6 +29,9 @@ class AppConfig:
     langchain_chunk_size: int
     langchain_chunk_overlap: int
     routing_mode: str
+    structured_memory_retrieval_mode: str
+    long_term_memory_chroma_persist_dir: Path
+    long_term_memory_collection: str
 
     @classmethod
     def from_env(cls) -> "AppConfig":
@@ -62,4 +65,18 @@ class AppConfig:
             langchain_chunk_size=int(os.getenv("LANGCHAIN_CHUNK_SIZE", "1000")),
             langchain_chunk_overlap=int(os.getenv("LANGCHAIN_CHUNK_OVERLAP", "150")),
             routing_mode=os.getenv("ROUTING_MODE", "rule").strip().lower(),
+            structured_memory_retrieval_mode=os.getenv(
+                "STRUCTURED_MEMORY_RETRIEVAL_MODE",
+                "sqlite",
+            ).strip().lower(),
+            long_term_memory_chroma_persist_dir=Path(
+                os.getenv(
+                    "LONG_TERM_MEMORY_CHROMA_PERSIST_DIR",
+                    os.getenv("LANGCHAIN_CHROMA_PERSIST_DIR", "data/chroma"),
+                )
+            ),
+            long_term_memory_collection=os.getenv(
+                "LONG_TERM_MEMORY_COLLECTION",
+                "long_term_memory",
+            ),
         )
