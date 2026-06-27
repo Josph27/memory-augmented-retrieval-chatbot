@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 
 from src.core.contracts import RoutePlan, SourcePlan
@@ -34,14 +35,29 @@ class RoutePlannerPolicy:
     )
     future_sources: tuple[SourceRoutingPolicy, ...] = (
         SourceRoutingPolicy(
+            source="current_chat_gist",
+            enabled=False,
+            reason="Current-chat gist retrieval is not implemented yet.",
+        ),
+        SourceRoutingPolicy(
+            source="previous_chat_gist",
+            enabled=False,
+            reason="Previous-chat gist retrieval is not implemented yet.",
+        ),
+        SourceRoutingPolicy(
+            source="raw_message_span",
+            enabled=False,
+            reason="Raw-message span drill-down is not enabled by default.",
+        ),
+        SourceRoutingPolicy(
             source="current_chat_chunks",
             enabled=False,
-            reason="Gist/chunk retrieval is not implemented yet.",
+            reason="Legacy alias; prefer current_chat_gist for new memory code.",
         ),
         SourceRoutingPolicy(
             source="previous_chat_memory",
             enabled=False,
-            reason="Long-term memory across chats is not implemented yet.",
+            reason="Legacy alias; prefer previous_chat_gist for new memory code.",
         ),
         SourceRoutingPolicy(
             source="document_memory",
@@ -146,6 +162,11 @@ def source_enabled(
     """Return whether a source should be enabled for this query."""
     if source_policy.source == "document_memory":
         return analysis.signals.asks_about_documents
+    if source_policy.source == "previous_chat_gist":
+        return (
+            previous_chat_gist_retrieval_enabled()
+            and analysis.signals.asks_about_previous_memory
+        )
     return source_policy.enabled
 
 
@@ -156,4 +177,20 @@ def source_reason(
     """Return a per-query reason for a source plan."""
     if source_policy.source == "document_memory" and analysis.signals.asks_about_documents:
         return "Document-like query detected; enabling LangChain-Chroma document retrieval."
+    if (
+        source_policy.source == "previous_chat_gist"
+        and previous_chat_gist_retrieval_enabled()
+        and analysis.signals.asks_about_previous_memory
+    ):
+        return "Previous-chat memory query detected; enabling previous-chat gist retrieval."
     return source_policy.reason
+
+
+def previous_chat_gist_retrieval_enabled() -> bool:
+    """Return whether previous-chat gist retrieval is enabled for route planning."""
+    return os.getenv("PREVIOUS_CHAT_GIST_RETRIEVAL_ENABLED", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }

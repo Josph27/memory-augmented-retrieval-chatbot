@@ -17,6 +17,7 @@ MEMORY_CATEGORIES = (
     "open_tasks",
     "preferences",
     "constraints",
+    "procedural",
 )
 
 MEMORY_OPERATION_NAMES = ("upsert", "supersede", "delete")
@@ -43,7 +44,7 @@ Only keep information likely to matter later in this chat.
 Return a JSON array of operation objects. Return [] if there are no useful operations.
 
 Valid categories are exactly:
-user_facts, project_facts, decisions, corrections, open_tasks, preferences, constraints
+user_facts, project_facts, decisions, corrections, open_tasks, preferences, constraints, procedural
 
 Do not combine categories. For example, use "user_facts", never "user_facts | project_facts".
 
@@ -411,7 +412,12 @@ def apply_status_update(
 
 
 class StructuredMemoryState:
-    """Updates derived structured memory from older raw chat messages."""
+    """Deprecated custom JSON-operation updater.
+
+    The active structured-memory backend is `LangMemStructuredMemoryState` in
+    `src.memory.langmem_structured`. This class remains temporarily for
+    compatibility and for validators/helpers that still live in this module.
+    """
 
     def __init__(self, model: ChatModel) -> None:
         self.model = model

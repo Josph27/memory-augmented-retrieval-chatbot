@@ -6,7 +6,10 @@ from typing import Protocol
 from src.core.contracts import MemoryCandidate, RoutePlan, SourcePlan
 from src.database import Database
 from src.memory.constants import RAW_MESSAGE_LIMIT
+from src.retrieval.current_chat_gist_retriever import CurrentChatGistRetriever
 from src.retrieval.langchain_chroma_retriever import LangChainChromaRetriever
+from src.retrieval.previous_chat_gist_retriever import PreviousChatGistRetriever
+from src.retrieval.raw_message_span_retriever import RawMessageSpanRetriever
 from src.retrieval.recent_messages_retriever import RecentMessagesRetriever
 from src.retrieval.structured_memory_retriever import StructuredMemoryRetriever
 
@@ -32,6 +35,9 @@ class RetrieverDispatcher:
             "recent_messages": RecentMessagesRetriever(database, default_limit=raw_message_limit),
             "structured_memory": StructuredMemoryRetriever(database),
             "document_memory": langchain_chroma_retriever_for_env(database),
+            "current_chat_gist": CurrentChatGistRetriever(database),
+            "previous_chat_gist": PreviousChatGistRetriever(database),
+            "raw_message_span": RawMessageSpanRetriever(database),
         }
 
     def retrieve(self, chat_id: str, route_plan: RoutePlan) -> list[MemoryCandidate]:

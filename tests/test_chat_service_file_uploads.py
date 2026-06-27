@@ -62,6 +62,29 @@ def test_chat_service_indexes_uploaded_file_through_configured_indexer(tmp_path:
     assert indexer.calls[0]["metadata"]["file_name"] == "upload.md"
 
 
+def test_chat_service_uses_display_name_for_chainlit_temp_upload(tmp_path: Path) -> None:
+    database = Database(tmp_path / "chatbot.db")
+    indexer = FakeIndexer()
+    service = ChatService(
+        database=database,
+        model=FakeModel(),
+        raw_message_limit=8,
+        memory_update_batch_size=6,
+        document_indexer=indexer,
+    )
+    path = tmp_path / "chainlit-upload.bin"
+    path.write_text("# README\n\nUnique upload fact.", encoding="utf-8")
+
+    result = service.index_document_file(path, display_name="README.md")
+
+    assert result.file_name == "README.md"
+    assert result.document_id == "fake-doc"
+    assert result.chunk_count == 2
+    assert indexer.calls[0]["title"] == "README"
+    assert indexer.calls[0]["metadata"]["file_name"] == "README.md"
+    assert indexer.calls[0]["metadata"]["file_extension"] == ".md"
+
+
 def test_chat_service_titles_chat_from_first_message(tmp_path: Path) -> None:
     database = Database(tmp_path / "chatbot.db")
     service = ChatService(

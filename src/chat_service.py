@@ -7,14 +7,16 @@ from uuid import uuid4
 from src.agents.chat_agent import ChatAgent
 from src.agents.context_builder_agent import ContextBuilderAgent
 from src.agents.coordinator_agent import CoordinatorAgent
+from src.agents.document_ingestion_agent import DocumentIngestionAgent
 from src.agents.short_term_memory_agent import ShortTermMemoryAgent
 from src.core.contracts import AgentTurnResult
 from src.database import Database
-from src.documents.loaders import index_file_document
+from src.memory.previous_chat_gist import PreviousChatGistGenerator
 from src.memory.short_term import ShortTermMemory
 from src.model_wrapper import ModelWrapper
-from src.retrieval.langchain_chroma_retriever import LangChainChromaRetriever
+from src.retrieval.reranker import MemoryReranker
 from src.retrieval.retriever_dispatcher import RetrieverDispatcher
+from src.routing.routing_agent import RoutingAgent
 
 
 SYSTEM_PROMPT = (
@@ -43,10 +45,24 @@ class ChatService:
         raw_message_limit: int,
         memory_update_batch_size: int,
         document_indexer: object | None = None,
+        routing_mode: str = "rule",
+        reranker_mode: str = "deterministic",
+        reranker_llm_top_k: int = 10,
+        reranker_llm_min_confidence: float = 0.55,
+        previous_chat_gist_generation_enabled: bool = False,
+        previous_chat_gist_generator: PreviousChatGistGenerator | None = None,
     ) -> None:
         self.database = database
         self.model = model
         self.document_indexer = document_indexer
+        self.routing_mode = routing_mode
+        self.reranker_mode = reranker_mode
+        self.previous_chat_gist_generation_enabled = previous_chat_gist_generation_enabled
+        self.previous_chat_gist_generator = previous_chat_gist_generator
+        self.document_ingestion_agent = DocumentIngestionAgent(
+            database=database,
+            indexer=document_indexer,
+        )
         self.memory = ShortTermMemory(
             database=database,
             model=model,
@@ -63,6 +79,13 @@ class ChatService:
                 database=database,
                 raw_message_limit=raw_message_limit,
             ),
+            routing_agent=RoutingAgent(mode=routing_mode, model=model),
+            memory_reranker=MemoryReranker(
+                mode=reranker_mode,
+                model=model if reranker_mode in {"hybrid", "llm"} else None,
+                llm_top_k=reranker_llm_top_k,
+                llm_min_confidence=reranker_llm_min_confidence,
+            ),
         )
 
     def start_chat(self, chat_id: str | None = None) -> str:
@@ -73,6 +96,12 @@ class ChatService:
             title="Chainlit chat",
             model_name=getattr(self.model, "model_name", None),
         )
+        if self.previous_chat_gist_generation_enabled:
+            generator = self.previous_chat_gist_generator or PreviousChatGistGenerator(
+                database=self.database,
+                model=self.model,
+            )
+            generator.generate_for_existing_chats(active_chat_id=chat_id)
         return chat_id
 
     def ensure_chat_title_from_message(self, chat_id: str, content: str) -> None:
@@ -84,22 +113,20 @@ class ChatService:
             title = f"{title[:57].rstrip()}..."
         self.database.update_chat_title(chat_id=chat_id, title=title)
 
-    def index_document_file(self, path: str | Path) -> DocumentFileIndexResult:
+    def index_document_file(
+        self,
+        path: str | Path,
+        display_name: str | None = None,
+    ) -> DocumentFileIndexResult:
         """Load and index an uploaded local file into document memory."""
-        file_path = Path(path)
-        indexer = self.document_indexer or LangChainChromaRetriever.from_env(
-            database=self.database
+        result = self.document_ingestion_agent.index_file(
+            path,
+            display_name=display_name,
         )
-        result = index_file_document(file_path, indexer)
-        document_id = str(getattr(result, "document_id", ""))
-        chunk_count = int(getattr(result, "chunk_count", 0))
-        if isinstance(result, dict):
-            document_id = str(result.get("document_id", document_id))
-            chunk_count = int(result.get("chunk_count", chunk_count))
         return DocumentFileIndexResult(
-            file_name=file_path.name,
-            document_id=document_id,
-            chunk_count=chunk_count,
+            file_name=result.file_name,
+            document_id=result.document_id,
+            chunk_count=result.chunk_count,
         )
 
     def handle_user_message(self, chat_id: str, content: str) -> str:

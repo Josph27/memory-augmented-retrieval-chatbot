@@ -12,6 +12,7 @@ from src.database import Database
 from src.retrieval.reranker import MemoryReranker
 from src.retrieval.retriever_dispatcher import RetrieverDispatcher
 from src.routing.route_planner import RoutePlanner
+from src.routing.routing_agent import RoutingAgent
 
 
 class FakeModel:
@@ -69,6 +70,39 @@ def test_route_planner_profiles_and_sources() -> None:
     disabled = {source.source for source in document.sources if not source.enabled}
     assert enabled == {"recent_messages", "structured_memory", "document_memory"}
     assert {"current_chat_chunks", "previous_chat_memory"} <= disabled
+
+
+def test_routing_agent_wraps_existing_route_plan_behavior() -> None:
+    decision = RoutingAgent().route("Can you inspect the uploaded PDF document?")
+
+    assert decision.route_plan.intent == "document_question"
+    assert decision.use_recent_messages is True
+    assert decision.use_structured_memory is True
+    assert decision.use_document_memory is True
+    assert decision.confidence == decision.route_plan.confidence
+    assert decision.fallback_mode is False
+    assert "Document-like query detected" in decision.reason
+    assert decision.to_trace_dict()["active_sources"] == [
+        "recent_messages",
+        "structured_memory",
+        "document_memory",
+    ]
+
+
+def test_routing_agent_falls_back_when_planner_fails() -> None:
+    class BrokenPlanner:
+        def plan(self, query: str) -> RoutePlan:
+            del query
+            raise RuntimeError("routing failed")
+
+    decision = RoutingAgent(route_planner=BrokenPlanner()).route("Hello")  # type: ignore[arg-type]
+
+    assert decision.fallback_mode is True
+    assert decision.use_recent_messages is True
+    assert decision.use_structured_memory is True
+    assert decision.use_document_memory is False
+    assert decision.route_plan.context_profile == "general_chat"
+    assert decision.to_trace_dict()["routing_error"] == "RuntimeError: routing failed"
 
 
 def test_retriever_dispatcher_calls_only_enabled_retrievers() -> None:
@@ -279,6 +313,24 @@ def test_coordinator_trace_contains_all_trace_only_layers(tmp_path: Path) -> Non
     assert "warnings" in comparison
     assert result.trace.metadata["prompt_source"] == "context_packet"
     assert result.trace.metadata["fallback_reason"] is None
+    routing_decision = result.trace.metadata["routing_decision"]
+    assert routing_decision["use_recent_messages"] is True
+    assert routing_decision["use_structured_memory"] is True
+    assert routing_decision["use_document_memory"] is False
+    assert routing_decision["fallback_mode"] is False
+    assert routing_decision["reason"]
+    context_manager = result.trace.metadata["context_manager"]
+    assert context_manager["context_manager_used"] is True
+    assert "recent_messages" in context_manager["source_budgets"]
+    assert "included_candidate_counts_by_source" in context_manager
+    assert "dropped_candidate_counts_by_source" in context_manager
+    assert context_manager["final_prompt_sections"] == [
+        "system",
+        "structured_memory",
+        "retrieved_memory",
+        "recent_messages",
+        "latest_user_message",
+    ]
     assert model.calls[0] == result.trace.context_packet.model_messages
 
 

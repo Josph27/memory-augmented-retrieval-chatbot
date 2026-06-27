@@ -7,6 +7,7 @@ from openai import OpenAIError
 
 from src.agents.chat_agent import ChatAgent
 from src.agents.context_builder_agent import ContextBuilderAgent
+from src.agents.context_manager_agent import ContextManagerAgent
 from src.agents.short_term_memory_agent import ShortTermMemoryAgent
 from src.context.context_budget_allocator import ContextBudgetAllocator
 from src.context.context_builder import ContextBuilder as TraceContextBuilder
@@ -14,9 +15,14 @@ from src.context.context_comparator import ContextComparator
 from src.context.prompt_messages import context_packet_to_model_messages
 from src.core.contracts import AgentTurnResult, WorkflowTrace
 from src.database import Database
+from src.memory.memory_trace import (
+    document_memory_candidate_trace_rows,
+    structured_memory_candidate_trace_rows,
+)
 from src.retrieval.reranker import MemoryReranker
 from src.retrieval.retriever_dispatcher import RetrieverDispatcher
 from src.routing.route_planner import RoutePlanner
+from src.routing.routing_agent import RoutingAgent
 
 
 TERMINATION_RESPONSE_SAVED = "response_generated_and_messages_saved"
@@ -38,17 +44,20 @@ class CoordinatorAgent:
         context_budget_allocator: ContextBudgetAllocator | None = None,
         trace_context_builder: TraceContextBuilder | None = None,
         context_comparator: ContextComparator | None = None,
+        routing_agent: RoutingAgent | None = None,
+        context_manager_agent: ContextManagerAgent | None = None,
     ) -> None:
         self.database = database
         self.memory_agent = memory_agent
         self.context_builder = context_builder
         self.chat_agent = chat_agent
         self.system_prompt = system_prompt
-        self.route_planner = route_planner or RoutePlanner()
+        self.routing_agent = routing_agent or RoutingAgent(route_planner or RoutePlanner())
         self.retriever_dispatcher = retriever_dispatcher or RetrieverDispatcher(database)
         self.memory_reranker = memory_reranker or MemoryReranker()
         self.context_budget_allocator = context_budget_allocator or ContextBudgetAllocator()
         self.trace_context_builder = trace_context_builder or TraceContextBuilder()
+        self.context_manager_agent = context_manager_agent
         self.context_comparator = context_comparator or ContextComparator()
 
     def run_turn(self, chat_id: str, content: str) -> AgentTurnResult:
@@ -57,7 +66,8 @@ class CoordinatorAgent:
         timings: dict[str, float] = {}
         trace_id = str(uuid4())
         stage_started = perf_counter()
-        route_plan = self.route_planner.plan(content)
+        routing_decision = self.routing_agent.route(content)
+        route_plan = routing_decision.route_plan
         timings["route_planning"] = elapsed_ms(stage_started)
         stage_started = perf_counter()
         user_message_id = self.database.save_message(
@@ -73,28 +83,32 @@ class CoordinatorAgent:
         )
         timings["retrieval"] = elapsed_ms(stage_started)
         stage_started = perf_counter()
-        ranked_candidates = self.memory_reranker.rank(
+        rerank_result = self.memory_reranker.rank_with_trace(
             candidates=retrieved_candidates,
             ranking_profile=route_plan.ranking_profile,
+            query=content,
         )
+        ranked_candidates = rerank_result.candidates
+        reranker_metadata = rerank_result.metadata
         timings["reranking"] = elapsed_ms(stage_started)
-        stage_started = perf_counter()
-        context_budget = self.context_budget_allocator.allocate(
-            route_plan=route_plan,
-            ranked_candidates=ranked_candidates,
-            system_prompt=self.system_prompt,
-        )
-        timings["context_budget_allocation"] = elapsed_ms(stage_started)
         latest_user_message = {"role": "user", "content": content}
         stage_started = perf_counter()
-        trace_context_packet = self.trace_context_builder.build(
+        context_manager = self.context_manager_agent or ContextManagerAgent(
+            budget_allocator=self.context_budget_allocator,
+            context_builder=self.trace_context_builder,
+        )
+        context_manager_result = context_manager.build_context_packet(
             system_prompt=self.system_prompt,
             latest_user_message=latest_user_message,
             ranked_candidates=ranked_candidates,
-            context_budget=context_budget,
             route_plan=route_plan,
         )
-        timings["context_packet_building"] = elapsed_ms(stage_started)
+        context_budget = context_manager_result.context_budget
+        trace_context_packet = context_manager_result.context_packet
+        context_manager_metadata = context_manager_result.metadata
+        elapsed_context_manager = elapsed_ms(stage_started)
+        timings["context_budget_allocation"] = elapsed_context_manager
+        timings["context_packet_building"] = elapsed_context_manager
 
         stage_started = perf_counter()
         context = self.memory_agent.build_context(
@@ -161,6 +175,11 @@ class CoordinatorAgent:
             # Memory updates should not break the visible chat response. The next
             # successful turn can retry because messages remain unprocessed.
         timings["total_turn"] = elapsed_ms(total_started)
+        saved_memory_rows = list(
+            getattr(self.memory_agent.memory, "last_saved_memory_rows", [])
+        )
+        retrieved_memory_rows = structured_memory_candidate_trace_rows(retrieved_candidates)
+        retrieved_document_rows = document_memory_candidate_trace_rows(retrieved_candidates)
 
         trace = WorkflowTrace(
             trace_id=trace_id,
@@ -174,6 +193,9 @@ class CoordinatorAgent:
             errors=errors,
             metadata={
                 "context_comparison": context_comparison.to_dict(),
+                "routing_decision": routing_decision.to_trace_dict(),
+                "reranker": reranker_metadata,
+                "context_manager": context_manager_metadata,
                 "prompt_source": prompt_source,
                 "fallback_reason": fallback_reason,
                 "estimated_prompt_tokens": trace_context_packet.metadata.get(
@@ -194,6 +216,9 @@ class CoordinatorAgent:
                     "dropped_candidate_reasons"
                 ),
                 "timings_ms": timings,
+                "saved_memory_rows": saved_memory_rows,
+                "retrieved_memory_rows": retrieved_memory_rows,
+                "retrieved_document_rows": retrieved_document_rows,
             },
         )
         self._log_trace(trace)
@@ -204,6 +229,14 @@ class CoordinatorAgent:
             termination_reason=TERMINATION_RESPONSE_SAVED,
             trace=trace,
             assistant_message_id=assistant_message_id,
+            metadata={
+                "saved_memory_rows": saved_memory_rows,
+                "retrieved_memory_rows": retrieved_memory_rows,
+                "retrieved_document_rows": retrieved_document_rows,
+                "routing_decision": routing_decision.to_trace_dict(),
+                "reranker": reranker_metadata,
+                "context_manager": context_manager_metadata,
+            },
         )
 
     def _log_trace(self, trace: WorkflowTrace) -> None:
@@ -212,12 +245,24 @@ class CoordinatorAgent:
         if trace.context_packet is not None:
             recent_ids = trace.context_packet.recent_message_ids
         route_intent = None
+        routing_reason = None
+        routing_fallback = None
+        reranker_mode = None
+        reranker_fallback = None
         active_sources = []
         if trace.route_plan is not None:
             route_intent = trace.route_plan.intent
             active_sources = [
                 source.source for source in trace.route_plan.sources if source.enabled
             ]
+        routing_decision = trace.metadata.get("routing_decision")
+        if isinstance(routing_decision, dict):
+            routing_reason = routing_decision.get("reason")
+            routing_fallback = routing_decision.get("fallback_mode")
+        reranker = trace.metadata.get("reranker")
+        if isinstance(reranker, dict):
+            reranker_mode = reranker.get("reranker_mode")
+            reranker_fallback = reranker.get("fallback_used")
         context_profile = None
         if trace.context_budget is not None:
             context_profile = trace.context_budget.metadata.get("context_profile")
@@ -237,6 +282,10 @@ class CoordinatorAgent:
             f"chat_id={trace.chat_id} "
             f"intent={route_intent} "
             f"active_sources={active_sources} "
+            f"routing_fallback={routing_fallback} "
+            f"routing_reason={routing_reason!r} "
+            f"reranker_mode={reranker_mode} "
+            f"reranker_fallback={reranker_fallback} "
             f"retrieved_candidates={len(trace.retrieved_candidates)} "
             f"ranked_candidates={len(trace.ranked_candidates)} "
             f"context_profile={context_profile} "

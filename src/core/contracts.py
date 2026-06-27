@@ -7,9 +7,14 @@ from typing import Any, Literal
 MemorySourceType = Literal[
     "recent_messages",
     "structured_memory",
+    "document_memory",
+    "current_chat_gist",
+    "previous_chat_gist",
+    "raw_message_span",
+    # Backward-compatible aliases. Prefer current_chat_gist and
+    # previous_chat_gist for new gist-based memory code.
     "current_chat_chunks",
     "previous_chat_memory",
-    "document_memory",
     "short_term",
     "long_term",
     "document",

@@ -13,6 +13,9 @@ class AllocationProfile:
     system: float
     recent_messages: float
     structured_memory: float
+    current_chat_gist: float
+    previous_chat_gist: float
+    raw_message_span: float
     current_chat_chunks: float
     previous_chat_memory: float
     document_memory: float
@@ -32,6 +35,9 @@ class ContextBudgetPolicy:
                 system=0.08,
                 recent_messages=0.55,
                 structured_memory=0.2,
+                current_chat_gist=0.0,
+                previous_chat_gist=0.0,
+                raw_message_span=0.0,
                 current_chat_chunks=0.0,
                 previous_chat_memory=0.0,
                 document_memory=0.0,
@@ -42,6 +48,9 @@ class ContextBudgetPolicy:
                 system=0.08,
                 recent_messages=0.35,
                 structured_memory=0.35,
+                current_chat_gist=0.1,
+                previous_chat_gist=0.0,
+                raw_message_span=0.0,
                 current_chat_chunks=0.1,
                 previous_chat_memory=0.0,
                 document_memory=0.0,
@@ -52,6 +61,9 @@ class ContextBudgetPolicy:
                 system=0.08,
                 recent_messages=0.2,
                 structured_memory=0.1,
+                current_chat_gist=0.0,
+                previous_chat_gist=0.0,
+                raw_message_span=0.0,
                 current_chat_chunks=0.0,
                 previous_chat_memory=0.0,
                 document_memory=0.5,
@@ -62,6 +74,9 @@ class ContextBudgetPolicy:
                 system=0.08,
                 recent_messages=0.2,
                 structured_memory=0.2,
+                current_chat_gist=0.1,
+                previous_chat_gist=0.15,
+                raw_message_span=0.05,
                 current_chat_chunks=0.1,
                 previous_chat_memory=0.15,
                 document_memory=0.25,
@@ -172,6 +187,9 @@ def enabled_source_ratios(
     ratios = {
         "recent_messages": profile.recent_messages,
         "structured_memory": profile.structured_memory,
+        "current_chat_gist": profile.current_chat_gist,
+        "previous_chat_gist": profile.previous_chat_gist,
+        "raw_message_span": profile.raw_message_span,
         "current_chat_chunks": profile.current_chat_chunks,
         "previous_chat_memory": profile.previous_chat_memory,
         "document_memory": profile.document_memory,

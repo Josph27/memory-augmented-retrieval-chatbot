@@ -28,6 +28,15 @@ class AppConfig:
     langchain_chroma_persist_dir: Path
     langchain_chunk_size: int
     langchain_chunk_overlap: int
+    routing_mode: str
+    reranker_mode: str
+    reranker_llm_top_k: int
+    reranker_llm_min_confidence: float
+    structured_memory_retrieval_mode: str
+    long_term_memory_chroma_persist_dir: Path
+    long_term_memory_collection: str
+    previous_chat_gist_generation_enabled: bool
+    previous_chat_gist_retrieval_enabled: bool
 
     @classmethod
     def from_env(cls) -> "AppConfig":
@@ -60,4 +69,43 @@ class AppConfig:
             ),
             langchain_chunk_size=int(os.getenv("LANGCHAIN_CHUNK_SIZE", "1000")),
             langchain_chunk_overlap=int(os.getenv("LANGCHAIN_CHUNK_OVERLAP", "150")),
+            routing_mode=os.getenv("ROUTING_MODE", "rule").strip().lower(),
+            reranker_mode=os.getenv(
+                "RERANKER_MODE",
+                "deterministic",
+            ).strip().lower(),
+            reranker_llm_top_k=int(os.getenv("RERANKER_LLM_TOP_K", "10")),
+            reranker_llm_min_confidence=float(
+                os.getenv("RERANKER_LLM_MIN_CONFIDENCE", "0.55")
+            ),
+            structured_memory_retrieval_mode=os.getenv(
+                "STRUCTURED_MEMORY_RETRIEVAL_MODE",
+                "sqlite",
+            ).strip().lower(),
+            long_term_memory_chroma_persist_dir=Path(
+                os.getenv(
+                    "LONG_TERM_MEMORY_CHROMA_PERSIST_DIR",
+                    os.getenv("LANGCHAIN_CHROMA_PERSIST_DIR", "data/chroma"),
+                )
+            ),
+            long_term_memory_collection=os.getenv(
+                "LONG_TERM_MEMORY_COLLECTION",
+                "long_term_memory",
+            ),
+            previous_chat_gist_generation_enabled=env_bool(
+                "PREVIOUS_CHAT_GIST_GENERATION_ENABLED",
+                default=False,
+            ),
+            previous_chat_gist_retrieval_enabled=env_bool(
+                "PREVIOUS_CHAT_GIST_RETRIEVAL_ENABLED",
+                default=False,
+            ),
         )
+
+
+def env_bool(name: str, default: bool = False) -> bool:
+    """Read a boolean-like environment variable."""
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
