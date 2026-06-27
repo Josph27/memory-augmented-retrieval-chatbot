@@ -140,15 +140,28 @@ full candidate set. Both modes fall back to deterministic order on missing
 models, invalid JSON, unknown/duplicate IDs, low confidence, empty output, or
 model errors.
 
+Optional `cross_encoder` mode uses the existing `sentence-transformers`
+dependency and lazy-loads `BAAI/bge-reranker-v2-m3` only when selected. It
+scores deterministic top-k query/candidate pairs, combines normalized neural
+scores with deterministic/source-aware scores, and appends candidates outside
+top-k in deterministic order. It falls back on missing dependencies, model-load
+errors, inference errors, empty output, invalid values, or score-count
+mismatches. Cross-encoder reranking is generally more stable and cheaper than
+LLM listwise reranking, while typed-memory source boosts remain useful for
+provenance and lifecycle semantics.
+
 Reranker trace metadata records mode, fallback status/reason, deterministic
 scores and feature contributions, original/final ranks, candidate source, and
-LLM IDs/confidence when used.
+LLM IDs/confidence or cross-encoder/combined scores when used.
 
 Configuration:
 
-- `RERANKER_MODE=deterministic|hybrid|llm`
+- `RERANKER_MODE=deterministic|cross_encoder|hybrid|llm`
 - `RERANKER_LLM_TOP_K=10`
 - `RERANKER_LLM_MIN_CONFIDENCE=0.55`
+- `RERANKER_CROSS_ENCODER_MODEL=BAAI/bge-reranker-v2-m3`
+- `RERANKER_CROSS_ENCODER_TOP_K=10`
+- `RERANKER_CROSS_ENCODER_WEIGHT=0.65`
 
 `ContextBudgetAllocator` stores a `ContextBudget` on
 `WorkflowTrace.context_budget`. It supports profiles for `general_chat`,

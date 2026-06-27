@@ -97,6 +97,7 @@ SQLiteChainlitDataLayer
 DEMO_MEMORY_TRACE helpers
 document QA retrieval evals with oracle/model answer modes
 RAGAS-compatible export
+optional sentence-transformers/BGE cross-encoder reranking with deterministic fallback
 
 Partially implemented:
 
@@ -111,7 +112,6 @@ semantic vector index over long-term memories
 automatic gist retrieval pipeline
 hybrid or LLM-backed routing
 query decomposition
-cross-encoder reranking
 full memory lifecycle benchmark
 full external benchmark implementations
 3. Core Design Claim
@@ -282,7 +282,6 @@ Defer:
 full unified memory rewrite
 full gist vector retrieval
 query decomposition
-cross-encoder reranking
 full LongMemEval / PerLTQA / LoCoMo implementation
 10. Final Presentation Summary
 

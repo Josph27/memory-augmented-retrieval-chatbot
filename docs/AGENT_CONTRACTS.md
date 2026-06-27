@@ -264,9 +264,13 @@ Current status
 Implemented as `MemoryReranker`. Deterministic mode is the default and combines
 lexical overlap, source priors, query/source intent boosts, vector/retrieval
 scores, recency, confidence, status, usage, and duplicate penalties. Optional
-`hybrid` and `llm` modes use the configured model for structured candidate-ID
-reranking and fall back to deterministic order on missing configuration,
-invalid output, low confidence, or model errors.
+`cross_encoder` mode uses the mature sentence-transformers `CrossEncoder`
+adapter with `BAAI/bge-reranker-v2-m3`; it scores deterministic top-k candidates
+and combines neural relevance with source-aware deterministic scores. Optional
+`hybrid` and `llm` modes use the configured chat model for structured
+candidate-ID reranking. Every optional backend falls back to deterministic
+order on missing dependencies/configuration, invalid output, or inference/model
+errors.
 
 Input
 query
@@ -295,9 +299,12 @@ cross-encoder reranking
 Configuration:
 
 ```text
-RERANKER_MODE=deterministic|hybrid|llm
+RERANKER_MODE=deterministic|cross_encoder|hybrid|llm
 RERANKER_LLM_TOP_K=10
 RERANKER_LLM_MIN_CONFIDENCE=0.55
+RERANKER_CROSS_ENCODER_MODEL=BAAI/bge-reranker-v2-m3
+RERANKER_CROSS_ENCODER_TOP_K=10
+RERANKER_CROSS_ENCODER_WEIGHT=0.65
 ```
 9. ContextManagerAgent
 Responsibility

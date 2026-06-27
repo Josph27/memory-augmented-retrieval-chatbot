@@ -49,6 +49,9 @@ class ChatService:
         reranker_mode: str = "deterministic",
         reranker_llm_top_k: int = 10,
         reranker_llm_min_confidence: float = 0.55,
+        reranker_cross_encoder_model: str = "BAAI/bge-reranker-v2-m3",
+        reranker_cross_encoder_top_k: int = 10,
+        reranker_cross_encoder_weight: float = 0.65,
         previous_chat_gist_generation_enabled: bool = False,
         previous_chat_gist_generator: PreviousChatGistGenerator | None = None,
     ) -> None:
@@ -85,6 +88,9 @@ class ChatService:
                 model=model if reranker_mode in {"hybrid", "llm"} else None,
                 llm_top_k=reranker_llm_top_k,
                 llm_min_confidence=reranker_llm_min_confidence,
+                cross_encoder_model=reranker_cross_encoder_model,
+                cross_encoder_top_k=reranker_cross_encoder_top_k,
+                cross_encoder_weight=reranker_cross_encoder_weight,
             ),
         )
 

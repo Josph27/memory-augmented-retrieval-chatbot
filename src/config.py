@@ -32,6 +32,9 @@ class AppConfig:
     reranker_mode: str
     reranker_llm_top_k: int
     reranker_llm_min_confidence: float
+    reranker_cross_encoder_model: str
+    reranker_cross_encoder_top_k: int
+    reranker_cross_encoder_weight: float
     structured_memory_retrieval_mode: str
     long_term_memory_chroma_persist_dir: Path
     long_term_memory_collection: str
@@ -77,6 +80,16 @@ class AppConfig:
             reranker_llm_top_k=int(os.getenv("RERANKER_LLM_TOP_K", "10")),
             reranker_llm_min_confidence=float(
                 os.getenv("RERANKER_LLM_MIN_CONFIDENCE", "0.55")
+            ),
+            reranker_cross_encoder_model=os.getenv(
+                "RERANKER_CROSS_ENCODER_MODEL",
+                "BAAI/bge-reranker-v2-m3",
+            ),
+            reranker_cross_encoder_top_k=int(
+                os.getenv("RERANKER_CROSS_ENCODER_TOP_K", "10")
+            ),
+            reranker_cross_encoder_weight=float(
+                os.getenv("RERANKER_CROSS_ENCODER_WEIGHT", "0.65")
             ),
             structured_memory_retrieval_mode=os.getenv(
                 "STRUCTURED_MEMORY_RETRIEVAL_MODE",

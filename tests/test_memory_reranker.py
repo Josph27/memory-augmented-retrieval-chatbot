@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from src.core.contracts import MemoryCandidate
+from src.retrieval.cross_encoder_reranker import CrossEncoderUnavailable
 from src.retrieval.reranker import MemoryReranker
 
 
@@ -20,6 +21,25 @@ class FakeRerankerModel:
         if self.error is not None:
             raise self.error
         return self.response
+
+
+class FakeCrossEncoderBackend:
+    model_name = "fake-cross-encoder"
+
+    def __init__(
+        self,
+        scores: list[float] | None = None,
+        error: Exception | None = None,
+    ) -> None:
+        self.scores = scores or []
+        self.error = error
+        self.calls: list[tuple[str, list[str]]] = []
+
+    def score(self, query: str, candidate_texts: list[str]) -> list[float]:
+        self.calls.append((query, list(candidate_texts)))
+        if self.error is not None:
+            raise self.error
+        return list(self.scores)
 
 
 def candidate(
@@ -250,3 +270,148 @@ def test_trace_contains_feature_contributions_and_ranks() -> None:
         "original_rank": 0,
         "final_rank": 0,
     }
+
+
+def test_cross_encoder_mode_combines_mocked_scores_and_reorders() -> None:
+    backend = FakeCrossEncoderBackend(scores=[0.1, 0.95])
+    result = MemoryReranker(
+        mode="cross_encoder",
+        cross_encoder_backend=backend,
+        cross_encoder_weight=0.9,
+    ).rank_with_trace(
+        [
+            candidate("structured_memory", "User preference about libraries."),
+            candidate("document_memory", "The report contains exact evidence."),
+        ],
+        ranking_profile="test",
+        query="What preference do I remember about libraries?",
+    )
+
+    assert result.candidates[0].source == "document_memory"
+    assert result.metadata["cross_encoder_used"] is True
+    assert result.metadata["cross_encoder_model"] == "fake-cross-encoder"
+    assert result.metadata["cross_encoder_scores"][1]["score"] == 0.95
+    assert result.metadata["combined_scores"]
+    assert len(backend.calls) == 1
+    assert backend.calls[0][1][0].startswith("[source=")
+
+
+def test_cross_encoder_mode_limits_scoring_to_top_k() -> None:
+    backend = FakeCrossEncoderBackend(scores=[0.8, 0.7])
+    result = MemoryReranker(
+        mode="cross_encoder",
+        cross_encoder_backend=backend,
+        cross_encoder_top_k=2,
+    ).rank_with_trace(
+        [
+            candidate("structured_memory", "Preference memory."),
+            candidate("recent_messages", "Recent detail."),
+            candidate("document_memory", "Document detail."),
+        ],
+        ranking_profile="test",
+        query="What is my preference?",
+    )
+
+    assert len(backend.calls[0][1]) == 2
+    assert len(result.candidates) == 3
+    assert result.metadata["cross_encoder_top_k"] == 2
+    assert result.candidates[-1].metadata["reranker_candidate_id"] == "c2"
+
+
+def test_cross_encoder_equal_scores_preserve_source_aware_deterministic_boost() -> None:
+    backend = FakeCrossEncoderBackend(scores=[0.5, 0.5])
+    result = MemoryReranker(
+        mode="cross_encoder",
+        cross_encoder_backend=backend,
+        cross_encoder_weight=0.65,
+    ).rank_with_trace(
+        [
+            candidate("document_memory", "Generic writing guidance."),
+            candidate("structured_memory", "User preference: concise answers."),
+        ],
+        ranking_profile="test",
+        query="What answer style do I prefer?",
+    )
+
+    assert result.candidates[0].source == "structured_memory"
+    assert (
+        result.candidates[0].metadata["normalized_deterministic_score"]
+        > result.candidates[1].metadata["normalized_deterministic_score"]
+    )
+
+
+def test_cross_encoder_falls_back_on_backend_exception() -> None:
+    backend = FakeCrossEncoderBackend(error=RuntimeError("inference failed"))
+    result = MemoryReranker(
+        mode="cross_encoder",
+        cross_encoder_backend=backend,
+    ).rank_with_trace(
+        [
+            candidate("structured_memory", "Preference."),
+            candidate("document_memory", "Document."),
+        ],
+        ranking_profile="test",
+        query="preference",
+    )
+
+    assert result.metadata["fallback_used"] is True
+    assert result.metadata["cross_encoder_used"] is False
+    assert "inference failed" in result.metadata["fallback_reason"]
+
+
+def test_cross_encoder_falls_back_when_backend_is_unavailable() -> None:
+    backend = FakeCrossEncoderBackend(
+        error=CrossEncoderUnavailable("model unavailable")
+    )
+    result = MemoryReranker(
+        mode="cross_encoder",
+        cross_encoder_backend=backend,
+    ).rank_with_trace(
+        [
+            candidate("structured_memory", "Preference."),
+            candidate("document_memory", "Document."),
+        ],
+        ranking_profile="test",
+        query="preference",
+    )
+
+    assert result.metadata["fallback_used"] is True
+    assert "model unavailable" in result.metadata["fallback_reason"]
+
+
+def test_cross_encoder_falls_back_on_empty_scores() -> None:
+    result = MemoryReranker(
+        mode="cross_encoder",
+        cross_encoder_backend=FakeCrossEncoderBackend(scores=[]),
+    ).rank_with_trace(
+        [
+            candidate("structured_memory", "Preference."),
+            candidate("document_memory", "Document."),
+        ],
+        ranking_profile="test",
+        query="preference",
+    )
+
+    assert result.metadata["fallback_used"] is True
+    assert "returned no scores" in result.metadata["fallback_reason"]
+
+
+def test_deterministic_mode_never_calls_cross_encoder_backend() -> None:
+    backend = FakeCrossEncoderBackend(
+        error=AssertionError("backend should not be called")
+    )
+
+    result = MemoryReranker(
+        mode="deterministic",
+        cross_encoder_backend=backend,
+    ).rank_with_trace(
+        [
+            candidate("structured_memory", "Preference."),
+            candidate("document_memory", "Document."),
+        ],
+        ranking_profile="test",
+        query="preference",
+    )
+
+    assert result.metadata["reranker_mode"] == "deterministic"
+    assert backend.calls == []

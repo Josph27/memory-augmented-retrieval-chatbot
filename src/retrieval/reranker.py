@@ -6,11 +6,18 @@ from dataclasses import dataclass, field, replace
 from typing import Any, Protocol
 
 from src.core.contracts import MemoryCandidate
+from src.retrieval.cross_encoder_reranker import (
+    DEFAULT_CROSS_ENCODER_MODEL,
+    CrossEncoderBackend,
+    SentenceTransformersCrossEncoderBackend,
+)
 
 
-RERANKER_MODES = {"deterministic", "hybrid", "llm"}
+RERANKER_MODES = {"deterministic", "cross_encoder", "hybrid", "llm"}
 DEFAULT_LLM_TOP_K = 10
 DEFAULT_LLM_MIN_CONFIDENCE = 0.55
+DEFAULT_CROSS_ENCODER_TOP_K = 10
+DEFAULT_CROSS_ENCODER_WEIGHT = 0.65
 
 
 class RerankerModel(Protocol):
@@ -90,12 +97,20 @@ class MemoryReranker:
         model: RerankerModel | None = None,
         llm_top_k: int = DEFAULT_LLM_TOP_K,
         llm_min_confidence: float = DEFAULT_LLM_MIN_CONFIDENCE,
+        cross_encoder_backend: CrossEncoderBackend | None = None,
+        cross_encoder_model: str = DEFAULT_CROSS_ENCODER_MODEL,
+        cross_encoder_top_k: int = DEFAULT_CROSS_ENCODER_TOP_K,
+        cross_encoder_weight: float = DEFAULT_CROSS_ENCODER_WEIGHT,
     ) -> None:
         self.policy = policy or RerankerPolicy()
         self.mode = normalize_reranker_mode(mode)
         self.model = model
         self.llm_top_k = max(1, llm_top_k)
         self.llm_min_confidence = clamp(llm_min_confidence)
+        self.cross_encoder_backend = cross_encoder_backend
+        self.cross_encoder_model = cross_encoder_model
+        self.cross_encoder_top_k = max(1, cross_encoder_top_k)
+        self.cross_encoder_weight = clamp(cross_encoder_weight)
         self.last_trace_metadata: dict[str, Any] = {}
 
     def rank(
@@ -126,6 +141,15 @@ class MemoryReranker:
         trace = deterministic_trace(self.mode, deterministic)
         if self.mode == "deterministic" or len(deterministic) < 2:
             result = result_with_final_trace(deterministic, trace)
+            self.last_trace_metadata = result.metadata
+            return result
+
+        if self.mode == "cross_encoder":
+            result = self._cross_encoder_rank(
+                query=query or "",
+                deterministic=deterministic,
+                trace=trace,
+            )
             self.last_trace_metadata = result.metadata
             return result
 
@@ -191,6 +215,75 @@ class MemoryReranker:
             )
         self.last_trace_metadata = result.metadata
         return result
+
+    def _cross_encoder_rank(
+        self,
+        query: str,
+        deterministic: list[MemoryCandidate],
+        trace: dict[str, Any],
+    ) -> RerankResult:
+        """Rerank deterministic top-k with a lazy cross-encoder backend."""
+        rerank_pool = deterministic[: self.cross_encoder_top_k]
+        backend = self.cross_encoder_backend or SentenceTransformersCrossEncoderBackend(
+            self.cross_encoder_model
+        )
+        try:
+            scores = backend.score(
+                query,
+                [candidate_text_for_cross_encoder(candidate) for candidate in rerank_pool],
+            )
+            validate_cross_encoder_scores(scores, expected_count=len(rerank_pool))
+            combined = combine_cross_encoder_scores(
+                deterministic=deterministic,
+                rerank_pool=rerank_pool,
+                cross_encoder_scores=scores,
+                cross_encoder_weight=self.cross_encoder_weight,
+            )
+            trace.update(
+                {
+                    "cross_encoder_used": True,
+                    "cross_encoder_model": backend.model_name,
+                    "cross_encoder_top_k": self.cross_encoder_top_k,
+                    "cross_encoder_weight": self.cross_encoder_weight,
+                    "cross_encoder_scores": [
+                        {
+                            "candidate_id": candidate.metadata[
+                                "reranker_candidate_id"
+                            ],
+                            "source": candidate.source,
+                            "score": score,
+                        }
+                        for candidate, score in zip(
+                            rerank_pool,
+                            scores,
+                            strict=True,
+                        )
+                    ],
+                    "combined_scores": [
+                        {
+                            "candidate_id": candidate.metadata[
+                                "reranker_candidate_id"
+                            ],
+                            "source": candidate.source,
+                            "score": candidate.score,
+                        }
+                        for candidate in combined[: len(rerank_pool)]
+                    ],
+                }
+            )
+            return result_with_final_trace(combined, trace)
+        except Exception as error:
+            return fallback_result(
+                mode=self.mode,
+                deterministic=deterministic,
+                reason=f"{type(error).__name__}: {error}",
+                extra_metadata={
+                    "cross_encoder_used": False,
+                    "cross_encoder_model": backend.model_name,
+                    "cross_encoder_top_k": self.cross_encoder_top_k,
+                    "cross_encoder_weight": self.cross_encoder_weight,
+                },
+            )
 
     def _deterministic_rank(
         self,
@@ -400,6 +493,97 @@ def candidate_status_penalty(
     return policy.status_penalties.get(status, 0.0)
 
 
+def candidate_text_for_cross_encoder(candidate: MemoryCandidate) -> str:
+    """Format typed memory content for semantic cross-encoder scoring."""
+    return f"[source={candidate.source}] {candidate.content[:1000]}"
+
+
+def validate_cross_encoder_scores(
+    scores: list[float],
+    expected_count: int,
+) -> None:
+    """Validate cross-encoder score count and normalized values."""
+    if not scores:
+        raise ValueError("cross-encoder returned no scores")
+    if len(scores) != expected_count:
+        raise ValueError(
+            "cross-encoder score count mismatch: "
+            f"expected {expected_count}, received {len(scores)}"
+        )
+    if any(
+        isinstance(score, bool)
+        or not isinstance(score, int | float)
+        or not 0.0 <= float(score) <= 1.0
+        for score in scores
+    ):
+        raise ValueError("cross-encoder scores must be numeric values in [0, 1]")
+
+
+def combine_cross_encoder_scores(
+    deterministic: list[MemoryCandidate],
+    rerank_pool: list[MemoryCandidate],
+    cross_encoder_scores: list[float],
+    cross_encoder_weight: float,
+) -> list[MemoryCandidate]:
+    """Combine semantic and deterministic scores, then append the untouched tail."""
+    deterministic_scores = normalize_candidate_scores(rerank_pool)
+    combined_pool = []
+    for candidate, semantic, deterministic_score in zip(
+        rerank_pool,
+        cross_encoder_scores,
+        deterministic_scores,
+        strict=True,
+    ):
+        combined_score = (
+            cross_encoder_weight * float(semantic)
+            + (1.0 - cross_encoder_weight) * deterministic_score
+        )
+        combined_pool.append(
+            replace(
+                candidate,
+                score=combined_score,
+                metadata={
+                    **candidate.metadata,
+                    "cross_encoder_score": float(semantic),
+                    "normalized_deterministic_score": deterministic_score,
+                    "combined_score": combined_score,
+                },
+            )
+        )
+    combined_pool.sort(
+        key=lambda candidate: (
+            -(candidate.score if candidate.score is not None else 0.0),
+            int(candidate.metadata["original_rank"]),
+        )
+    )
+    pool_ids = {
+        candidate.metadata["reranker_candidate_id"] for candidate in rerank_pool
+    }
+    return [
+        *combined_pool,
+        *[
+            candidate
+            for candidate in deterministic
+            if candidate.metadata["reranker_candidate_id"] not in pool_ids
+        ],
+    ]
+
+
+def normalize_candidate_scores(candidates: list[MemoryCandidate]) -> list[float]:
+    """Min-max normalize deterministic candidate scores for weighted combination."""
+    scores = [
+        float(candidate.score if candidate.score is not None else 0.0)
+        for candidate in candidates
+    ]
+    if not scores:
+        return []
+    low = min(scores)
+    high = max(scores)
+    if high == low:
+        return [0.5 for _ in scores]
+    return [(score - low) / (high - low) for score in scores]
+
+
 def llm_reranker_messages(
     query: str,
     candidates: list[MemoryCandidate],
@@ -547,6 +731,12 @@ def deterministic_trace(
         ],
         "llm_ranked_candidate_ids": [],
         "llm_confidence": None,
+        "cross_encoder_used": False,
+        "cross_encoder_model": None,
+        "cross_encoder_top_k": None,
+        "cross_encoder_weight": None,
+        "cross_encoder_scores": [],
+        "combined_scores": [],
     }
 
 
@@ -555,6 +745,7 @@ def fallback_result(
     deterministic: list[MemoryCandidate],
     reason: str,
     llm_confidence: float | None = None,
+    extra_metadata: dict[str, Any] | None = None,
 ) -> RerankResult:
     """Return deterministic ordering with explicit fallback metadata."""
     trace = deterministic_trace(mode, deterministic)
@@ -563,6 +754,7 @@ def fallback_result(
             "fallback_used": True,
             "fallback_reason": reason,
             "llm_confidence": llm_confidence,
+            **(extra_metadata or {}),
         }
     )
     return result_with_final_trace(deterministic, trace)
