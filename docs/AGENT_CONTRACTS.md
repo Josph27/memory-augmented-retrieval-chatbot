@@ -261,8 +261,12 @@ Ranks MemoryCandidate objects before context construction.
 
 Current status
 
-Implemented as MemoryReranker. It is deterministic and metadata-aware, with
-score breakdowns. It is not a cross-encoder or semantic reranker.
+Implemented as `MemoryReranker`. Deterministic mode is the default and combines
+lexical overlap, source priors, query/source intent boosts, vector/retrieval
+scores, recency, confidence, status, usage, and duplicate penalties. Optional
+`hybrid` and `llm` modes use the configured model for structured candidate-ID
+reranking and fall back to deterministic order on missing configuration,
+invalid output, low confidence, or model errors.
 
 Input
 query
@@ -287,7 +291,14 @@ Optional:
 
 encoder-based reranking
 cross-encoder reranking
-LLM-based reranking for small candidate sets
+
+Configuration:
+
+```text
+RERANKER_MODE=deterministic|hybrid|llm
+RERANKER_LLM_TOP_K=10
+RERANKER_LLM_MIN_CONFIDENCE=0.55
+```
 9. ContextManagerAgent
 Responsibility
 

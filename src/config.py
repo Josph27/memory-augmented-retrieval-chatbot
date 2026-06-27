@@ -29,6 +29,9 @@ class AppConfig:
     langchain_chunk_size: int
     langchain_chunk_overlap: int
     routing_mode: str
+    reranker_mode: str
+    reranker_llm_top_k: int
+    reranker_llm_min_confidence: float
     structured_memory_retrieval_mode: str
     long_term_memory_chroma_persist_dir: Path
     long_term_memory_collection: str
@@ -67,6 +70,14 @@ class AppConfig:
             langchain_chunk_size=int(os.getenv("LANGCHAIN_CHUNK_SIZE", "1000")),
             langchain_chunk_overlap=int(os.getenv("LANGCHAIN_CHUNK_OVERLAP", "150")),
             routing_mode=os.getenv("ROUTING_MODE", "rule").strip().lower(),
+            reranker_mode=os.getenv(
+                "RERANKER_MODE",
+                "deterministic",
+            ).strip().lower(),
+            reranker_llm_top_k=int(os.getenv("RERANKER_LLM_TOP_K", "10")),
+            reranker_llm_min_confidence=float(
+                os.getenv("RERANKER_LLM_MIN_CONFIDENCE", "0.55")
+            ),
             structured_memory_retrieval_mode=os.getenv(
                 "STRUCTURED_MEMORY_RETRIEVAL_MODE",
                 "sqlite",

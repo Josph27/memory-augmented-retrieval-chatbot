@@ -14,6 +14,7 @@ from src.database import Database
 from src.memory.previous_chat_gist import PreviousChatGistGenerator
 from src.memory.short_term import ShortTermMemory
 from src.model_wrapper import ModelWrapper
+from src.retrieval.reranker import MemoryReranker
 from src.retrieval.retriever_dispatcher import RetrieverDispatcher
 from src.routing.routing_agent import RoutingAgent
 
@@ -45,6 +46,9 @@ class ChatService:
         memory_update_batch_size: int,
         document_indexer: object | None = None,
         routing_mode: str = "rule",
+        reranker_mode: str = "deterministic",
+        reranker_llm_top_k: int = 10,
+        reranker_llm_min_confidence: float = 0.55,
         previous_chat_gist_generation_enabled: bool = False,
         previous_chat_gist_generator: PreviousChatGistGenerator | None = None,
     ) -> None:
@@ -52,6 +56,7 @@ class ChatService:
         self.model = model
         self.document_indexer = document_indexer
         self.routing_mode = routing_mode
+        self.reranker_mode = reranker_mode
         self.previous_chat_gist_generation_enabled = previous_chat_gist_generation_enabled
         self.previous_chat_gist_generator = previous_chat_gist_generator
         self.document_ingestion_agent = DocumentIngestionAgent(
@@ -75,6 +80,12 @@ class ChatService:
                 raw_message_limit=raw_message_limit,
             ),
             routing_agent=RoutingAgent(mode=routing_mode, model=model),
+            memory_reranker=MemoryReranker(
+                mode=reranker_mode,
+                model=model if reranker_mode in {"hybrid", "llm"} else None,
+                llm_top_k=reranker_llm_top_k,
+                llm_min_confidence=reranker_llm_min_confidence,
+            ),
         )
 
     def start_chat(self, chat_id: str | None = None) -> str:

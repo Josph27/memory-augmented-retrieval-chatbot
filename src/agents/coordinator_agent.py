@@ -83,10 +83,13 @@ class CoordinatorAgent:
         )
         timings["retrieval"] = elapsed_ms(stage_started)
         stage_started = perf_counter()
-        ranked_candidates = self.memory_reranker.rank(
+        rerank_result = self.memory_reranker.rank_with_trace(
             candidates=retrieved_candidates,
             ranking_profile=route_plan.ranking_profile,
+            query=content,
         )
+        ranked_candidates = rerank_result.candidates
+        reranker_metadata = rerank_result.metadata
         timings["reranking"] = elapsed_ms(stage_started)
         latest_user_message = {"role": "user", "content": content}
         stage_started = perf_counter()
@@ -191,6 +194,7 @@ class CoordinatorAgent:
             metadata={
                 "context_comparison": context_comparison.to_dict(),
                 "routing_decision": routing_decision.to_trace_dict(),
+                "reranker": reranker_metadata,
                 "context_manager": context_manager_metadata,
                 "prompt_source": prompt_source,
                 "fallback_reason": fallback_reason,
@@ -230,6 +234,7 @@ class CoordinatorAgent:
                 "retrieved_memory_rows": retrieved_memory_rows,
                 "retrieved_document_rows": retrieved_document_rows,
                 "routing_decision": routing_decision.to_trace_dict(),
+                "reranker": reranker_metadata,
                 "context_manager": context_manager_metadata,
             },
         )
@@ -242,6 +247,8 @@ class CoordinatorAgent:
         route_intent = None
         routing_reason = None
         routing_fallback = None
+        reranker_mode = None
+        reranker_fallback = None
         active_sources = []
         if trace.route_plan is not None:
             route_intent = trace.route_plan.intent
@@ -252,6 +259,10 @@ class CoordinatorAgent:
         if isinstance(routing_decision, dict):
             routing_reason = routing_decision.get("reason")
             routing_fallback = routing_decision.get("fallback_mode")
+        reranker = trace.metadata.get("reranker")
+        if isinstance(reranker, dict):
+            reranker_mode = reranker.get("reranker_mode")
+            reranker_fallback = reranker.get("fallback_used")
         context_profile = None
         if trace.context_budget is not None:
             context_profile = trace.context_budget.metadata.get("context_profile")
@@ -273,6 +284,8 @@ class CoordinatorAgent:
             f"active_sources={active_sources} "
             f"routing_fallback={routing_fallback} "
             f"routing_reason={routing_reason!r} "
+            f"reranker_mode={reranker_mode} "
+            f"reranker_fallback={reranker_fallback} "
             f"retrieved_candidates={len(trace.retrieved_candidates)} "
             f"ranked_candidates={len(trace.ranked_candidates)} "
             f"context_profile={context_profile} "

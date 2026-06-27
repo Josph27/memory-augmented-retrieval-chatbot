@@ -296,6 +296,9 @@ def chat_service_for_model(model_name: str) -> ChatService:
             raw_message_limit=config.raw_message_limit,
             memory_update_batch_size=config.memory_update_batch_size,
             routing_mode=config.routing_mode,
+            reranker_mode=config.reranker_mode,
+            reranker_llm_top_k=config.reranker_llm_top_k,
+            reranker_llm_min_confidence=config.reranker_llm_min_confidence,
             previous_chat_gist_generation_enabled=(
                 config.previous_chat_gist_generation_enabled
             ),

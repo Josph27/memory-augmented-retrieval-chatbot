@@ -75,8 +75,9 @@ Chainlit UI. `ChatService.handle_user_turn` exposes the richer
     them into `MemoryCandidate(source="document_memory", ...)`.
 - `src/retrieval/reranker.py`
   - Scores retrieved `MemoryCandidate` objects and returns ranked copies with
-    score breakdown metadata. It is deterministic and metadata-aware, not a
-    cross-encoder or semantic reranker.
+    score breakdown metadata. Deterministic query-aware scoring is the default;
+    optional hybrid/LLM candidate-ID reranking is fallback-safe. It is not a
+    cross-encoder reranker.
 - `src/context/token_estimator.py`
   - Defines a model-aware replaceable token estimator interface plus a
     tokenizer-free approximate implementation. No real tokenizer dependency is
@@ -124,9 +125,30 @@ New gist-memory work should prefer `current_chat_gist` and
 The dispatcher now calls retrievers for enabled sources and stores the resulting
 `MemoryCandidate` objects on `WorkflowTrace.retrieved_candidates`.
 
-`MemoryReranker` now stores scored copies on
-`WorkflowTrace.ranked_candidates`. Score breakdowns include feature values,
-weights, feature contributions, final score, and the `ranking_profile`.
+`RoutingAgent` selects which sources are active. Source retrievers normalize
+their results as `MemoryCandidate` objects. `MemoryReranker` orders those
+candidates before `ContextManagerAgent` applies source budgets and builds the
+`ContextPacket`.
+
+`MemoryReranker` stores scored copies on `WorkflowTrace.ranked_candidates`.
+Deterministic mode is the default and requires no model call. It uses lexical
+overlap, source priors, query/source intent boosts, retrieval/vector scores,
+recency, confidence, status, usage, and duplicate penalties. Optional `hybrid`
+mode deterministically narrows the candidate set before asking the configured
+model for structured candidate-ID ordering. Optional `llm` mode considers the
+full candidate set. Both modes fall back to deterministic order on missing
+models, invalid JSON, unknown/duplicate IDs, low confidence, empty output, or
+model errors.
+
+Reranker trace metadata records mode, fallback status/reason, deterministic
+scores and feature contributions, original/final ranks, candidate source, and
+LLM IDs/confidence when used.
+
+Configuration:
+
+- `RERANKER_MODE=deterministic|hybrid|llm`
+- `RERANKER_LLM_TOP_K=10`
+- `RERANKER_LLM_MIN_CONFIDENCE=0.55`
 
 `ContextBudgetAllocator` stores a `ContextBudget` on
 `WorkflowTrace.context_budget`. It supports profiles for `general_chat`,
