@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from collections import Counter
 from dataclasses import dataclass
 from typing import Any, Iterable
 
@@ -23,6 +24,7 @@ def score_case(
     case: LongMemEvalCase,
     answer: str,
     retrieved_contents: Iterable[str],
+    retrieved_session_ids: Iterable[str] = (),
 ) -> CaseScore:
     """Score one pilot case with transparent, non-official checks."""
     normalized_answer = normalize_text(answer)
@@ -33,6 +35,11 @@ def score_case(
         answer_is_unknown(answer) if case.expected_abstain else None
     )
     retrieval_hit = evidence_hit(case.expected_evidence, retrieved_contents)
+    if retrieval_hit is None:
+        retrieval_hit = session_evidence_hit(
+            case.metadata.get("answer_session_ids"),
+            retrieved_session_ids,
+        )
     passed = (
         abstain_correct is True
         if case.expected_abstain
@@ -60,6 +67,18 @@ def evidence_hit(
     return all(normalize_text(fragment) in context for fragment in expected_evidence)
 
 
+def session_evidence_hit(
+    expected_session_ids: Any,
+    retrieved_session_ids: Iterable[str],
+) -> bool | None:
+    """Score official LongMemEval evidence-session IDs when available."""
+    if not isinstance(expected_session_ids, list) or not expected_session_ids:
+        return None
+    expected = {str(value) for value in expected_session_ids}
+    retrieved = {str(value) for value in retrieved_session_ids}
+    return bool(expected & retrieved)
+
+
 def summarize_scores(results: list[dict[str, Any]]) -> dict[str, Any]:
     """Aggregate unofficial adapter metrics."""
     abstain = [
@@ -72,6 +91,13 @@ def summarize_scores(results: list[dict[str, Any]]) -> dict[str, Any]:
         for result in results
         if result["retrieval_hit"] is not None
     ]
+    source_counts: Counter[str] = Counter()
+    for result in results:
+        source_counts.update(
+            candidate.get("source")
+            for candidate in result.get("retrieved_candidates", [])
+            if candidate.get("source")
+        )
     return {
         "total_cases": len(results),
         "pass_rate": rate(result["passed"] for result in results),
@@ -85,6 +111,33 @@ def summarize_scores(results: list[dict[str, Any]]) -> dict[str, Any]:
         "retrieval_hit_rate": rate(retrieval) if retrieval else None,
         "average_latency_ms": average(
             float(result["latency_ms"]) for result in results
+        ),
+        "context_inclusion_rate": rate(
+            result.get("context_included", False) for result in results
+        ),
+        "average_context_candidates_included": average(
+            float(result.get("context_candidate_count", 0)) for result in results
+        ),
+        "cases_with_empty_context": [
+            result["case_id"]
+            for result in results
+            if not result.get("context_included", False)
+        ],
+        "retrieved_source_counts": dict(sorted(source_counts.items())),
+        "reranker_mode": (
+            results[0].get("reranker_mode", "deterministic")
+            if results
+            else "deterministic"
+        ),
+        "cross_encoder_used_count": sum(
+            bool(result.get("cross_encoder_used")) for result in results
+        ),
+        "average_retrieved_candidates": average(
+            float(result.get("retrieved_candidate_count", 0)) for result in results
+        ),
+        "answer_i_dont_know_rate": rate(
+            answer_is_unknown(str(result.get("answer", "")))
+            for result in results
         ),
         "failed_case_ids": [
             result["case_id"] for result in results if not result["passed"]

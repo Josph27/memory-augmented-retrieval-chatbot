@@ -6,9 +6,12 @@ from typing import Any
 
 SUPPORTED_MEMORY_MODES = {
     "recent_only",
+    "gist_only",
+    "span_retrieval",
+    "full",
+    # Reserved compatibility modes from the first scaffold.
     "structured",
     "structured_vector",
-    "full",
 }
 
 

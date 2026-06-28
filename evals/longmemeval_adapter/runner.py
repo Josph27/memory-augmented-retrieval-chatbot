@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import tempfile
 from dataclasses import asdict
 from pathlib import Path
@@ -29,6 +30,10 @@ from src.routing.routing_agent import RoutingAgent
 
 from evals.longmemeval_adapter.schema import LongMemEvalCase
 from evals.longmemeval_adapter.scoring import score_case, summarize_scores
+from evals.longmemeval_adapter.span_retriever import (
+    LongMemEvalMessageSpanRetriever,
+    seed_message_spans,
+)
 
 
 SYSTEM_PROMPT = (
@@ -111,20 +116,24 @@ def run_adapter(
     memory_mode: str,
     answer_mode: str,
     model: ModelLike | None = None,
+    reranker_mode: str | None = None,
 ) -> dict[str, Any]:
     """Run pilot cases in isolated databases and return a JSON-ready report."""
     if memory_mode in {"structured", "structured_vector"}:
         raise AdapterModeUnavailable(
             f"{memory_mode!r} preparation is reserved by the scaffold but not yet "
-            "implemented without model-derived memory extraction. Use recent_only "
-            "or full."
+            "implemented without model-derived memory extraction. Use recent_only, "
+            "gist_only, span_retrieval, or full."
         )
-    if memory_mode not in {"recent_only", "full"}:
+    if memory_mode not in {"recent_only", "gist_only", "span_retrieval", "full"}:
         raise ValueError(f"Unsupported memory mode: {memory_mode}")
     if answer_mode not in {"mock", "model"}:
         raise ValueError(f"Unsupported answer mode: {answer_mode}")
     if answer_mode == "model" and model is None:
         model = configured_model()
+    selected_reranker_mode = (
+        reranker_mode or os.getenv("RERANKER_MODE", "deterministic")
+    ).strip().lower()
 
     results = [
         run_case(
@@ -132,6 +141,7 @@ def run_adapter(
             memory_mode=memory_mode,
             answer_mode=answer_mode,
             model=model,
+            reranker_mode=selected_reranker_mode,
         )
         for case in cases
     ]
@@ -141,6 +151,7 @@ def run_adapter(
         "scoring": "unofficial_normalized_exact_contains",
         "mode": answer_mode,
         "memory_mode": memory_mode,
+        "reranker_mode": selected_reranker_mode,
         "summary": summarize_scores(results),
         "cases": results,
     }
@@ -151,16 +162,20 @@ def run_case(
     memory_mode: str,
     answer_mode: str,
     model: ModelLike | None,
+    reranker_mode: str = "deterministic",
 ) -> dict[str, Any]:
     """Run one case through the real coordinator with controlled source exposure."""
     with tempfile.TemporaryDirectory(prefix="longmemeval_adapter_") as temp_dir:
         database = Database(Path(temp_dir) / "case.db")
         current_chat_id = f"{case.case_id}-current"
         database.create_chat(current_chat_id, title="LongMemEval pilot question")
+        spans = []
         if memory_mode == "recent_only":
             seed_recent_history(database, current_chat_id, case)
-        else:
+        if memory_mode in {"gist_only", "full"}:
             seed_previous_session_gists(database, case)
+        if memory_mode in {"span_retrieval", "full"}:
+            spans = seed_message_spans(database, case)
 
         answer_model = model
         if answer_mode == "mock":
@@ -170,8 +185,12 @@ def run_case(
             raise AdapterModeUnavailable("Model mode requires configured model access.")
 
         retrievers = {
-            "recent_messages": RecentMessagesRetriever(database, default_limit=8),
+            "recent_messages": PriorRecentMessagesRetriever(
+                database,
+                default_limit=8,
+            ),
             "previous_chat_gist": PreviousChatGistRetriever(database),
+            "raw_message_span": LongMemEvalMessageSpanRetriever(spans),
         }
         route_plan = route_for_mode(case, memory_mode)
         routing_agent = RoutingAgent(
@@ -196,16 +215,35 @@ def run_case(
                 retrievers=retrievers,
             ),
             routing_agent=routing_agent,
-            memory_reranker=MemoryReranker(mode="deterministic"),
+            memory_reranker=build_reranker(
+                mode=reranker_mode,
+                model=answer_model if answer_mode == "model" else None,
+            ),
         )
         started = perf_counter()
         turn = coordinator.run_turn(current_chat_id, case.question)
         latency_ms = round((perf_counter() - started) * 1000, 2)
         retrieved = turn.trace.retrieved_candidates
+        context_candidates = (
+            turn.trace.context_packet.candidates
+            if turn.trace.context_packet is not None
+            else []
+        )
+        reranker_trace = turn.trace.metadata.get("reranker")
+        cross_encoder_used = bool(
+            reranker_trace.get("cross_encoder_used")
+            if isinstance(reranker_trace, dict)
+            else False
+        )
         score = score_case(
             case,
             answer=turn.answer,
             retrieved_contents=[candidate.content for candidate in retrieved],
+            retrieved_session_ids=[
+                str(candidate.metadata["session_id"])
+                for candidate in retrieved
+                if candidate.metadata.get("session_id") is not None
+            ],
         )
         return {
             "case_id": case.case_id,
@@ -214,20 +252,37 @@ def run_case(
             "answer": turn.answer,
             **asdict(score),
             "latency_ms": latency_ms,
+            "reranker_mode": reranker_mode,
+            "cross_encoder_used": cross_encoder_used,
             "retrieved_sources": sorted({candidate.source for candidate in retrieved}),
             "retrieved_candidates": [
                 candidate_summary(candidate) for candidate in retrieved
             ],
+            "retrieved_candidate_count": len(retrieved),
             "context_packet_sources": [
-                candidate.source
-                for candidate in (
-                    turn.trace.context_packet.candidates
-                    if turn.trace.context_packet
-                    else []
-                )
+                candidate.source for candidate in context_candidates
             ],
+            "context_candidate_count": len(context_candidates),
+            "context_included": bool(context_candidates),
+            "query_echo_excluded": True,
             "trace": trace_summary(turn.trace),
         }
+
+
+class PriorRecentMessagesRetriever(RecentMessagesRetriever):
+    """Exclude the just-saved benchmark question from retrieved context."""
+
+    def retrieve(self, chat_id: str, source_plan: SourcePlan) -> list[MemoryCandidate]:
+        candidates = super().retrieve(chat_id, source_plan)
+        query = (source_plan.query or "").strip()
+        return [
+            candidate
+            for candidate in candidates
+            if not (
+                candidate.metadata.get("role") == "user"
+                and candidate.content.strip() == query
+            )
+        ]
 
 
 def seed_recent_history(
@@ -273,16 +328,23 @@ def route_for_mode(case: LongMemEvalCase, memory_mode: str) -> RoutePlan:
     sources = [
         SourcePlan(
             source="recent_messages",
-            enabled=True,
+            enabled=memory_mode == "recent_only",
             reason="LongMemEval recent baseline.",
             query=case.question,
             limit=8,
         ),
         SourcePlan(
             source="previous_chat_gist",
-            enabled=memory_mode == "full",
+            enabled=memory_mode in {"gist_only", "full"},
             reason="LongMemEval full-memory episodic source.",
-            query=case.question if memory_mode == "full" else None,
+            query=case.question if memory_mode in {"gist_only", "full"} else None,
+            limit=8,
+        ),
+        SourcePlan(
+            source="raw_message_span",
+            enabled=memory_mode in {"span_retrieval", "full"},
+            reason="LongMemEval bounded message-span retrieval.",
+            query=case.question if memory_mode in {"span_retrieval", "full"} else None,
             limit=8,
         ),
     ]
@@ -294,7 +356,9 @@ def route_for_mode(case: LongMemEvalCase, memory_mode: str) -> RoutePlan:
         requires_retrieval=True,
         ranking_profile="longmemeval_pilot",
         context_profile=(
-            "mixed_memory_document" if memory_mode == "full" else "general_chat"
+            "mixed_memory_document"
+            if memory_mode in {"gist_only", "span_retrieval", "full"}
+            else "general_chat"
         ),
         fallback_policy="adapter_controlled_route",
         update_policy="disabled_for_adapter",
@@ -337,6 +401,26 @@ def trace_summary(trace: Any) -> dict[str, Any]:
         "fallback_reason": trace.metadata.get("fallback_reason"),
         "errors": list(trace.errors),
     }
+
+
+def build_reranker(mode: str, model: ModelLike | None) -> MemoryReranker:
+    """Build the configured benchmark reranker without changing runtime config."""
+    config = AppConfig.from_env()
+    return MemoryReranker(
+        mode=mode,
+        model=cast(Any, model) if mode in {"hybrid", "llm"} else None,
+        llm_top_k=config.reranker_llm_top_k,
+        llm_min_confidence=config.reranker_llm_min_confidence,
+        cross_encoder_model=config.reranker_cross_encoder_model,
+        cross_encoder_top_k=config.reranker_cross_encoder_top_k,
+        cross_encoder_weight=config.reranker_cross_encoder_weight,
+        hybrid_backend=config.reranker_hybrid_backend,
+        llm_ambiguity_margin=config.reranker_llm_ambiguity_margin,
+        llm_require_cross_source_conflict=(
+            config.reranker_llm_require_cross_source_conflict
+        ),
+        llm_provenance_queries=config.reranker_llm_provenance_queries,
+    )
 
 
 def configured_model() -> ModelLike:

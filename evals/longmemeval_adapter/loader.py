@@ -55,7 +55,11 @@ def normalize_record(record: dict[str, Any], index: int = 0) -> LongMemEvalCase:
     )
     question_type = first_text(record, "question_type", "ability_type", "task_type")
     raw_sessions = first_present(record, "sessions", "history", "haystack_sessions")
-    sessions = normalize_sessions(raw_sessions)
+    sessions = normalize_sessions(
+        raw_sessions,
+        session_ids=record.get("haystack_session_ids"),
+        session_dates=record.get("haystack_dates"),
+    )
     evidence = normalize_text_list(
         first_present(record, "expected_evidence", "gold_evidence", "evidence")
     )
@@ -101,7 +105,11 @@ def normalize_record(record: dict[str, Any], index: int = 0) -> LongMemEvalCase:
     )
 
 
-def normalize_sessions(raw_sessions: Any) -> list[HistorySession]:
+def normalize_sessions(
+    raw_sessions: Any,
+    session_ids: Any = None,
+    session_dates: Any = None,
+) -> list[HistorySession]:
     """Normalize nested sessions and flat message histories."""
     if not isinstance(raw_sessions, list) or not raw_sessions:
         raise ValueError("LongMemEval record requires non-empty sessions/history.")
@@ -110,8 +118,11 @@ def normalize_sessions(raw_sessions: Any) -> list[HistorySession]:
 
     sessions = []
     for index, raw_session in enumerate(raw_sessions):
-        session_id = f"session-{index + 1}"
+        session_id = parallel_text(session_ids, index) or f"session-{index + 1}"
         metadata: dict[str, Any] = {}
+        session_date = parallel_text(session_dates, index)
+        if session_date:
+            metadata["date"] = session_date
         messages_raw = raw_session
         if isinstance(raw_session, dict):
             session_id = str(
@@ -125,7 +136,7 @@ def normalize_sessions(raw_sessions: Any) -> list[HistorySession]:
                 or raw_session.get("turns")
                 or raw_session.get("conversation")
             )
-            metadata = dict(raw_session.get("metadata") or {})
+            metadata.update(dict(raw_session.get("metadata") or {}))
         if not isinstance(messages_raw, list):
             raise ValueError(f"Session {session_id!r} must contain a message list.")
         messages = tuple(normalize_message(message) for message in messages_raw)
@@ -213,3 +224,11 @@ def require_mapping(value: Any, path: Path, line_number: int) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise ValueError(f"Expected JSON object at {path}:{line_number}")
     return value
+
+
+def parallel_text(values: Any, index: int) -> str:
+    """Read one textual value from an optional parallel metadata list."""
+    if not isinstance(values, list) or index >= len(values):
+        return ""
+    value = values[index]
+    return str(value) if value is not None else ""
