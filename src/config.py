@@ -35,6 +35,10 @@ class AppConfig:
     reranker_cross_encoder_model: str
     reranker_cross_encoder_top_k: int
     reranker_cross_encoder_weight: float
+    reranker_hybrid_backend: str
+    reranker_llm_ambiguity_margin: float
+    reranker_llm_require_cross_source_conflict: bool
+    reranker_llm_provenance_queries: bool
     structured_memory_retrieval_mode: str
     long_term_memory_chroma_persist_dir: Path
     long_term_memory_collection: str
@@ -90,6 +94,21 @@ class AppConfig:
             ),
             reranker_cross_encoder_weight=float(
                 os.getenv("RERANKER_CROSS_ENCODER_WEIGHT", "0.65")
+            ),
+            reranker_hybrid_backend=os.getenv(
+                "RERANKER_HYBRID_BACKEND",
+                "auto",
+            ).strip().lower(),
+            reranker_llm_ambiguity_margin=float(
+                os.getenv("RERANKER_LLM_AMBIGUITY_MARGIN", "0.15")
+            ),
+            reranker_llm_require_cross_source_conflict=env_bool(
+                "RERANKER_LLM_REQUIRE_CROSS_SOURCE_CONFLICT",
+                default=True,
+            ),
+            reranker_llm_provenance_queries=env_bool(
+                "RERANKER_LLM_PROVENANCE_QUERIES",
+                default=True,
             ),
             structured_memory_retrieval_mode=os.getenv(
                 "STRUCTURED_MEMORY_RETRIEVAL_MODE",

@@ -156,7 +156,13 @@ def test_hybrid_mode_applies_valid_llm_order() -> None:
     model = FakeRerankerModel(
         '{"ranked_candidate_ids":["c1","c0"],"confidence":0.9,"reason":"better"}'
     )
-    reranker = MemoryReranker(mode="hybrid", model=model, llm_top_k=2)
+    reranker = MemoryReranker(
+        mode="hybrid",
+        model=model,
+        llm_top_k=2,
+        hybrid_backend="llm",
+        llm_ambiguity_margin=10.0,
+    )
 
     result = reranker.rank_with_trace(
         [
@@ -179,6 +185,8 @@ def test_hybrid_falls_back_on_invalid_json() -> None:
     result = MemoryReranker(
         mode="hybrid",
         model=FakeRerankerModel("not-json"),
+        hybrid_backend="llm",
+        llm_ambiguity_margin=10.0,
     ).rank_with_trace(
         [
             candidate("structured_memory", "Preference."),
@@ -199,6 +207,8 @@ def test_hybrid_falls_back_on_low_confidence() -> None:
             '{"ranked_candidate_ids":["c1"],"confidence":0.2,"reason":"uncertain"}'
         ),
         llm_min_confidence=0.55,
+        hybrid_backend="llm",
+        llm_ambiguity_margin=10.0,
     ).rank_with_trace(
         [
             candidate("structured_memory", "Preference."),
@@ -217,6 +227,8 @@ def test_hybrid_falls_back_on_model_exception() -> None:
     result = MemoryReranker(
         mode="hybrid",
         model=FakeRerankerModel(error=RuntimeError("endpoint unavailable")),
+        hybrid_backend="llm",
+        llm_ambiguity_margin=10.0,
     ).rank_with_trace(
         [
             candidate("structured_memory", "Preference."),
@@ -231,7 +243,12 @@ def test_hybrid_falls_back_on_model_exception() -> None:
 
 
 def test_hybrid_falls_back_when_model_is_missing() -> None:
-    result = MemoryReranker(mode="hybrid", model=None).rank_with_trace(
+    result = MemoryReranker(
+        mode="hybrid",
+        model=None,
+        hybrid_backend="llm",
+        llm_ambiguity_margin=10.0,
+    ).rank_with_trace(
         [
             candidate("structured_memory", "Preference."),
             candidate("document_memory", "Document."),
@@ -415,3 +432,218 @@ def test_deterministic_mode_never_calls_cross_encoder_backend() -> None:
 
     assert result.metadata["reranker_mode"] == "deterministic"
     assert backend.calls == []
+
+
+def test_hybrid_auto_uses_cross_encoder_and_skips_llm_for_large_margin() -> None:
+    backend = FakeCrossEncoderBackend(scores=[1.0, 0.0])
+    model = FakeRerankerModel(
+        '{"ranked_candidate_ids":["c1","c0"],"confidence":0.9,"reason":"unused"}'
+    )
+    result = MemoryReranker(
+        mode="hybrid",
+        hybrid_backend="auto",
+        cross_encoder_backend=backend,
+        cross_encoder_weight=1.0,
+        model=model,
+        llm_ambiguity_margin=0.15,
+    ).rank_with_trace(
+        [
+            candidate("structured_memory", "Preference memory."),
+            candidate("document_memory", "Document evidence."),
+        ],
+        ranking_profile="test",
+        query="Which memory is relevant?",
+    )
+
+    assert result.metadata["hybrid_backend"] == "auto"
+    assert result.metadata["cross_encoder_used"] is True
+    assert result.metadata["llm_rerank_considered"] is True
+    assert result.metadata["llm_rerank_used"] is False
+    assert result.metadata["llm_rerank_skip_reason"] == "top_margin_above_threshold"
+    assert result.metadata["post_cross_encoder_top_margin"] == 1.0
+    assert len(backend.calls) == 1
+    assert model.calls == 0
+
+
+def test_hybrid_auto_skips_llm_when_top_candidates_share_source() -> None:
+    backend = FakeCrossEncoderBackend(scores=[0.51, 0.5, 0.49])
+    model = FakeRerankerModel(
+        '{"ranked_candidate_ids":["c1","c0"],"confidence":0.9,"reason":"unused"}'
+    )
+    result = MemoryReranker(
+        mode="hybrid",
+        hybrid_backend="auto",
+        cross_encoder_backend=backend,
+        cross_encoder_weight=1.0,
+        model=model,
+    ).rank_with_trace(
+        [
+            candidate("document_memory", "Document alpha."),
+            candidate("document_memory", "Document beta."),
+            candidate("document_memory", "Document gamma."),
+        ],
+        ranking_profile="test",
+        query="Which document is relevant?",
+    )
+
+    assert result.metadata["llm_rerank_used"] is False
+    assert result.metadata["llm_rerank_skip_reason"] == "top_candidates_same_source"
+    assert result.metadata["top_candidate_sources"] == ["document_memory"]
+    assert model.calls == 0
+
+
+def test_hybrid_auto_uses_llm_for_small_cross_source_margin() -> None:
+    backend = FakeCrossEncoderBackend(scores=[0.51, 0.5])
+    model = FakeRerankerModel(
+        '{"ranked_candidate_ids":["c1","c0"],"confidence":0.9,"reason":"ambiguous"}'
+    )
+    result = MemoryReranker(
+        mode="hybrid",
+        hybrid_backend="auto",
+        cross_encoder_backend=backend,
+        cross_encoder_weight=1.0,
+        model=model,
+        llm_ambiguity_margin=0.15,
+    ).rank_with_trace(
+        [
+            candidate("structured_memory", "Preference memory."),
+            candidate("document_memory", "Document evidence."),
+        ],
+        ranking_profile="test",
+        query="Which source is relevant?",
+    )
+
+    assert result.metadata["cross_encoder_used"] is True
+    assert result.metadata["llm_rerank_considered"] is True
+    assert result.metadata["llm_rerank_used"] is True
+    assert result.metadata["llm_rerank_skip_reason"] is None
+    assert result.metadata["llm_confidence"] == 0.9
+    assert model.calls == 1
+
+
+def test_provenance_gist_raw_conflict_triggers_llm_despite_large_margin() -> None:
+    backend = FakeCrossEncoderBackend(scores=[1.0, 0.0])
+    model = FakeRerankerModel(
+        '{"ranked_candidate_ids":["c1","c0"],"confidence":0.9,"reason":"provenance"}'
+    )
+    result = MemoryReranker(
+        mode="hybrid",
+        hybrid_backend="auto",
+        cross_encoder_backend=backend,
+        cross_encoder_weight=1.0,
+        model=model,
+        llm_ambiguity_margin=0.01,
+        llm_provenance_queries=True,
+    ).rank_with_trace(
+        [
+            candidate("previous_chat_gist", "The user selected SQLite."),
+            candidate("raw_message_span", "user: Use SQLite exactly."),
+        ],
+        ranking_profile="test",
+        query="Show the exact evidence and quote what I said.",
+    )
+
+    assert result.metadata["llm_rerank_used"] is True
+    assert model.calls == 1
+
+
+def test_hybrid_cross_encoder_backend_never_calls_llm() -> None:
+    backend = FakeCrossEncoderBackend(scores=[0.5, 0.5])
+    model = FakeRerankerModel(error=AssertionError("LLM must not be called"))
+    result = MemoryReranker(
+        mode="hybrid",
+        hybrid_backend="cross_encoder",
+        cross_encoder_backend=backend,
+        model=model,
+    ).rank_with_trace(
+        [
+            candidate("structured_memory", "Preference."),
+            candidate("document_memory", "Document."),
+        ],
+        ranking_profile="test",
+        query="Which is relevant?",
+    )
+
+    assert result.metadata["cross_encoder_used"] is True
+    assert result.metadata["llm_rerank_used"] is False
+    assert (
+        result.metadata["llm_rerank_skip_reason"]
+        == "hybrid_backend_cross_encoder_only"
+    )
+    assert model.calls == 0
+
+
+def test_hybrid_llm_backend_never_calls_cross_encoder() -> None:
+    backend = FakeCrossEncoderBackend(
+        error=AssertionError("cross encoder must not be called")
+    )
+    model = FakeRerankerModel(
+        '{"ranked_candidate_ids":["c1","c0"],"confidence":0.9,"reason":"ambiguous"}'
+    )
+    result = MemoryReranker(
+        mode="hybrid",
+        hybrid_backend="llm",
+        cross_encoder_backend=backend,
+        model=model,
+        llm_ambiguity_margin=10.0,
+    ).rank_with_trace(
+        [
+            candidate("structured_memory", "Preference."),
+            candidate("document_memory", "Document."),
+        ],
+        ranking_profile="test",
+        query="Which is relevant?",
+    )
+
+    assert backend.calls == []
+    assert result.metadata["cross_encoder_used"] is False
+    assert result.metadata["llm_rerank_used"] is True
+    assert model.calls == 1
+
+
+def test_hybrid_cross_encoder_failure_preserves_deterministic_order() -> None:
+    result = MemoryReranker(
+        mode="hybrid",
+        hybrid_backend="cross_encoder",
+        cross_encoder_backend=FakeCrossEncoderBackend(
+            error=CrossEncoderUnavailable("not available")
+        ),
+    ).rank_with_trace(
+        [
+            candidate("structured_memory", "Preference."),
+            candidate("document_memory", "Document."),
+        ],
+        ranking_profile="test",
+        query="preference",
+    )
+
+    assert result.candidates[0].source == "structured_memory"
+    assert result.metadata["fallback_used"] is True
+    assert "not available" in result.metadata["fallback_reason"]
+    assert result.metadata["llm_rerank_used"] is False
+
+
+def test_hybrid_llm_failure_preserves_cross_encoder_order() -> None:
+    backend = FakeCrossEncoderBackend(scores=[0.0, 1.0])
+    model = FakeRerankerModel(error=RuntimeError("LLM unavailable"))
+    result = MemoryReranker(
+        mode="hybrid",
+        hybrid_backend="auto",
+        cross_encoder_backend=backend,
+        cross_encoder_weight=1.0,
+        model=model,
+        llm_ambiguity_margin=2.0,
+    ).rank_with_trace(
+        [
+            candidate("structured_memory", "Preference."),
+            candidate("document_memory", "Document."),
+        ],
+        ranking_profile="test",
+        query="Which is relevant?",
+    )
+
+    assert result.candidates[0].source == "document_memory"
+    assert result.metadata["cross_encoder_used"] is True
+    assert result.metadata["llm_rerank_used"] is False
+    assert result.metadata["fallback_used"] is True
+    assert "LLM unavailable" in result.metadata["fallback_reason"]

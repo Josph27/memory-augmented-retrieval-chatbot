@@ -302,6 +302,12 @@ def chat_service_for_model(model_name: str) -> ChatService:
             reranker_cross_encoder_model=config.reranker_cross_encoder_model,
             reranker_cross_encoder_top_k=config.reranker_cross_encoder_top_k,
             reranker_cross_encoder_weight=config.reranker_cross_encoder_weight,
+            reranker_hybrid_backend=config.reranker_hybrid_backend,
+            reranker_llm_ambiguity_margin=config.reranker_llm_ambiguity_margin,
+            reranker_llm_require_cross_source_conflict=(
+                config.reranker_llm_require_cross_source_conflict
+            ),
+            reranker_llm_provenance_queries=config.reranker_llm_provenance_queries,
             previous_chat_gist_generation_enabled=(
                 config.previous_chat_gist_generation_enabled
             ),

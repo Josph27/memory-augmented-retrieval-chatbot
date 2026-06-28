@@ -330,6 +330,12 @@ def run_case(
                 model=cast(Any, reranker_model),
                 llm_top_k=10,
                 llm_min_confidence=0.55,
+                hybrid_backend=(
+                    "llm"
+                    if mode == "mock" and reranker_mode == "hybrid"
+                    else "auto"
+                ),
+                llm_ambiguity_margin=10.0 if mode == "mock" else 0.15,
             ),
         )
         turn_result = coordinator.run_turn(chat_id=chat_id, content=str(case["query"]))

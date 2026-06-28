@@ -76,8 +76,7 @@ Chainlit UI. `ChatService.handle_user_turn` exposes the richer
 - `src/retrieval/reranker.py`
   - Scores retrieved `MemoryCandidate` objects and returns ranked copies with
     score breakdown metadata. Deterministic query-aware scoring is the default;
-    optional hybrid/LLM candidate-ID reranking is fallback-safe. It is not a
-    cross-encoder reranker.
+    optional cross-encoder and adaptive hybrid/LLM reranking are fallback-safe.
 - `src/context/token_estimator.py`
   - Defines a model-aware replaceable token estimator interface plus a
     tokenizer-free approximate implementation. No real tokenizer dependency is
@@ -134,11 +133,12 @@ candidates before `ContextManagerAgent` applies source budgets and builds the
 Deterministic mode is the default and requires no model call. It uses lexical
 overlap, source priors, query/source intent boosts, retrieval/vector scores,
 recency, confidence, status, usage, and duplicate penalties. Optional `hybrid`
-mode deterministically narrows the candidate set before asking the configured
-model for structured candidate-ID ordering. Optional `llm` mode considers the
-full candidate set. Both modes fall back to deterministic order on missing
-models, invalid JSON, unknown/duplicate IDs, low confidence, empty output, or
-model errors.
+mode is an adaptive cascade: deterministic scoring, optional cross-encoder
+top-k reranking, and gated LLM candidate-ID reranking only when the top margin
+is small, sources conflict, or a gist/raw-span provenance question requires
+extra disambiguation. `RERANKER_HYBRID_BACKEND` can select `auto`,
+`cross_encoder`, or `llm`. Optional direct `llm` mode still considers the full
+candidate set. Failed optional stages preserve the last valid ordering.
 
 Optional `cross_encoder` mode uses the existing `sentence-transformers`
 dependency and lazy-loads `BAAI/bge-reranker-v2-m3` only when selected. It
@@ -152,7 +152,9 @@ provenance and lifecycle semantics.
 
 Reranker trace metadata records mode, fallback status/reason, deterministic
 scores and feature contributions, original/final ranks, candidate source, and
-LLM IDs/confidence or cross-encoder/combined scores when used.
+LLM IDs/confidence or cross-encoder/combined scores when used. Hybrid traces
+also record whether LLM reranking was considered/used, skip reason, score
+margins, and top candidate sources.
 
 Configuration:
 
@@ -162,6 +164,15 @@ Configuration:
 - `RERANKER_CROSS_ENCODER_MODEL=BAAI/bge-reranker-v2-m3`
 - `RERANKER_CROSS_ENCODER_TOP_K=10`
 - `RERANKER_CROSS_ENCODER_WEIGHT=0.65`
+- `RERANKER_HYBRID_BACKEND=auto|cross_encoder|llm`
+- `RERANKER_LLM_AMBIGUITY_MARGIN=0.15`
+- `RERANKER_LLM_REQUIRE_CROSS_SOURCE_CONFLICT=1`
+- `RERANKER_LLM_PROVENANCE_QUERIES=1`
+
+`deterministic` remains the safest default. `cross_encoder` provides mature
+semantic scoring without an API call. `hybrid` with backend `auto` is the
+recommended demo mode when the BGE model and configured chat model are
+available; the LLM stage is reserved for difficult heterogeneous cases.
 
 `ContextBudgetAllocator` stores a `ContextBudget` on
 `WorkflowTrace.context_budget`. It supports profiles for `general_chat`,

@@ -18,6 +18,8 @@ DEFAULT_LLM_TOP_K = 10
 DEFAULT_LLM_MIN_CONFIDENCE = 0.55
 DEFAULT_CROSS_ENCODER_TOP_K = 10
 DEFAULT_CROSS_ENCODER_WEIGHT = 0.65
+HYBRID_BACKENDS = {"auto", "cross_encoder", "llm"}
+DEFAULT_LLM_AMBIGUITY_MARGIN = 0.15
 
 
 class RerankerModel(Protocol):
@@ -87,6 +89,16 @@ class RerankResult:
     metadata: dict[str, Any]
 
 
+@dataclass(frozen=True)
+class LLMGateDecision:
+    """Decision explaining whether hybrid reranking should call the LLM."""
+
+    use_llm: bool
+    skip_reason: str | None
+    top_margin: float | None
+    top_sources: list[str]
+
+
 class MemoryReranker:
     """Query-aware deterministic reranker with optional LLM reranking."""
 
@@ -101,6 +113,10 @@ class MemoryReranker:
         cross_encoder_model: str = DEFAULT_CROSS_ENCODER_MODEL,
         cross_encoder_top_k: int = DEFAULT_CROSS_ENCODER_TOP_K,
         cross_encoder_weight: float = DEFAULT_CROSS_ENCODER_WEIGHT,
+        hybrid_backend: str = "auto",
+        llm_ambiguity_margin: float = DEFAULT_LLM_AMBIGUITY_MARGIN,
+        llm_require_cross_source_conflict: bool = True,
+        llm_provenance_queries: bool = True,
     ) -> None:
         self.policy = policy or RerankerPolicy()
         self.mode = normalize_reranker_mode(mode)
@@ -111,6 +127,10 @@ class MemoryReranker:
         self.cross_encoder_model = cross_encoder_model
         self.cross_encoder_top_k = max(1, cross_encoder_top_k)
         self.cross_encoder_weight = clamp(cross_encoder_weight)
+        self.hybrid_backend = normalize_hybrid_backend(hybrid_backend)
+        self.llm_ambiguity_margin = max(0.0, llm_ambiguity_margin)
+        self.llm_require_cross_source_conflict = llm_require_cross_source_conflict
+        self.llm_provenance_queries = llm_provenance_queries
         self.last_trace_metadata: dict[str, Any] = {}
 
     def rank(
@@ -139,7 +159,24 @@ class MemoryReranker:
             query=query or "",
         )
         trace = deterministic_trace(self.mode, deterministic)
+        trace.update(
+            {
+                "hybrid_backend": (
+                    self.hybrid_backend if self.mode == "hybrid" else None
+                ),
+                "deterministic_top_margin": top_score_margin(deterministic),
+                "top_candidate_sources": top_candidate_sources(deterministic),
+            }
+        )
         if self.mode == "deterministic" or len(deterministic) < 2:
+            if self.mode == "hybrid":
+                trace.update(
+                    {
+                        "llm_rerank_considered": False,
+                        "llm_rerank_used": False,
+                        "llm_rerank_skip_reason": "candidate_count_le_one",
+                    }
+                )
             result = result_with_final_trace(deterministic, trace)
             self.last_trace_metadata = result.metadata
             return result
@@ -153,24 +190,109 @@ class MemoryReranker:
             self.last_trace_metadata = result.metadata
             return result
 
-        if self.model is None:
-            result = fallback_result(
-                mode=self.mode,
+        if self.mode == "hybrid":
+            result = self._hybrid_rank(
+                query=query or "",
                 deterministic=deterministic,
-                reason="missing_model",
+                trace=trace,
             )
             self.last_trace_metadata = result.metadata
             return result
 
-        rerank_pool = (
-            deterministic[: self.llm_top_k]
-            if self.mode == "hybrid"
-            else deterministic
+        result = self._llm_rank(
+            query=query or "",
+            candidates=deterministic,
+            trace=trace,
+            limit=None,
         )
+        self.last_trace_metadata = result.metadata
+        return result
+
+    def _hybrid_rank(
+        self,
+        query: str,
+        deterministic: list[MemoryCandidate],
+        trace: dict[str, Any],
+    ) -> RerankResult:
+        """Run cross-encoder and gated LLM stages according to hybrid policy."""
+        current = deterministic
+        if self.hybrid_backend in {"auto", "cross_encoder"}:
+            current, cross_metadata, cross_error = self._cross_encoder_stage(
+                query=query,
+                deterministic=deterministic,
+            )
+            trace.update(cross_metadata)
+            trace["post_cross_encoder_top_margin"] = (
+                top_score_margin(current)
+                if cross_metadata.get("cross_encoder_used")
+                else None
+            )
+            if cross_error:
+                trace["fallback_used"] = True
+                trace["fallback_reason"] = cross_error
+
+        if self.hybrid_backend == "cross_encoder":
+            trace.update(
+                {
+                    "llm_rerank_considered": False,
+                    "llm_rerank_used": False,
+                    "llm_rerank_skip_reason": "hybrid_backend_cross_encoder_only",
+                    "top_candidate_sources": top_candidate_sources(current),
+                }
+            )
+            return result_with_final_trace(current, trace)
+
+        decision = llm_gate_decision(
+            query=query,
+            candidates=current,
+            ambiguity_margin=self.llm_ambiguity_margin,
+            require_cross_source_conflict=self.llm_require_cross_source_conflict,
+            provenance_queries_enabled=self.llm_provenance_queries,
+            deterministic=deterministic,
+        )
+        trace.update(
+            {
+                "llm_rerank_considered": True,
+                "llm_rerank_used": False,
+                "llm_rerank_skip_reason": decision.skip_reason,
+                "top_candidate_sources": decision.top_sources,
+            }
+        )
+        if not decision.use_llm:
+            return result_with_final_trace(current, trace)
+
+        return self._llm_rank(
+            query=query,
+            candidates=current,
+            trace=trace,
+            limit=self.llm_top_k,
+        )
+
+    def _llm_rank(
+        self,
+        query: str,
+        candidates: list[MemoryCandidate],
+        trace: dict[str, Any],
+        limit: int | None,
+    ) -> RerankResult:
+        """Apply listwise LLM ranking or preserve the incoming ordering."""
+        trace["llm_rerank_considered"] = True
+        if self.model is None:
+            return stage_fallback_result(
+                candidates=candidates,
+                trace=trace,
+                reason="missing_model",
+                extra_metadata={
+                    "llm_rerank_used": False,
+                    "llm_rerank_skip_reason": "missing_model",
+                },
+            )
+
+        rerank_pool = candidates[:limit] if limit is not None else candidates
         try:
             payload = parse_llm_reranker_response(
                 self.model.chat(
-                    llm_reranker_messages(query or "", rerank_pool),
+                    llm_reranker_messages(query, rerank_pool),
                     temperature=0,
                 )
             )
@@ -182,16 +304,18 @@ class MemoryReranker:
                 },
             )
             if confidence < self.llm_min_confidence:
-                result = fallback_result(
-                    mode=self.mode,
-                    deterministic=deterministic,
+                return stage_fallback_result(
+                    candidates=candidates,
+                    trace=trace,
                     reason="low_confidence",
                     llm_confidence=confidence,
+                    extra_metadata={
+                        "llm_rerank_used": False,
+                        "llm_rerank_skip_reason": "low_confidence",
+                    },
                 )
-                self.last_trace_metadata = result.metadata
-                return result
             ranked = apply_llm_order(
-                deterministic=deterministic,
+                deterministic=candidates,
                 rerank_pool=rerank_pool,
                 ranked_ids=payload["ranked_candidate_ids"],
             )
@@ -204,17 +328,21 @@ class MemoryReranker:
                     ),
                     "llm_confidence": confidence,
                     "llm_reason": str(payload.get("reason") or ""),
+                    "llm_rerank_used": True,
+                    "llm_rerank_skip_reason": None,
                 }
             )
-            result = result_with_final_trace(ranked, trace)
+            return result_with_final_trace(ranked, trace)
         except Exception as error:
-            result = fallback_result(
-                mode=self.mode,
-                deterministic=deterministic,
+            return stage_fallback_result(
+                candidates=candidates,
+                trace=trace,
                 reason=f"{type(error).__name__}: {error}",
+                extra_metadata={
+                    "llm_rerank_used": False,
+                    "llm_rerank_skip_reason": "llm_error",
+                },
             )
-        self.last_trace_metadata = result.metadata
-        return result
 
     def _cross_encoder_rank(
         self,
@@ -223,6 +351,31 @@ class MemoryReranker:
         trace: dict[str, Any],
     ) -> RerankResult:
         """Rerank deterministic top-k with a lazy cross-encoder backend."""
+        combined, metadata, error = self._cross_encoder_stage(
+            query=query,
+            deterministic=deterministic,
+        )
+        trace.update(metadata)
+        trace["post_cross_encoder_top_margin"] = (
+            top_score_margin(combined)
+            if metadata.get("cross_encoder_used")
+            else None
+        )
+        if error:
+            trace.update(
+                {
+                    "fallback_used": True,
+                    "fallback_reason": error,
+                }
+            )
+        return result_with_final_trace(combined, trace)
+
+    def _cross_encoder_stage(
+        self,
+        query: str,
+        deterministic: list[MemoryCandidate],
+    ) -> tuple[list[MemoryCandidate], dict[str, Any], str | None]:
+        """Apply cross-encoder scoring without finalizing the reranker result."""
         rerank_pool = deterministic[: self.cross_encoder_top_k]
         backend = self.cross_encoder_backend or SentenceTransformersCrossEncoderBackend(
             self.cross_encoder_model
@@ -239,7 +392,8 @@ class MemoryReranker:
                 cross_encoder_scores=scores,
                 cross_encoder_weight=self.cross_encoder_weight,
             )
-            trace.update(
+            return (
+                combined,
                 {
                     "cross_encoder_used": True,
                     "cross_encoder_model": backend.model_name,
@@ -269,20 +423,20 @@ class MemoryReranker:
                         }
                         for candidate in combined[: len(rerank_pool)]
                     ],
-                }
+                },
+                None,
             )
-            return result_with_final_trace(combined, trace)
         except Exception as error:
-            return fallback_result(
-                mode=self.mode,
-                deterministic=deterministic,
-                reason=f"{type(error).__name__}: {error}",
-                extra_metadata={
+            reason = f"{type(error).__name__}: {error}"
+            return (
+                deterministic,
+                {
                     "cross_encoder_used": False,
                     "cross_encoder_model": backend.model_name,
                     "cross_encoder_top_k": self.cross_encoder_top_k,
                     "cross_encoder_weight": self.cross_encoder_weight,
                 },
+                reason,
             )
 
     def _deterministic_rank(
@@ -584,6 +738,121 @@ def normalize_candidate_scores(candidates: list[MemoryCandidate]) -> list[float]
     return [(score - low) / (high - low) for score in scores]
 
 
+def llm_gate_decision(
+    query: str,
+    candidates: list[MemoryCandidate],
+    ambiguity_margin: float,
+    require_cross_source_conflict: bool,
+    provenance_queries_enabled: bool,
+    deterministic: list[MemoryCandidate],
+) -> LLMGateDecision:
+    """Decide whether heterogeneous ambiguity warrants listwise LLM reranking."""
+    top_sources = top_candidate_sources(candidates)
+    margin = top_score_margin(candidates)
+    if len(candidates) <= 1:
+        return LLMGateDecision(False, "candidate_count_le_one", margin, top_sources)
+
+    source_set = set(top_sources)
+    provenance_sensitive = provenance_queries_enabled and is_provenance_query(query)
+    provenance_conflict = provenance_sensitive and {
+        "previous_chat_gist",
+        "raw_message_span",
+    }.issubset(source_set)
+    old_decision_conflict = is_old_decision_query(query) and {
+        "previous_chat_gist",
+        "raw_message_span",
+    }.issubset(source_set)
+    if provenance_conflict:
+        return LLMGateDecision(True, None, margin, top_sources)
+    if old_decision_conflict:
+        return LLMGateDecision(True, None, margin, top_sources)
+
+    cross_source_conflict = len(source_set) > 1
+    if require_cross_source_conflict and not cross_source_conflict:
+        return LLMGateDecision(False, "top_candidates_same_source", margin, top_sources)
+
+    ranking_disagrees = rankings_disagree(deterministic, candidates)
+    if margin is not None and margin > ambiguity_margin and not ranking_disagrees:
+        return LLMGateDecision(False, "top_margin_above_threshold", margin, top_sources)
+    if cross_source_conflict and (
+        margin is None or margin <= ambiguity_margin or ranking_disagrees
+    ):
+        return LLMGateDecision(True, None, margin, top_sources)
+    if not require_cross_source_conflict and (
+        margin is None or margin <= ambiguity_margin
+    ):
+        return LLMGateDecision(True, None, margin, top_sources)
+    return LLMGateDecision(False, "not_ambiguous", margin, top_sources)
+
+
+def top_score_margin(candidates: list[MemoryCandidate]) -> float | None:
+    """Return absolute score margin between the top two candidates."""
+    if len(candidates) < 2:
+        return None
+    first = float(candidates[0].score if candidates[0].score is not None else 0.0)
+    second = float(candidates[1].score if candidates[1].score is not None else 0.0)
+    return abs(first - second)
+
+
+def top_candidate_sources(
+    candidates: list[MemoryCandidate],
+    limit: int = 3,
+) -> list[str]:
+    """Return unique sources represented near the top of a ranking."""
+    sources = []
+    for candidate in candidates[:limit]:
+        if candidate.source not in sources:
+            sources.append(candidate.source)
+    return sources
+
+
+def rankings_disagree(
+    deterministic: list[MemoryCandidate],
+    reranked: list[MemoryCandidate],
+) -> bool:
+    """Return whether a semantic stage changed the leading candidate."""
+    if not deterministic or not reranked:
+        return False
+    return (
+        deterministic[0].metadata.get("reranker_candidate_id")
+        != reranked[0].metadata.get("reranker_candidate_id")
+    )
+
+
+def is_provenance_query(query: str) -> bool:
+    """Return whether the query asks for exact source evidence."""
+    normalized = normalize_text(query)
+    return contains_any(
+        normalized,
+        (
+            "exactly",
+            "exact words",
+            "quote",
+            "evidence",
+            "provenance",
+            "what did i say",
+            "show the source",
+        ),
+    )
+
+
+def is_old_decision_query(query: str) -> bool:
+    """Return whether the query asks about an earlier discussion or decision."""
+    normalized = normalize_text(query)
+    return contains_any(
+        normalized,
+        (
+            "previous decision",
+            "earlier decision",
+            "old decision",
+            "what did we decide",
+            "what did we discuss",
+            "earlier chat",
+            "previous chat",
+        ),
+    )
+
+
 def llm_reranker_messages(
     query: str,
     candidates: list[MemoryCandidate],
@@ -714,8 +983,15 @@ def deterministic_trace(
     """Build base reranker trace metadata."""
     return {
         "reranker_mode": mode,
+        "hybrid_backend": None,
         "fallback_used": False,
         "fallback_reason": None,
+        "llm_rerank_considered": False,
+        "llm_rerank_used": False,
+        "llm_rerank_skip_reason": None,
+        "deterministic_top_margin": top_score_margin(candidates),
+        "post_cross_encoder_top_margin": None,
+        "top_candidate_sources": top_candidate_sources(candidates),
         "deterministic_scores": [
             {
                 "candidate_id": candidate.metadata["reranker_candidate_id"],
@@ -749,7 +1025,25 @@ def fallback_result(
 ) -> RerankResult:
     """Return deterministic ordering with explicit fallback metadata."""
     trace = deterministic_trace(mode, deterministic)
-    trace.update(
+    return stage_fallback_result(
+        candidates=deterministic,
+        trace=trace,
+        reason=reason,
+        llm_confidence=llm_confidence,
+        extra_metadata=extra_metadata,
+    )
+
+
+def stage_fallback_result(
+    candidates: list[MemoryCandidate],
+    trace: dict[str, Any],
+    reason: str,
+    llm_confidence: float | None = None,
+    extra_metadata: dict[str, Any] | None = None,
+) -> RerankResult:
+    """Preserve the current stage ordering while recording a fallback."""
+    metadata = dict(trace)
+    metadata.update(
         {
             "fallback_used": True,
             "fallback_reason": reason,
@@ -757,7 +1051,7 @@ def fallback_result(
             **(extra_metadata or {}),
         }
     )
-    return result_with_final_trace(deterministic, trace)
+    return result_with_final_trace(candidates, metadata)
 
 
 def result_with_final_trace(
@@ -783,6 +1077,12 @@ def normalize_reranker_mode(mode: str) -> str:
     """Return supported reranker mode or deterministic default."""
     normalized = (mode or "deterministic").strip().lower()
     return normalized if normalized in RERANKER_MODES else "deterministic"
+
+
+def normalize_hybrid_backend(backend: str) -> str:
+    """Return a supported hybrid cascade backend policy."""
+    normalized = (backend or "auto").strip().lower()
+    return normalized if normalized in HYBRID_BACKENDS else "auto"
 
 
 def meaningful_terms(value: str) -> set[str]:

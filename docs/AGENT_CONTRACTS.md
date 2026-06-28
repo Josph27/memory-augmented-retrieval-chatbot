@@ -267,10 +267,11 @@ scores, recency, confidence, status, usage, and duplicate penalties. Optional
 `cross_encoder` mode uses the mature sentence-transformers `CrossEncoder`
 adapter with `BAAI/bge-reranker-v2-m3`; it scores deterministic top-k candidates
 and combines neural relevance with source-aware deterministic scores. Optional
-`hybrid` and `llm` modes use the configured chat model for structured
-candidate-ID reranking. Every optional backend falls back to deterministic
-order on missing dependencies/configuration, invalid output, or inference/model
-errors.
+`hybrid` mode is an adaptive cascade: deterministic scoring, optional
+cross-encoder reranking, then gated LLM candidate-ID reranking only for
+ambiguous heterogeneous cases. `llm` mode remains available for direct listwise
+reranking. Every optional backend preserves the previous valid ordering on
+missing dependencies/configuration, invalid output, or inference/model errors.
 
 Input
 query
@@ -305,6 +306,10 @@ RERANKER_LLM_MIN_CONFIDENCE=0.55
 RERANKER_CROSS_ENCODER_MODEL=BAAI/bge-reranker-v2-m3
 RERANKER_CROSS_ENCODER_TOP_K=10
 RERANKER_CROSS_ENCODER_WEIGHT=0.65
+RERANKER_HYBRID_BACKEND=auto|cross_encoder|llm
+RERANKER_LLM_AMBIGUITY_MARGIN=0.15
+RERANKER_LLM_REQUIRE_CROSS_SOURCE_CONFLICT=1
+RERANKER_LLM_PROVENANCE_QUERIES=1
 ```
 9. ContextManagerAgent
 Responsibility

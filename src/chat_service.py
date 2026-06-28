@@ -52,6 +52,10 @@ class ChatService:
         reranker_cross_encoder_model: str = "BAAI/bge-reranker-v2-m3",
         reranker_cross_encoder_top_k: int = 10,
         reranker_cross_encoder_weight: float = 0.65,
+        reranker_hybrid_backend: str = "auto",
+        reranker_llm_ambiguity_margin: float = 0.15,
+        reranker_llm_require_cross_source_conflict: bool = True,
+        reranker_llm_provenance_queries: bool = True,
         previous_chat_gist_generation_enabled: bool = False,
         previous_chat_gist_generator: PreviousChatGistGenerator | None = None,
     ) -> None:
@@ -91,6 +95,12 @@ class ChatService:
                 cross_encoder_model=reranker_cross_encoder_model,
                 cross_encoder_top_k=reranker_cross_encoder_top_k,
                 cross_encoder_weight=reranker_cross_encoder_weight,
+                hybrid_backend=reranker_hybrid_backend,
+                llm_ambiguity_margin=reranker_llm_ambiguity_margin,
+                llm_require_cross_source_conflict=(
+                    reranker_llm_require_cross_source_conflict
+                ),
+                llm_provenance_queries=reranker_llm_provenance_queries,
             ),
         )
 
