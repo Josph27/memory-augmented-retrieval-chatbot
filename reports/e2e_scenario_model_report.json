@@ -1,0 +1,3264 @@
+{
+  "eval_name": "end_to_end_memory_rag_scenarios",
+  "mode": "model",
+  "scenarios": [
+    {
+      "abstain_correct": null,
+      "answer_contains_expected": true,
+      "case_id": "document_question",
+      "expected_context_included": true,
+      "expected_source_present": true,
+      "failed_reasons": [],
+      "forbidden_claim_violations": [],
+      "reranker_top_source_correct": true,
+      "scenario_pass": true,
+      "trace": {
+        "active_sources": [
+          "recent_messages",
+          "structured_memory",
+          "document_memory"
+        ],
+        "answer": "The README states that LangChain-Chroma is the preferred document-memory backend.",
+        "case_id": "document_question",
+        "context_packet": {
+          "candidate_sources": [
+            "document_memory"
+          ],
+          "model_messages": [
+            {
+              "content": "Answer using the supplied memory and retrieved context. If the answer is unsupported, say I don't know.",
+              "role": "system"
+            },
+            {
+              "content": "Document Memory:\n- [readme:1] The README states that LangChain-Chroma is the preferred document-memory backend.",
+              "role": "system"
+            },
+            {
+              "content": "What does the uploaded README report say about document memory?",
+              "role": "user"
+            }
+          ],
+          "sections": [
+            "system",
+            "structured_memory",
+            "retrieved_memory",
+            "recent_messages",
+            "latest_user_message"
+          ]
+        },
+        "errors": [],
+        "mode": "model",
+        "notes": "Document retrieval through an injected deterministic document backend.",
+        "query": "What does the uploaded README report say about document memory?",
+        "reranked_candidates": [
+          {
+            "chat_id": null,
+            "content": "The README states that LangChain-Chroma is the preferred document-memory backend.",
+            "metadata": {
+              "final_rank": 0,
+              "original_rank": 1,
+              "ranking_profile": "e2e_scenario",
+              "reranker_candidate_id": "c1",
+              "retrieval_backend": "langchain_chroma",
+              "score_breakdown": {
+                "contributions": {
+                  "confidence": 0.12,
+                  "importance": 0.075,
+                  "lexical_overlap": 0.15,
+                  "query_source_boost": 0.25,
+                  "recency": 0.05,
+                  "redundancy_penalty": -0.0,
+                  "semantic_score": 0.1,
+                  "similarity_score": 0.1,
+                  "source_priority": 0.06,
+                  "status_penalty": -0.0,
+                  "usage_count": 0.0
+                },
+                "features": {
+                  "confidence": 0.8,
+                  "importance": 0.5,
+                  "lexical_overlap": 0.42857142857142855,
+                  "query_source_boost": 1.0,
+                  "recency": 0.5,
+                  "redundancy_penalty": 0.0,
+                  "semantic_score": 0.5,
+                  "similarity_score": 0.5,
+                  "source_priority": 0.6,
+                  "status_penalty": 0.0,
+                  "usage_count": 0.0
+                },
+                "final_score": 0.905,
+                "weights": {
+                  "confidence": 0.15,
+                  "importance": 0.15,
+                  "lexical_overlap": 0.35,
+                  "query_source_boost": 0.25,
+                  "recency": 0.1,
+                  "redundancy_penalty": 1.0,
+                  "semantic_score": 0.2,
+                  "similarity_score": 0.2,
+                  "source_priority": 0.1,
+                  "status_penalty": 1.0,
+                  "usage_count": 0.05
+                }
+              },
+              "status": "active"
+            },
+            "record_id": "readme:1",
+            "score": 0.905,
+            "source": "document_memory",
+            "source_message_ids": []
+          },
+          {
+            "chat_id": "document_question-current",
+            "content": "What does the uploaded README report say about document memory?",
+            "metadata": {
+              "created_at": "2026-06-28T14:13:07+00:00",
+              "final_rank": 1,
+              "order": 0,
+              "original_rank": 0,
+              "ranking_profile": "e2e_scenario",
+              "reranker_candidate_id": "c0",
+              "role": "user",
+              "score_breakdown": {
+                "contributions": {
+                  "confidence": 0.075,
+                  "importance": 0.075,
+                  "lexical_overlap": 0.35,
+                  "query_source_boost": 0.0,
+                  "recency": 0.1,
+                  "redundancy_penalty": -0.0,
+                  "semantic_score": 0.1,
+                  "similarity_score": 0.1,
+                  "source_priority": 0.09000000000000001,
+                  "status_penalty": -0.0,
+                  "usage_count": 0.0
+                },
+                "features": {
+                  "confidence": 0.5,
+                  "importance": 0.5,
+                  "lexical_overlap": 1.0,
+                  "query_source_boost": 0.0,
+                  "recency": 1.0,
+                  "redundancy_penalty": 0.0,
+                  "semantic_score": 0.5,
+                  "similarity_score": 0.5,
+                  "source_priority": 0.9,
+                  "status_penalty": 0.0,
+                  "usage_count": 0.0
+                },
+                "final_score": 0.89,
+                "weights": {
+                  "confidence": 0.15,
+                  "importance": 0.15,
+                  "lexical_overlap": 0.35,
+                  "query_source_boost": 0.25,
+                  "recency": 0.1,
+                  "redundancy_penalty": 1.0,
+                  "semantic_score": 0.2,
+                  "similarity_score": 0.2,
+                  "source_priority": 0.1,
+                  "status_penalty": 1.0,
+                  "usage_count": 0.05
+                }
+              },
+              "summarized": false
+            },
+            "record_id": 1,
+            "score": 0.89,
+            "source": "recent_messages",
+            "source_message_ids": [
+              1
+            ]
+          }
+        ],
+        "reranker_top_source": "document_memory",
+        "retrieved_candidates": [
+          {
+            "chat_id": "document_question-current",
+            "content": "What does the uploaded README report say about document memory?",
+            "metadata": {
+              "created_at": "2026-06-28T14:13:07+00:00",
+              "order": 0,
+              "role": "user",
+              "summarized": false
+            },
+            "record_id": 1,
+            "score": null,
+            "source": "recent_messages",
+            "source_message_ids": [
+              1
+            ]
+          },
+          {
+            "chat_id": null,
+            "content": "The README states that LangChain-Chroma is the preferred document-memory backend.",
+            "metadata": {
+              "retrieval_backend": "langchain_chroma",
+              "status": "active"
+            },
+            "record_id": "readme:1",
+            "score": 0.8,
+            "source": "document_memory",
+            "source_message_ids": []
+          }
+        ],
+        "source_plans": [
+          {
+            "enabled": true,
+            "filters": {},
+            "reason": "Controlled E2E scenario source plan.",
+            "source": "recent_messages"
+          },
+          {
+            "enabled": true,
+            "filters": {},
+            "reason": "Controlled E2E scenario source plan.",
+            "source": "structured_memory"
+          },
+          {
+            "enabled": true,
+            "filters": {},
+            "reason": "Controlled E2E scenario source plan.",
+            "source": "document_memory"
+          },
+          {
+            "enabled": false,
+            "filters": {},
+            "reason": "Controlled E2E scenario source plan.",
+            "source": "current_chat_gist"
+          },
+          {
+            "enabled": false,
+            "filters": {},
+            "reason": "Controlled E2E scenario source plan.",
+            "source": "previous_chat_gist"
+          },
+          {
+            "enabled": false,
+            "filters": {},
+            "reason": "Controlled E2E scenario source plan.",
+            "source": "raw_message_span"
+          }
+        ],
+        "workflow_metadata": {
+          "answer_reserve": 512,
+          "context_comparison": {
+            "metadata": {
+              "comparison_type": "legacy_short_term_vs_trace_context_packet",
+              "full_prompts_included": false
+            },
+            "new_context_packet": {
+              "estimated_tokens": 88,
+              "has_latest_user_message": true,
+              "has_recent_messages": false,
+              "has_structured_memory": false,
+              "message_count": 3,
+              "section_order": [
+                "system",
+                "retrieved_memory",
+                "latest_user_message"
+              ]
+            },
+            "old_prompt": {
+              "estimated_tokens": 54,
+              "has_latest_user_message": true,
+              "has_recent_messages": false,
+              "has_structured_memory": false,
+              "message_count": 2,
+              "section_order": [
+                "system",
+                "latest_user_message"
+              ]
+            },
+            "token_difference": 34,
+            "token_difference_ratio": 0.63,
+            "warnings": []
+          },
+          "context_limit": 4096,
+          "context_manager": {
+            "context_manager_used": true,
+            "dropped_candidate_counts_by_source": {
+              "recent_messages": 1
+            },
+            "final_prompt_sections": [
+              "system",
+              "structured_memory",
+              "retrieved_memory",
+              "recent_messages",
+              "latest_user_message"
+            ],
+            "included_candidate_counts_by_source": {
+              "document_memory": 1
+            },
+            "source_budgets": {
+              "document_memory": 1258,
+              "recent_messages": 1006,
+              "structured_memory": 1006
+            }
+          },
+          "dropped_candidate_ids": [
+            1
+          ],
+          "dropped_candidate_reasons": [
+            {
+              "reason": "latest_user_message_excluded",
+              "record_id": 1,
+              "source": "recent_messages"
+            }
+          ],
+          "estimated_prompt_tokens": 88,
+          "fallback_reason": null,
+          "overflow_detected": false,
+          "overflow_tokens": 0,
+          "prompt_source": "context_packet",
+          "reranker": {
+            "combined_scores": [],
+            "cross_encoder_model": null,
+            "cross_encoder_scores": [],
+            "cross_encoder_top_k": null,
+            "cross_encoder_used": false,
+            "cross_encoder_weight": null,
+            "deterministic_scores": [
+              {
+                "candidate_id": "c1",
+                "deterministic_rank": 0,
+                "feature_contributions": {
+                  "confidence": 0.12,
+                  "importance": 0.075,
+                  "lexical_overlap": 0.15,
+                  "query_source_boost": 0.25,
+                  "recency": 0.05,
+                  "redundancy_penalty": -0.0,
+                  "semantic_score": 0.1,
+                  "similarity_score": 0.1,
+                  "source_priority": 0.06,
+                  "status_penalty": -0.0,
+                  "usage_count": 0.0
+                },
+                "original_rank": 1,
+                "score": 0.905,
+                "source": "document_memory"
+              },
+              {
+                "candidate_id": "c0",
+                "deterministic_rank": 1,
+                "feature_contributions": {
+                  "confidence": 0.075,
+                  "importance": 0.075,
+                  "lexical_overlap": 0.35,
+                  "query_source_boost": 0.0,
+                  "recency": 0.1,
+                  "redundancy_penalty": -0.0,
+                  "semantic_score": 0.1,
+                  "similarity_score": 0.1,
+                  "source_priority": 0.09000000000000001,
+                  "status_penalty": -0.0,
+                  "usage_count": 0.0
+                },
+                "original_rank": 0,
+                "score": 0.89,
+                "source": "recent_messages"
+              }
+            ],
+            "deterministic_top_margin": 0.015000000000000013,
+            "fallback_reason": null,
+            "fallback_used": false,
+            "final_ranks": [
+              {
+                "candidate_id": "c1",
+                "final_rank": 0,
+                "original_rank": 1,
+                "source": "document_memory"
+              },
+              {
+                "candidate_id": "c0",
+                "final_rank": 1,
+                "original_rank": 0,
+                "source": "recent_messages"
+              }
+            ],
+            "hybrid_backend": null,
+            "llm_confidence": null,
+            "llm_ranked_candidate_ids": [],
+            "llm_rerank_considered": false,
+            "llm_rerank_skip_reason": null,
+            "llm_rerank_used": false,
+            "post_cross_encoder_top_margin": null,
+            "reranker_mode": "deterministic",
+            "top_candidate_sources": [
+              "document_memory",
+              "recent_messages"
+            ]
+          },
+          "retrieved_document_rows": [
+            {
+              "chunk_id": null,
+              "chunk_index": null,
+              "content": "The README states that LangChain-Chroma is the preferred document-memory backend.",
+              "document_id": null,
+              "file_extension": null,
+              "file_name": null,
+              "record_id": "readme:1",
+              "retrieval_backend": "langchain_chroma",
+              "retrieval_mode": null,
+              "similarity_score": 0.8,
+              "source": "document_memory",
+              "title": null
+            }
+          ],
+          "retrieved_memory_rows": [],
+          "routing_decision": {
+            "active_sources": [
+              "recent_messages",
+              "structured_memory",
+              "document_memory"
+            ],
+            "confidence": 1.0,
+            "context_profile": "mixed_memory_document",
+            "disabled_sources": [
+              "current_chat_gist",
+              "previous_chat_gist",
+              "raw_message_span"
+            ],
+            "fallback_mode": false,
+            "intent": "document_question",
+            "reason": "Document-like query detected; recent, structured, and document memory enabled.",
+            "routing_fallback_reason": null,
+            "routing_mode": "rule",
+            "use_document_memory": true,
+            "use_recent_messages": true,
+            "use_structured_memory": true
+          },
+          "safety_margin": 286,
+          "saved_memory_rows": [],
+          "timings_ms": {
+            "context_budget_allocation": 0.15,
+            "context_comparison": 0.04,
+            "context_packet_building": 0.15,
+            "context_packet_validation": 0.04,
+            "legacy_context_building": 0.63,
+            "main_model_call": 5519.89,
+            "reranking": 0.25,
+            "retrieval": 1.76,
+            "route_planning": 0.03,
+            "save_assistant_message": 1.89,
+            "save_user_message": 1.63,
+            "total_turn": 5527.68,
+            "update_memory_if_needed": 1.28
+          },
+          "token_estimator": "approximate"
+        }
+      }
+    },
+    {
+      "abstain_correct": null,
+      "answer_contains_expected": true,
+      "case_id": "structured_preference",
+      "expected_context_included": true,
+      "expected_source_present": true,
+      "failed_reasons": [],
+      "forbidden_claim_violations": [],
+      "reranker_top_source_correct": true,
+      "scenario_pass": true,
+      "trace": {
+        "active_sources": [
+          "recent_messages",
+          "structured_memory"
+        ],
+        "answer": "You prefer concise practical engineering explanations.",
+        "case_id": "structured_preference",
+        "context_packet": {
+          "candidate_sources": [
+            "structured_memory"
+          ],
+          "model_messages": [
+            {
+              "content": "Answer using the supplied memory and retrieved context. If the answer is unsupported, say I don't know.",
+              "role": "system"
+            },
+            {
+              "content": "Current structured memory:\n- preferences.answer_style: User prefers concise practical engineering explanations.",
+              "role": "system"
+            },
+            {
+              "content": "What answer style do I prefer?",
+              "role": "user"
+            }
+          ],
+          "sections": [
+            "system",
+            "structured_memory",
+            "retrieved_memory",
+            "recent_messages",
+            "latest_user_message"
+          ]
+        },
+        "errors": [],
+        "mode": "model",
+        "notes": "Real SQLite structured-memory retrieval.",
+        "query": "What answer style do I prefer?",
+        "reranked_candidates": [
+          {
+            "chat_id": "structured_preference-current",
+            "content": "What answer style do I prefer?",
+            "metadata": {
+              "created_at": "2026-06-28T14:13:12+00:00",
+              "final_rank": 0,
+              "order": 0,
+              "original_rank": 0,
+              "ranking_profile": "e2e_scenario",
+              "reranker_candidate_id": "c0",
+              "role": "user",
+              "score_breakdown": {
+                "contributions": {
+                  "confidence": 0.075,
+                  "importance": 0.075,
+                  "lexical_overlap": 0.35,
+                  "query_source_boost": 0.0,
+                  "recency": 0.1,
+                  "redundancy_penalty": -0.0,
+                  "semantic_score": 0.1,
+                  "similarity_score": 0.1,
+                  "source_priority": 0.09000000000000001,
+                  "status_penalty": -0.0,
+                  "usage_count": 0.0
+                },
+                "features": {
+                  "confidence": 0.5,
+                  "importance": 0.5,
+                  "lexical_overlap": 1.0,
+                  "query_source_boost": 0.0,
+                  "recency": 1.0,
+                  "redundancy_penalty": 0.0,
+                  "semantic_score": 0.5,
+                  "similarity_score": 0.5,
+                  "source_priority": 0.9,
+                  "status_penalty": 0.0,
+                  "usage_count": 0.0
+                },
+                "final_score": 0.89,
+                "weights": {
+                  "confidence": 0.15,
+                  "importance": 0.15,
+                  "lexical_overlap": 0.35,
+                  "query_source_boost": 0.25,
+                  "recency": 0.1,
+                  "redundancy_penalty": 1.0,
+                  "semantic_score": 0.2,
+                  "similarity_score": 0.2,
+                  "source_priority": 0.1,
+                  "status_penalty": 1.0,
+                  "usage_count": 0.05
+                }
+              },
+              "summarized": false
+            },
+            "record_id": 1,
+            "score": 0.89,
+            "source": "recent_messages",
+            "source_message_ids": [
+              1
+            ]
+          },
+          {
+            "chat_id": "fixture-chat",
+            "content": "User prefers concise practical engineering explanations.",
+            "metadata": {
+              "category": "preferences",
+              "confidence": 0.9,
+              "final_rank": 1,
+              "fixture": "e2e_scenario",
+              "key": "answer_style",
+              "memory_id": "preferences:answer_style",
+              "namespace": [
+                "user",
+                "default",
+                "semantic_memory"
+              ],
+              "original_rank": 1,
+              "ranking_profile": "e2e_scenario",
+              "reranker_candidate_id": "c1",
+              "score_breakdown": {
+                "contributions": {
+                  "confidence": 0.135,
+                  "importance": 0.075,
+                  "lexical_overlap": 0.0,
+                  "query_source_boost": 0.25,
+                  "recency": 0.05,
+                  "redundancy_penalty": -0.0,
+                  "semantic_score": 0.1,
+                  "similarity_score": 0.1,
+                  "source_priority": 0.095,
+                  "status_penalty": -0.0,
+                  "usage_count": 0.0
+                },
+                "features": {
+                  "confidence": 0.9,
+                  "importance": 0.5,
+                  "lexical_overlap": 0.0,
+                  "query_source_boost": 1.0,
+                  "recency": 0.5,
+                  "redundancy_penalty": 0.0,
+                  "semantic_score": 0.5,
+                  "similarity_score": 0.5,
+                  "source_priority": 0.95,
+                  "status_penalty": 0.0,
+                  "usage_count": 0.0
+                },
+                "final_score": 0.805,
+                "weights": {
+                  "confidence": 0.15,
+                  "importance": 0.15,
+                  "lexical_overlap": 0.35,
+                  "query_source_boost": 0.25,
+                  "recency": 0.1,
+                  "redundancy_penalty": 1.0,
+                  "semantic_score": 0.2,
+                  "similarity_score": 0.2,
+                  "source_priority": 0.1,
+                  "status_penalty": 1.0,
+                  "usage_count": 0.05
+                }
+              },
+              "source_chat_id": "fixture-chat",
+              "source_gist_id": null,
+              "source_message_ids": [],
+              "status": "active"
+            },
+            "record_id": "preferences:answer_style",
+            "score": 0.805,
+            "source": "structured_memory",
+            "source_message_ids": []
+          }
+        ],
+        "reranker_top_source": "structured_memory",
+        "retrieved_candidates": [
+          {
+            "chat_id": "structured_preference-current",
+            "content": "What answer style do I prefer?",
+            "metadata": {
+              "created_at": "2026-06-28T14:13:12+00:00",
+              "order": 0,
+              "role": "user",
+              "summarized": false
+            },
+            "record_id": 1,
+            "score": null,
+            "source": "recent_messages",
+            "source_message_ids": [
+              1
+            ]
+          },
+          {
+            "chat_id": "fixture-chat",
+            "content": "User prefers concise practical engineering explanations.",
+            "metadata": {
+              "category": "preferences",
+              "confidence": 0.9,
+              "fixture": "e2e_scenario",
+              "key": "answer_style",
+              "memory_id": "preferences:answer_style",
+              "namespace": [
+                "user",
+                "default",
+                "semantic_memory"
+              ],
+              "source_chat_id": "fixture-chat",
+              "source_gist_id": null,
+              "source_message_ids": [],
+              "status": "active"
+            },
+            "record_id": "preferences:answer_style",
+            "score": 0.9,
+            "source": "structured_memory",
+            "source_message_ids": []
+          }
+        ],
+        "source_plans": [
+          {
+            "enabled": true,
+            "filters": {},
+            "reason": "Controlled E2E scenario source plan.",
+            "source": "recent_messages"
+          },
+          {
+            "enabled": true,
+            "filters": {},
+            "reason": "Controlled E2E scenario source plan.",
+            "source": "structured_memory"
+          },
+          {
+            "enabled": false,
+            "filters": {},
+            "reason": "Controlled E2E scenario source plan.",
+            "source": "document_memory"
+          },
+          {
+            "enabled": false,
+            "filters": {},
+            "reason": "Controlled E2E scenario source plan.",
+            "source": "current_chat_gist"
+          },
+          {
+            "enabled": false,
+            "filters": {},
+            "reason": "Controlled E2E scenario source plan.",
+            "source": "previous_chat_gist"
+          },
+          {
+            "enabled": false,
+            "filters": {},
+            "reason": "Controlled E2E scenario source plan.",
+            "source": "raw_message_span"
+          }
+        ],
+        "workflow_metadata": {
+          "answer_reserve": 512,
+          "context_comparison": {
+            "metadata": {
+              "comparison_type": "legacy_short_term_vs_trace_context_packet",
+              "full_prompts_included": false
+            },
+            "new_context_packet": {
+              "estimated_tokens": 80,
+              "has_latest_user_message": true,
+              "has_recent_messages": false,
+              "has_structured_memory": true,
+              "message_count": 3,
+              "section_order": [
+                "system",
+                "structured_memory",
+                "latest_user_message"
+              ]
+            },
+            "old_prompt": {
+              "estimated_tokens": 46,
+              "has_latest_user_message": true,
+              "has_recent_messages": false,
+              "has_structured_memory": false,
+              "message_count": 2,
+              "section_order": [
+                "system",
+                "latest_user_message"
+              ]
+            },
+            "token_difference": 34,
+            "token_difference_ratio": 0.739,
+            "warnings": []
+          },
+          "context_limit": 4096,
+          "context_manager": {
+            "context_manager_used": true,
+            "dropped_candidate_counts_by_source": {
+              "recent_messages": 1
+            },
+            "final_prompt_sections": [
+              "system",
+              "structured_memory",
+              "retrieved_memory",
+              "recent_messages",
+              "latest_user_message"
+            ],
+            "included_candidate_counts_by_source": {
+              "structured_memory": 1
+            },
+            "source_budgets": {
+              "recent_messages": 1636,
+              "structured_memory": 1636
+            }
+          },
+          "dropped_candidate_ids": [
+            1
+          ],
+          "dropped_candidate_reasons": [
+            {
+              "reason": "latest_user_message_excluded",
+              "record_id": 1,
+              "source": "recent_messages"
+            }
+          ],
+          "estimated_prompt_tokens": 80,
+          "fallback_reason": null,
+          "overflow_detected": false,
+          "overflow_tokens": 0,
+          "prompt_source": "context_packet",
+          "reranker": {
+            "combined_scores": [],
+            "cross_encoder_model": null,
+            "cross_encoder_scores": [],
+            "cross_encoder_top_k": null,
+            "cross_encoder_used": false,
+            "cross_encoder_weight": null,
+            "deterministic_scores": [
+              {
+                "candidate_id": "c0",
+                "deterministic_rank": 0,
+                "feature_contributions": {
+                  "confidence": 0.075,
+                  "importance": 0.075,
+                  "lexical_overlap": 0.35,
+                  "query_source_boost": 0.0,
+                  "recency": 0.1,
+                  "redundancy_penalty": -0.0,
+                  "semantic_score": 0.1,
+                  "similarity_score": 0.1,
+                  "source_priority": 0.09000000000000001,
+                  "status_penalty": -0.0,
+                  "usage_count": 0.0
+                },
+                "original_rank": 0,
+                "score": 0.89,
+                "source": "recent_messages"
+              },
+              {
+                "candidate_id": "c1",
+                "deterministic_rank": 1,
+                "feature_contributions": {
+                  "confidence": 0.135,
+                  "importance": 0.075,
+                  "lexical_overlap": 0.0,
+                  "query_source_boost": 0.25,
+                  "recency": 0.05,
+                  "redundancy_penalty": -0.0,
+                  "semantic_score": 0.1,
+                  "similarity_score": 0.1,
+                  "source_priority": 0.095,
+                  "status_penalty": -0.0,
+                  "usage_count": 0.0
+                },
+                "original_rank": 1,
+                "score": 0.805,
+                "source": "structured_memory"
+              }
+            ],
+            "deterministic_top_margin": 0.08499999999999996,
+            "fallback_reason": null,
+            "fallback_used": false,
+            "final_ranks": [
+              {
+                "candidate_id": "c0",
+                "final_rank": 0,
+                "original_rank": 0,
+                "source": "recent_messages"
+              },
+              {
+                "candidate_id": "c1",
+                "final_rank": 1,
+                "original_rank": 1,
+                "source": "structured_memory"
+              }
+            ],
+            "hybrid_backend": null,
+            "llm_confidence": null,
+            "llm_ranked_candidate_ids": [],
+            "llm_rerank_considered": false,
+            "llm_rerank_skip_reason": null,
+            "llm_rerank_used": false,
+            "post_cross_encoder_top_margin": null,
+            "reranker_mode": "deterministic",
+            "top_candidate_sources": [
+              "recent_messages",
+              "structured_memory"
+            ]
+          },
+          "retrieved_document_rows": [],
+          "retrieved_memory_rows": [
+            {
+              "category": "preferences",
+              "key": "answer_style",
+              "memory_id": "preferences:answer_style",
+              "namespace": "user::default::semantic_memory",
+              "record_id": "preferences:answer_style",
+              "source": "structured_memory",
+              "source_chat_id": "fixture-chat",
+              "source_message_ids": [],
+              "value": "User prefers concise practical engineering explanations."
+            }
+          ],
+          "routing_decision": {
+            "active_sources": [
+              "recent_messages",
+              "structured_memory"
+            ],
+            "confidence": 1.0,
+            "context_profile": "memory_recall",
+            "disabled_sources": [
+              "document_memory",
+              "current_chat_gist",
+              "previous_chat_gist",
+              "raw_message_span"
+            ],
+            "fallback_mode": false,
+            "intent": "structured_preference",
+            "reason": "General query; recent and structured memory enabled by default.",
+            "routing_fallback_reason": null,
+            "routing_mode": "rule",
+            "use_document_memory": false,
+            "use_recent_messages": true,
+            "use_structured_memory": true
+          },
+          "safety_margin": 286,
+          "saved_memory_rows": [],
+          "timings_ms": {
+            "context_budget_allocation": 0.14,
+            "context_comparison": 0.06,
+            "context_packet_building": 0.14,
+            "context_packet_validation": 0.04,
+            "legacy_context_building": 0.84,
+            "main_model_call": 4417.85,
+            "reranking": 0.13,
+            "retrieval": 1.21,
+            "route_planning": 0.04,
+            "save_assistant_message": 3.7,
+            "save_user_message": 0.89,
+            "total_turn": 4426.77,
+            "update_memory_if_needed": 1.78
+          },
+          "token_estimator": "approximate"
+        }
+      }
+    },
+    {
+      "abstain_correct": null,
+      "answer_contains_expected": true,
+      "case_id": "semantic_memory_paraphrase",
+      "expected_context_included": true,
+      "expected_source_present": true,
+      "failed_reasons": [],
+      "forbidden_claim_violations": [],
+      "reranker_top_source_correct": true,
+      "scenario_pass": true,
+      "trace": {
+        "active_sources": [
+          "recent_messages",
+          "structured_memory"
+        ],
+        "answer": "Based on your preferences, solved infrastructure should be implemented using mature, stable, open-source libraries rather than custom implementations.",
+        "case_id": "semantic_memory_paraphrase",
+        "context_packet": {
+          "candidate_sources": [
+            "structured_memory"
+          ],
+          "model_messages": [
+            {
+              "content": "Answer using the supplied memory and retrieved context. If the answer is unsupported, say I don't know.",
+              "role": "system"
+            },
+            {
+              "content": "Current structured memory:\n- preferences.library_style: User prefers mature stable open-source libraries over custom implementations for solved infrastructure.",
+              "role": "system"
+            },
+            {
+              "content": "How should solved infrastructure be implemented?",
+              "role": "user"
+            }
+          ],
+          "sections": [
+            "system",
+            "structured_memory",
+            "retrieved_memory",
+            "recent_messages",
+            "latest_user_message"
+          ]
+        },
+        "errors": [],
+        "mode": "model",
+        "notes": "Real StructuredMemoryRetriever hybrid path with deterministic fake vector index.",
+        "query": "How should solved infrastructure be implemented?",
+        "reranked_candidates": [
+          {
+            "chat_id": "semantic_memory_paraphrase-current",
+            "content": "How should solved infrastructure be implemented?",
+            "metadata": {
+              "created_at": "2026-06-28T14:13:17+00:00",
+              "final_rank": 0,
+              "order": 0,
+              "original_rank": 0,
+              "ranking_profile": "e2e_scenario",
+              "reranker_candidate_id": "c0",
+              "role": "user",
+              "score_breakdown": {
+                "contributions": {
+                  "confidence": 0.075,
+                  "importance": 0.075,
+                  "lexical_overlap": 0.35,
+                  "query_source_boost": 0.0,
+                  "recency": 0.1,
+                  "redundancy_penalty": -0.0,
+                  "semantic_score": 0.1,
+                  "similarity_score": 0.1,
+                  "source_priority": 0.09000000000000001,
+                  "status_penalty": -0.0,
+                  "usage_count": 0.0
+                },
+                "features": {
+                  "confidence": 0.5,
+                  "importance": 0.5,
+                  "lexical_overlap": 1.0,
+                  "query_source_boost": 0.0,
+                  "recency": 1.0,
+                  "redundancy_penalty": 0.0,
+                  "semantic_score": 0.5,
+                  "similarity_score": 0.5,
+                  "source_priority": 0.9,
+                  "status_penalty": 0.0,
+                  "usage_count": 0.0
+                },
+                "final_score": 0.89,
+                "weights": {
+                  "confidence": 0.15,
+                  "importance": 0.15,
+                  "lexical_overlap": 0.35,
+                  "query_source_boost": 0.25,
+                  "recency": 0.1,
+                  "redundancy_penalty": 1.0,
+                  "semantic_score": 0.2,
+                  "similarity_score": 0.2,
+                  "source_priority": 0.1,
+                  "status_penalty": 1.0,
+                  "usage_count": 0.05
+                }
+              },
+              "summarized": false
+            },
+            "record_id": 1,
+            "score": 0.89,
+            "source": "recent_messages",
+            "source_message_ids": [
+              1
+            ]
+          },
+          {
+            "chat_id": "fixture-chat",
+            "content": "User prefers mature stable open-source libraries over custom implementations for solved infrastructure.",
+            "metadata": {
+              "category": "preferences",
+              "confidence": 0.9,
+              "final_rank": 1,
+              "fixture": "e2e_scenario",
+              "key": "library_style",
+              "memory_id": "preferences:library_style",
+              "namespace": [
+                "user",
+                "default",
+                "semantic_memory"
+              ],
+              "original_rank": 1,
+              "ranking_profile": "e2e_scenario",
+              "reranker_candidate_id": "c1",
+              "retrieval_backend": "long_term_memory_chroma",
+              "retrieval_mode": "hybrid",
+              "score_breakdown": {
+                "contributions": {
+                  "confidence": 0.135,
+                  "importance": 0.075,
+                  "lexical_overlap": 0.11666666666666665,
+                  "query_source_boost": 0.0,
+                  "recency": 0.05,
+                  "redundancy_penalty": -0.0,
+                  "semantic_score": 0.19,
+                  "similarity_score": 0.1,
+                  "source_priority": 0.095,
+                  "status_penalty": -0.0,
+                  "usage_count": 0.0
+                },
+                "features": {
+                  "confidence": 0.9,
+                  "importance": 0.5,
+                  "lexical_overlap": 0.3333333333333333,
+                  "query_source_boost": 0.0,
+                  "recency": 0.5,
+                  "redundancy_penalty": 0.0,
+                  "semantic_score": 0.95,
+                  "similarity_score": 0.5,
+                  "source_priority": 0.95,
+                  "status_penalty": 0.0,
+                  "usage_count": 0.0
+                },
+                "final_score": 0.7616666666666667,
+                "weights": {
+                  "confidence": 0.15,
+                  "importance": 0.15,
+                  "lexical_overlap": 0.35,
+                  "query_source_boost": 0.25,
+                  "recency": 0.1,
+                  "redundancy_penalty": 1.0,
+                  "semantic_score": 0.2,
+                  "similarity_score": 0.2,
+                  "source_priority": 0.1,
+                  "status_penalty": 1.0,
+                  "usage_count": 0.05
+                }
+              },
+              "source_chat_id": "fixture-chat",
+              "source_gist_id": null,
+              "source_message_ids": [],
+              "status": "active",
+              "vector_score": 0.95
+            },
+            "record_id": "preferences:library_style",
+            "score": 0.7616666666666667,
+            "source": "structured_memory",
+            "source_message_ids": []
+          }
+        ],
+        "reranker_top_source": "structured_memory",
+        "retrieved_candidates": [
+          {
+            "chat_id": "semantic_memory_paraphrase-current",
+            "content": "How should solved infrastructure be implemented?",
+            "metadata": {
+              "created_at": "2026-06-28T14:13:17+00:00",
+              "order": 0,
+              "role": "user",
+              "summarized": false
+            },
+            "record_id": 1,
+            "score": null,
+            "source": "recent_messages",
+            "source_message_ids": [
+              1
+            ]
+          },
+          {
+            "chat_id": "fixture-chat",
+            "content": "User prefers mature stable open-source libraries over custom implementations for solved infrastructure.",
+            "metadata": {
+              "category": "preferences",
+              "confidence": 0.9,
+              "fixture": "e2e_scenario",
+              "key": "library_style",
+              "memory_id": "preferences:library_style",
+              "namespace": [
+                "user",
+                "default",
+                "semantic_memory"
+              ],
+              "retrieval_backend": "long_term_memory_chroma",
+              "retrieval_mode": "hybrid",
+              "source_chat_id": "fixture-chat",
+              "source_gist_id": null,
+              "source_message_ids": [],
+              "status": "active",
+              "vector_score": 0.95
+            },
+            "record_id": "preferences:library_style",
+            "score": 0.9,
+            "source": "structured_memory",
+            "source_message_ids": []
+          }
+        ],
+        "source_plans": [
+          {
+            "enabled": true,
+            "filters": {},
+            "reason": "Controlled E2E scenario source plan.",
+            "source": "recent_messages"
+          },
+          {
+            "enabled": true,
+            "filters": {},
+            "reason": "Controlled E2E scenario source plan.",
+            "source": "structured_memory"
+          },
+          {
+            "enabled": false,
+            "filters": {},
+            "reason": "Controlled E2E scenario source plan.",
+            "source": "document_memory"
+          },
+          {
+            "enabled": false,
+            "filters": {},
+            "reason": "Controlled E2E scenario source plan.",
+            "source": "current_chat_gist"
+          },
+          {
+            "enabled": false,
+            "filters": {},
+            "reason": "Controlled E2E scenario source plan.",
+            "source": "previous_chat_gist"
+          },
+          {
+            "enabled": false,
+            "filters": {},
+            "reason": "Controlled E2E scenario source plan.",
+            "source": "raw_message_span"
+          }
+        ],
+        "workflow_metadata": {
+          "answer_reserve": 512,
+          "context_comparison": {
+            "metadata": {
+              "comparison_type": "legacy_short_term_vs_trace_context_packet",
+              "full_prompts_included": false
+            },
+            "new_context_packet": {
+              "estimated_tokens": 97,
+              "has_latest_user_message": true,
+              "has_recent_messages": false,
+              "has_structured_memory": true,
+              "message_count": 3,
+              "section_order": [
+                "system",
+                "structured_memory",
+                "latest_user_message"
+              ]
+            },
+            "old_prompt": {
+              "estimated_tokens": 51,
+              "has_latest_user_message": true,
+              "has_recent_messages": false,
+              "has_structured_memory": false,
+              "message_count": 2,
+              "section_order": [
+                "system",
+                "latest_user_message"
+              ]
+            },
+            "token_difference": 46,
+            "token_difference_ratio": 0.902,
+            "warnings": []
+          },
+          "context_limit": 4096,
+          "context_manager": {
+            "context_manager_used": true,
+            "dropped_candidate_counts_by_source": {
+              "recent_messages": 1
+            },
+            "final_prompt_sections": [
+              "system",
+              "structured_memory",
+              "retrieved_memory",
+              "recent_messages",
+              "latest_user_message"
+            ],
+            "included_candidate_counts_by_source": {
+              "structured_memory": 1
+            },
+            "source_budgets": {
+              "recent_messages": 1636,
+              "structured_memory": 1636
+            }
+          },
+          "dropped_candidate_ids": [
+            1
+          ],
+          "dropped_candidate_reasons": [
+            {
+              "reason": "latest_user_message_excluded",
+              "record_id": 1,
+              "source": "recent_messages"
+            }
+          ],
+          "estimated_prompt_tokens": 97,
+          "fallback_reason": null,
+          "overflow_detected": false,
+          "overflow_tokens": 0,
+          "prompt_source": "context_packet",
+          "reranker": {
+            "combined_scores": [],
+            "cross_encoder_model": null,
+            "cross_encoder_scores": [],
+            "cross_encoder_top_k": null,
+            "cross_encoder_used": false,
+            "cross_encoder_weight": null,
+            "deterministic_scores": [
+              {
+                "candidate_id": "c0",
+                "deterministic_rank": 0,
+                "feature_contributions": {
+                  "confidence": 0.075,
+                  "importance": 0.075,
+                  "lexical_overlap": 0.35,
+                  "query_source_boost": 0.0,
+                  "recency": 0.1,
+                  "redundancy_penalty": -0.0,
+                  "semantic_score": 0.1,
+                  "similarity_score": 0.1,
+                  "source_priority": 0.09000000000000001,
+                  "status_penalty": -0.0,
+                  "usage_count": 0.0
+                },
+                "original_rank": 0,
+                "score": 0.89,
+                "source": "recent_messages"
+              },
+              {
+                "candidate_id": "c1",
+                "deterministic_rank": 1,
+                "feature_contributions": {
+                  "confidence": 0.135,
+                  "importance": 0.075,
+                  "lexical_overlap": 0.11666666666666665,
+                  "query_source_boost": 0.0,
+                  "recency": 0.05,
+                  "redundancy_penalty": -0.0,
+                  "semantic_score": 0.19,
+                  "similarity_score": 0.1,
+                  "source_priority": 0.095,
+                  "status_penalty": -0.0,
+                  "usage_count": 0.0
+                },
+                "original_rank": 1,
+                "score": 0.7616666666666667,
+                "source": "structured_memory"
+              }
+            ],
+            "deterministic_top_margin": 0.1283333333333333,
+            "fallback_reason": null,
+            "fallback_used": false,
+            "final_ranks": [
+              {
+                "candidate_id": "c0",
+                "final_rank": 0,
+                "original_rank": 0,
+                "source": "recent_messages"
+              },
+              {
+                "candidate_id": "c1",
+                "final_rank": 1,
+                "original_rank": 1,
+                "source": "structured_memory"
+              }
+            ],
+            "hybrid_backend": null,
+            "llm_confidence": null,
+            "llm_ranked_candidate_ids": [],
+            "llm_rerank_considered": false,
+            "llm_rerank_skip_reason": null,
+            "llm_rerank_used": false,
+            "post_cross_encoder_top_margin": null,
+            "reranker_mode": "deterministic",
+            "top_candidate_sources": [
+              "recent_messages",
+              "structured_memory"
+            ]
+          },
+          "retrieved_document_rows": [],
+          "retrieved_memory_rows": [
+            {
+              "category": "preferences",
+              "key": "library_style",
+              "memory_id": "preferences:library_style",
+              "namespace": "user::default::semantic_memory",
+              "record_id": "preferences:library_style",
+              "source": "structured_memory",
+              "source_chat_id": "fixture-chat",
+              "source_message_ids": [],
+              "value": "User prefers mature stable open-source libraries over custom implementations for solved infrastructure."
+            }
+          ],
+          "routing_decision": {
+            "active_sources": [
+              "recent_messages",
+              "structured_memory"
+            ],
+            "confidence": 1.0,
+            "context_profile": "memory_recall",
+            "disabled_sources": [
+              "document_memory",
+              "current_chat_gist",
+              "previous_chat_gist",
+              "raw_message_span"
+            ],
+            "fallback_mode": false,
+            "intent": "semantic_memory_paraphrase",
+            "reason": "General query; recent and structured memory enabled by default.",
+            "routing_fallback_reason": null,
+            "routing_mode": "rule",
+            "use_document_memory": false,
+            "use_recent_messages": true,
+            "use_structured_memory": true
+          },
+          "safety_margin": 286,
+          "saved_memory_rows": [],
+          "timings_ms": {
+            "context_budget_allocation": 0.17,
+            "context_comparison": 0.05,
+            "context_packet_building": 0.17,
+            "context_packet_validation": 0.04,
+            "legacy_context_building": 0.72,
+            "main_model_call": 4719.91,
+            "reranking": 0.2,
+            "retrieval": 2.02,
+            "route_planning": 0.04,
+            "save_assistant_message": 3.8,
+            "save_user_message": 1.12,
+            "total_turn": 4730.4,
+            "update_memory_if_needed": 2.23
+          },
+          "token_estimator": "approximate"
+        }
+      }
+    },
+    {
+      "abstain_correct": null,
+      "answer_contains_expected": true,
+      "case_id": "previous_chat_gist",
+      "expected_context_included": true,
+      "expected_source_present": true,
+      "failed_reasons": [],
+      "forbidden_claim_violations": [],
+      "reranker_top_source_correct": true,
+      "scenario_pass": true,
+      "trace": {
+        "active_sources": [
+          "recent_messages",
+          "structured_memory",
+          "previous_chat_gist"
+        ],
+        "answer": "In an earlier chat, it was decided that the demo should focus on cross-chat long-term memory.",
+        "case_id": "previous_chat_gist",
+        "context_packet": {
+          "candidate_sources": [
+            "previous_chat_gist"
+          ],
+          "model_messages": [
+            {
+              "content": "Answer using the supplied memory and retrieved context. If the answer is unsupported, say I don't know.",
+              "role": "system"
+            },
+            {
+              "content": "Previous Chat Gist:\n- [1] An earlier chat decided the demo should focus on cross-chat long-term memory.",
+              "role": "system"
+            },
+            {
+              "content": "What did we discuss in an earlier chat about the demo?",
+              "role": "user"
+            }
+          ],
+          "sections": [
+            "system",
+            "structured_memory",
+            "retrieved_memory",
+            "recent_messages",
+            "latest_user_message"
+          ]
+        },
+        "errors": [],
+        "mode": "model",
+        "notes": "Real previous-chat gist storage and retriever.",
+        "query": "What did we discuss in an earlier chat about the demo?",
+        "reranked_candidates": [
+          {
+            "chat_id": "previous_chat_gist-current",
+            "content": "What did we discuss in an earlier chat about the demo?",
+            "metadata": {
+              "created_at": "2026-06-28T14:13:22+00:00",
+              "final_rank": 0,
+              "order": 0,
+              "original_rank": 0,
+              "ranking_profile": "e2e_scenario",
+              "reranker_candidate_id": "c0",
+              "role": "user",
+              "score_breakdown": {
+                "contributions": {
+                  "confidence": 0.075,
+                  "importance": 0.075,
+                  "lexical_overlap": 0.35,
+                  "query_source_boost": 0.0,
+                  "recency": 0.1,
+                  "redundancy_penalty": -0.0,
+                  "semantic_score": 0.1,
+                  "similarity_score": 0.1,
+                  "source_priority": 0.09000000000000001,
+                  "status_penalty": -0.0,
+                  "usage_count": 0.0
+                },
+                "features": {
+                  "confidence": 0.5,
+                  "importance": 0.5,
+                  "lexical_overlap": 1.0,
+                  "query_source_boost": 0.0,
+                  "recency": 1.0,
+                  "redundancy_penalty": 0.0,
+                  "semantic_score": 0.5,
+                  "similarity_score": 0.5,
+                  "source_priority": 0.9,
+                  "status_penalty": 0.0,
+                  "usage_count": 0.0
+                },
+                "final_score": 0.89,
+                "weights": {
+                  "confidence": 0.15,
+                  "importance": 0.15,
+                  "lexical_overlap": 0.35,
+                  "query_source_boost": 0.25,
+                  "recency": 0.1,
+                  "redundancy_penalty": 1.0,
+                  "semantic_score": 0.2,
+                  "similarity_score": 0.2,
+                  "source_priority": 0.1,
+                  "status_penalty": 1.0,
+                  "usage_count": 0.05
+                }
+              },
+              "summarized": false
+            },
+            "record_id": 3,
+            "score": 0.89,
+            "source": "recent_messages",
+            "source_message_ids": [
+              3
+            ]
+          },
+          {
+            "chat_id": "old-demo-chat",
+            "content": "An earlier chat decided the demo should focus on cross-chat long-term memory.",
+            "metadata": {
+              "created_at": "2026-06-28T14:13:22+00:00",
+              "decisions": [],
+              "end_message_id": 2,
+              "final_rank": 1,
+              "fixture": "e2e_scenario",
+              "open_tasks": [],
+              "original_rank": 1,
+              "ranking_profile": "e2e_scenario",
+              "reranker_candidate_id": "c1",
+              "retrieval_mode": "stored_gist_placeholder",
+              "score_breakdown": {
+                "contributions": {
+                  "confidence": 0.06818181818181818,
+                  "importance": 0.075,
+                  "lexical_overlap": 0.175,
+                  "query_source_boost": 0.25,
+                  "recency": 0.05,
+                  "redundancy_penalty": -0.0,
+                  "semantic_score": 0.1,
+                  "similarity_score": 0.1,
+                  "source_priority": 0.065,
+                  "status_penalty": -0.0,
+                  "usage_count": 0.0
+                },
+                "features": {
+                  "confidence": 0.45454545454545453,
+                  "importance": 0.5,
+                  "lexical_overlap": 0.5,
+                  "query_source_boost": 1.0,
+                  "recency": 0.5,
+                  "redundancy_penalty": 0.0,
+                  "semantic_score": 0.5,
+                  "similarity_score": 0.5,
+                  "source_priority": 0.65,
+                  "status_penalty": 0.0,
+                  "usage_count": 0.0
+                },
+                "final_score": 0.8831818181818182,
+                "weights": {
+                  "confidence": 0.15,
+                  "importance": 0.15,
+                  "lexical_overlap": 0.35,
+                  "query_source_boost": 0.25,
+                  "recency": 0.1,
+                  "redundancy_penalty": 1.0,
+                  "semantic_score": 0.2,
+                  "similarity_score": 0.2,
+                  "source_priority": 0.1,
+                  "status_penalty": 1.0,
+                  "usage_count": 0.05
+                }
+              },
+              "source_type": "previous_chat_gist",
+              "start_message_id": 1,
+              "status": "active",
+              "topics": [
+                "demo",
+                "memory"
+              ],
+              "updated_at": "2026-06-28T14:13:22+00:00"
+            },
+            "record_id": 1,
+            "score": 0.8831818181818182,
+            "source": "previous_chat_gist",
+            "source_message_ids": [
+              1,
+              2
+            ]
+          }
+        ],
+        "reranker_top_source": "previous_chat_gist",
+        "retrieved_candidates": [
+          {
+            "chat_id": "previous_chat_gist-current",
+            "content": "What did we discuss in an earlier chat about the demo?",
+            "metadata": {
+              "created_at": "2026-06-28T14:13:22+00:00",
+              "order": 0,
+              "role": "user",
+              "summarized": false
+            },
+            "record_id": 3,
+            "score": null,
+            "source": "recent_messages",
+            "source_message_ids": [
+              3
+            ]
+          },
+          {
+            "chat_id": "old-demo-chat",
+            "content": "An earlier chat decided the demo should focus on cross-chat long-term memory.",
+            "metadata": {
+              "created_at": "2026-06-28T14:13:22+00:00",
+              "decisions": [],
+              "end_message_id": 2,
+              "fixture": "e2e_scenario",
+              "open_tasks": [],
+              "retrieval_mode": "stored_gist_placeholder",
+              "source_type": "previous_chat_gist",
+              "start_message_id": 1,
+              "status": "active",
+              "topics": [
+                "demo",
+                "memory"
+              ],
+              "updated_at": "2026-06-28T14:13:22+00:00"
+            },
+            "record_id": 1,
+            "score": 0.45454545454545453,
+            "source": "previous_chat_gist",
+            "source_message_ids": [
+              1,
+              2
+            ]
+          }
+        ],
+        "source_plans": [
+          {
+            "enabled": true,
+            "filters": {},
+            "reason": "Controlled E2E scenario source plan.",
+            "source": "recent_messages"
+          },
+          {
+            "enabled": true,
+            "filters": {},
+            "reason": "Controlled E2E scenario source plan.",
+            "source": "structured_memory"
+          },
+          {
+            "enabled": false,
+            "filters": {},
+            "reason": "Controlled E2E scenario source plan.",
+            "source": "document_memory"
+          },
+          {
+            "enabled": false,
+            "filters": {},
+            "reason": "Controlled E2E scenario source plan.",
+            "source": "current_chat_gist"
+          },
+          {
+            "enabled": true,
+            "filters": {},
+            "reason": "Controlled E2E scenario source plan.",
+            "source": "previous_chat_gist"
+          },
+          {
+            "enabled": false,
+            "filters": {},
+            "reason": "Controlled E2E scenario source plan.",
+            "source": "raw_message_span"
+          }
+        ],
+        "workflow_metadata": {
+          "answer_reserve": 512,
+          "context_comparison": {
+            "metadata": {
+              "comparison_type": "legacy_short_term_vs_trace_context_packet",
+              "full_prompts_included": false
+            },
+            "new_context_packet": {
+              "estimated_tokens": 84,
+              "has_latest_user_message": true,
+              "has_recent_messages": true,
+              "has_structured_memory": false,
+              "message_count": 3,
+              "section_order": [
+                "system",
+                "recent_messages",
+                "latest_user_message"
+              ]
+            },
+            "old_prompt": {
+              "estimated_tokens": 52,
+              "has_latest_user_message": true,
+              "has_recent_messages": false,
+              "has_structured_memory": false,
+              "message_count": 2,
+              "section_order": [
+                "system",
+                "latest_user_message"
+              ]
+            },
+            "token_difference": 32,
+            "token_difference_ratio": 0.615,
+            "warnings": []
+          },
+          "context_limit": 4096,
+          "context_manager": {
+            "context_manager_used": true,
+            "dropped_candidate_counts_by_source": {
+              "recent_messages": 1
+            },
+            "final_prompt_sections": [
+              "system",
+              "structured_memory",
+              "retrieved_memory",
+              "recent_messages",
+              "latest_user_message"
+            ],
+            "included_candidate_counts_by_source": {
+              "previous_chat_gist": 1
+            },
+            "source_budgets": {
+              "previous_chat_gist": 892,
+              "recent_messages": 1189,
+              "structured_memory": 1189
+            }
+          },
+          "dropped_candidate_ids": [
+            3
+          ],
+          "dropped_candidate_reasons": [
+            {
+              "reason": "latest_user_message_excluded",
+              "record_id": 3,
+              "source": "recent_messages"
+            }
+          ],
+          "estimated_prompt_tokens": 84,
+          "fallback_reason": null,
+          "overflow_detected": false,
+          "overflow_tokens": 0,
+          "prompt_source": "context_packet",
+          "reranker": {
+            "combined_scores": [],
+            "cross_encoder_model": null,
+            "cross_encoder_scores": [],
+            "cross_encoder_top_k": null,
+            "cross_encoder_used": false,
+            "cross_encoder_weight": null,
+            "deterministic_scores": [
+              {
+                "candidate_id": "c0",
+                "deterministic_rank": 0,
+                "feature_contributions": {
+                  "confidence": 0.075,
+                  "importance": 0.075,
+                  "lexical_overlap": 0.35,
+                  "query_source_boost": 0.0,
+                  "recency": 0.1,
+                  "redundancy_penalty": -0.0,
+                  "semantic_score": 0.1,
+                  "similarity_score": 0.1,
+                  "source_priority": 0.09000000000000001,
+                  "status_penalty": -0.0,
+                  "usage_count": 0.0
+                },
+                "original_rank": 0,
+                "score": 0.89,
+                "source": "recent_messages"
+              },
+              {
+                "candidate_id": "c1",
+                "deterministic_rank": 1,
+                "feature_contributions": {
+                  "confidence": 0.06818181818181818,
+                  "importance": 0.075,
+                  "lexical_overlap": 0.175,
+                  "query_source_boost": 0.25,
+                  "recency": 0.05,
+                  "redundancy_penalty": -0.0,
+                  "semantic_score": 0.1,
+                  "similarity_score": 0.1,
+                  "source_priority": 0.065,
+                  "status_penalty": -0.0,
+                  "usage_count": 0.0
+                },
+                "original_rank": 1,
+                "score": 0.8831818181818182,
+                "source": "previous_chat_gist"
+              }
+            ],
+            "deterministic_top_margin": 0.006818181818181834,
+            "fallback_reason": null,
+            "fallback_used": false,
+            "final_ranks": [
+              {
+                "candidate_id": "c0",
+                "final_rank": 0,
+                "original_rank": 0,
+                "source": "recent_messages"
+              },
+              {
+                "candidate_id": "c1",
+                "final_rank": 1,
+                "original_rank": 1,
+                "source": "previous_chat_gist"
+              }
+            ],
+            "hybrid_backend": null,
+            "llm_confidence": null,
+            "llm_ranked_candidate_ids": [],
+            "llm_rerank_considered": false,
+            "llm_rerank_skip_reason": null,
+            "llm_rerank_used": false,
+            "post_cross_encoder_top_margin": null,
+            "reranker_mode": "deterministic",
+            "top_candidate_sources": [
+              "recent_messages",
+              "previous_chat_gist"
+            ]
+          },
+          "retrieved_document_rows": [],
+          "retrieved_memory_rows": [],
+          "routing_decision": {
+            "active_sources": [
+              "recent_messages",
+              "structured_memory",
+              "previous_chat_gist"
+            ],
+            "confidence": 1.0,
+            "context_profile": "mixed_memory_document",
+            "disabled_sources": [
+              "document_memory",
+              "current_chat_gist",
+              "raw_message_span"
+            ],
+            "fallback_mode": false,
+            "intent": "previous_chat_gist",
+            "reason": "General query; recent and structured memory enabled by default.",
+            "routing_fallback_reason": null,
+            "routing_mode": "rule",
+            "use_document_memory": false,
+            "use_recent_messages": true,
+            "use_structured_memory": true
+          },
+          "safety_margin": 286,
+          "saved_memory_rows": [],
+          "timings_ms": {
+            "context_budget_allocation": 0.14,
+            "context_comparison": 0.05,
+            "context_packet_building": 0.14,
+            "context_packet_validation": 0.04,
+            "legacy_context_building": 0.72,
+            "main_model_call": 4719.12,
+            "reranking": 0.2,
+            "retrieval": 2.16,
+            "route_planning": 0.03,
+            "save_assistant_message": 4.56,
+            "save_user_message": 1.16,
+            "total_turn": 4730.78,
+            "update_memory_if_needed": 2.5
+          },
+          "token_estimator": "approximate"
+        }
+      }
+    },
+    {
+      "abstain_correct": null,
+      "answer_contains_expected": true,
+      "case_id": "raw_span_provenance",
+      "expected_context_included": true,
+      "expected_source_present": true,
+      "failed_reasons": [],
+      "forbidden_claim_violations": [],
+      "reranker_top_source_correct": true,
+      "scenario_pass": true,
+      "trace": {
+        "active_sources": [
+          "raw_message_span"
+        ],
+        "answer": "You said, \"I strongly prefer mature open-source libraries.\"\n\n**Evidence:**\n[1] user: I strongly prefer mature open-source libraries.",
+        "case_id": "raw_span_provenance",
+        "context_packet": {
+          "candidate_sources": [
+            "raw_message_span"
+          ],
+          "model_messages": [
+            {
+              "content": "Answer using the supplied memory and retrieved context. If the answer is unsupported, say I don't know.",
+              "role": "system"
+            },
+            {
+              "content": "Raw Message Span:\n- [1] user: I strongly prefer mature open-source libraries.\nassistant: Noted.",
+              "role": "system"
+            },
+            {
+              "content": "Exactly what did I say before? Show the evidence.",
+              "role": "user"
+            }
+          ],
+          "sections": [
+            "system",
+            "structured_memory",
+            "retrieved_memory",
+            "recent_messages",
+            "latest_user_message"
+          ]
+        },
+        "errors": [],
+        "mode": "model",
+        "notes": "Real raw-message span lookup linked by gist id.",
+        "query": "Exactly what did I say before? Show the evidence.",
+        "reranked_candidates": [
+          {
+            "chat_id": "old-proof-chat",
+            "content": "user: I strongly prefer mature open-source libraries.\nassistant: Noted.",
+            "metadata": {
+              "end_message_id": 2,
+              "final_rank": 0,
+              "gist_id": 1,
+              "message_count": 2,
+              "original_rank": 0,
+              "ranking_profile": "e2e_scenario",
+              "reranker_candidate_id": "c0",
+              "retrieval_mode": "raw_span_lookup",
+              "score_breakdown": {
+                "contributions": {
+                  "confidence": 0.15,
+                  "importance": 0.075,
+                  "lexical_overlap": 0.0,
+                  "query_source_boost": 0.25,
+                  "recency": 0.05,
+                  "redundancy_penalty": -0.0,
+                  "semantic_score": 0.1,
+                  "similarity_score": 0.1,
+                  "source_priority": 0.057999999999999996,
+                  "status_penalty": -0.0,
+                  "usage_count": 0.0
+                },
+                "features": {
+                  "confidence": 1.0,
+                  "importance": 0.5,
+                  "lexical_overlap": 0.0,
+                  "query_source_boost": 1.0,
+                  "recency": 0.5,
+                  "redundancy_penalty": 0.0,
+                  "semantic_score": 0.5,
+                  "similarity_score": 0.5,
+                  "source_priority": 0.58,
+                  "status_penalty": 0.0,
+                  "usage_count": 0.0
+                },
+                "final_score": 0.783,
+                "weights": {
+                  "confidence": 0.15,
+                  "importance": 0.15,
+                  "lexical_overlap": 0.35,
+                  "query_source_boost": 0.25,
+                  "recency": 0.1,
+                  "redundancy_penalty": 1.0,
+                  "semantic_score": 0.2,
+                  "similarity_score": 0.2,
+                  "source_priority": 0.1,
+                  "status_penalty": 1.0,
+                  "usage_count": 0.05
+                }
+              },
+              "source_chat_id": "old-proof-chat",
+              "start_message_id": 1,
+              "status": "active",
+              "truncated": false
+            },
+            "record_id": 1,
+            "score": 0.783,
+            "source": "raw_message_span",
+            "source_message_ids": [
+              1,
+              2
+            ]
+          }
+        ],
+        "reranker_top_source": "raw_message_span",
+        "retrieved_candidates": [
+          {
+            "chat_id": "old-proof-chat",
+            "content": "user: I strongly prefer mature open-source libraries.\nassistant: Noted.",
+            "metadata": {
+              "end_message_id": 2,
+              "gist_id": 1,
+              "message_count": 2,
+              "retrieval_mode": "raw_span_lookup",
+              "source_chat_id": "old-proof-chat",
+              "start_message_id": 1,
+              "status": "active",
+              "truncated": false
+            },
+            "record_id": 1,
+            "score": 1.0,
+            "source": "raw_message_span",
+            "source_message_ids": [
+              1,
+              2
+            ]
+          }
+        ],
+        "source_plans": [
+          {
+            "enabled": false,
+            "filters": {},
+            "reason": "Controlled E2E scenario source plan.",
+            "source": "recent_messages"
+          },
+          {
+            "enabled": false,
+            "filters": {},
+            "reason": "Controlled E2E scenario source plan.",
+            "source": "structured_memory"
+          },
+          {
+            "enabled": false,
+            "filters": {},
+            "reason": "Controlled E2E scenario source plan.",
+            "source": "document_memory"
+          },
+          {
+            "enabled": false,
+            "filters": {},
+            "reason": "Controlled E2E scenario source plan.",
+            "source": "current_chat_gist"
+          },
+          {
+            "enabled": false,
+            "filters": {},
+            "reason": "Controlled E2E scenario source plan.",
+            "source": "previous_chat_gist"
+          },
+          {
+            "enabled": true,
+            "filters": {
+              "gist_id": 1
+            },
+            "reason": "Controlled E2E scenario source plan.",
+            "source": "raw_message_span"
+          }
+        ],
+        "workflow_metadata": {
+          "answer_reserve": 512,
+          "context_comparison": {
+            "metadata": {
+              "comparison_type": "legacy_short_term_vs_trace_context_packet",
+              "full_prompts_included": false
+            },
+            "new_context_packet": {
+              "estimated_tokens": 81,
+              "has_latest_user_message": true,
+              "has_recent_messages": true,
+              "has_structured_memory": false,
+              "message_count": 3,
+              "section_order": [
+                "system",
+                "recent_messages",
+                "latest_user_message"
+              ]
+            },
+            "old_prompt": {
+              "estimated_tokens": 51,
+              "has_latest_user_message": true,
+              "has_recent_messages": false,
+              "has_structured_memory": false,
+              "message_count": 2,
+              "section_order": [
+                "system",
+                "latest_user_message"
+              ]
+            },
+            "token_difference": 30,
+            "token_difference_ratio": 0.588,
+            "warnings": []
+          },
+          "context_limit": 4096,
+          "context_manager": {
+            "context_manager_used": true,
+            "dropped_candidate_counts_by_source": {},
+            "final_prompt_sections": [
+              "system",
+              "structured_memory",
+              "retrieved_memory",
+              "recent_messages",
+              "latest_user_message"
+            ],
+            "included_candidate_counts_by_source": {
+              "raw_message_span": 1
+            },
+            "source_budgets": {
+              "raw_message_span": 3272
+            }
+          },
+          "dropped_candidate_ids": [],
+          "dropped_candidate_reasons": [],
+          "estimated_prompt_tokens": 81,
+          "fallback_reason": null,
+          "overflow_detected": false,
+          "overflow_tokens": 0,
+          "prompt_source": "context_packet",
+          "reranker": {
+            "combined_scores": [],
+            "cross_encoder_model": null,
+            "cross_encoder_scores": [],
+            "cross_encoder_top_k": null,
+            "cross_encoder_used": false,
+            "cross_encoder_weight": null,
+            "deterministic_scores": [
+              {
+                "candidate_id": "c0",
+                "deterministic_rank": 0,
+                "feature_contributions": {
+                  "confidence": 0.15,
+                  "importance": 0.075,
+                  "lexical_overlap": 0.0,
+                  "query_source_boost": 0.25,
+                  "recency": 0.05,
+                  "redundancy_penalty": -0.0,
+                  "semantic_score": 0.1,
+                  "similarity_score": 0.1,
+                  "source_priority": 0.057999999999999996,
+                  "status_penalty": -0.0,
+                  "usage_count": 0.0
+                },
+                "original_rank": 0,
+                "score": 0.783,
+                "source": "raw_message_span"
+              }
+            ],
+            "deterministic_top_margin": null,
+            "fallback_reason": null,
+            "fallback_used": false,
+            "final_ranks": [
+              {
+                "candidate_id": "c0",
+                "final_rank": 0,
+                "original_rank": 0,
+                "source": "raw_message_span"
+              }
+            ],
+            "hybrid_backend": null,
+            "llm_confidence": null,
+            "llm_ranked_candidate_ids": [],
+            "llm_rerank_considered": false,
+            "llm_rerank_skip_reason": null,
+            "llm_rerank_used": false,
+            "post_cross_encoder_top_margin": null,
+            "reranker_mode": "deterministic",
+            "top_candidate_sources": [
+              "raw_message_span"
+            ]
+          },
+          "retrieved_document_rows": [],
+          "retrieved_memory_rows": [],
+          "routing_decision": {
+            "active_sources": [
+              "raw_message_span"
+            ],
+            "confidence": 1.0,
+            "context_profile": "mixed_memory_document",
+            "disabled_sources": [
+              "recent_messages",
+              "structured_memory",
+              "document_memory",
+              "current_chat_gist",
+              "previous_chat_gist"
+            ],
+            "fallback_mode": false,
+            "intent": "raw_span_provenance",
+            "reason": "General query; recent and structured memory enabled by default.",
+            "routing_fallback_reason": null,
+            "routing_mode": "rule",
+            "use_document_memory": false,
+            "use_recent_messages": false,
+            "use_structured_memory": false
+          },
+          "safety_margin": 286,
+          "saved_memory_rows": [],
+          "timings_ms": {
+            "context_budget_allocation": 0.14,
+            "context_comparison": 0.04,
+            "context_packet_building": 0.14,
+            "context_packet_validation": 0.04,
+            "legacy_context_building": 0.69,
+            "main_model_call": 4855.45,
+            "reranking": 0.14,
+            "retrieval": 0.78,
+            "route_planning": 0.03,
+            "save_assistant_message": 3.87,
+            "save_user_message": 1.39,
+            "total_turn": 4864.66,
+            "update_memory_if_needed": 1.98
+          },
+          "token_estimator": "approximate"
+        }
+      }
+    },
+    {
+      "abstain_correct": true,
+      "answer_contains_expected": true,
+      "case_id": "abstain_with_distractor",
+      "expected_context_included": true,
+      "expected_source_present": true,
+      "failed_reasons": [],
+      "forbidden_claim_violations": [],
+      "reranker_top_source_correct": true,
+      "scenario_pass": true,
+      "trace": {
+        "active_sources": [
+          "recent_messages",
+          "structured_memory",
+          "document_memory"
+        ],
+        "answer": "I don't know. No credentials are documented.",
+        "case_id": "abstain_with_distractor",
+        "context_packet": {
+          "candidate_sources": [
+            "document_memory"
+          ],
+          "model_messages": [
+            {
+              "content": "Answer using the supplied memory and retrieved context. If the answer is unsupported, say I don't know.",
+              "role": "system"
+            },
+            {
+              "content": "Document Memory:\n- [distractor:1] The project stores chat messages in SQLite. No credentials are documented.",
+              "role": "system"
+            },
+            {
+              "content": "What private database password did I store?",
+              "role": "user"
+            }
+          ],
+          "sections": [
+            "system",
+            "structured_memory",
+            "retrieved_memory",
+            "recent_messages",
+            "latest_user_message"
+          ]
+        },
+        "errors": [],
+        "mode": "model",
+        "notes": "The answer must abstain despite a topically related distractor.",
+        "query": "What private database password did I store?",
+        "reranked_candidates": [
+          {
+            "chat_id": "abstain_with_distractor-current",
+            "content": "What private database password did I store?",
+            "metadata": {
+              "created_at": "2026-06-28T14:13:31+00:00",
+              "final_rank": 0,
+              "order": 0,
+              "original_rank": 0,
+              "ranking_profile": "e2e_scenario",
+              "reranker_candidate_id": "c0",
+              "role": "user",
+              "score_breakdown": {
+                "contributions": {
+                  "confidence": 0.075,
+                  "importance": 0.075,
+                  "lexical_overlap": 0.35,
+                  "query_source_boost": 0.0,
+                  "recency": 0.1,
+                  "redundancy_penalty": -0.0,
+                  "semantic_score": 0.1,
+                  "similarity_score": 0.1,
+                  "source_priority": 0.09000000000000001,
+                  "status_penalty": -0.0,
+                  "usage_count": 0.0
+                },
+                "features": {
+                  "confidence": 0.5,
+                  "importance": 0.5,
+                  "lexical_overlap": 1.0,
+                  "query_source_boost": 0.0,
+                  "recency": 1.0,
+                  "redundancy_penalty": 0.0,
+                  "semantic_score": 0.5,
+                  "similarity_score": 0.5,
+                  "source_priority": 0.9,
+                  "status_penalty": 0.0,
+                  "usage_count": 0.0
+                },
+                "final_score": 0.89,
+                "weights": {
+                  "confidence": 0.15,
+                  "importance": 0.15,
+                  "lexical_overlap": 0.35,
+                  "query_source_boost": 0.25,
+                  "recency": 0.1,
+                  "redundancy_penalty": 1.0,
+                  "semantic_score": 0.2,
+                  "similarity_score": 0.2,
+                  "source_priority": 0.1,
+                  "status_penalty": 1.0,
+                  "usage_count": 0.05
+                }
+              },
+              "summarized": false
+            },
+            "record_id": 1,
+            "score": 0.89,
+            "source": "recent_messages",
+            "source_message_ids": [
+              1
+            ]
+          },
+          {
+            "chat_id": null,
+            "content": "The project stores chat messages in SQLite. No credentials are documented.",
+            "metadata": {
+              "final_rank": 1,
+              "original_rank": 1,
+              "ranking_profile": "e2e_scenario",
+              "reranker_candidate_id": "c1",
+              "retrieval_backend": "e2e_fixture_document",
+              "score_breakdown": {
+                "contributions": {
+                  "confidence": 0.12,
+                  "importance": 0.075,
+                  "lexical_overlap": 0.0,
+                  "query_source_boost": 0.0,
+                  "recency": 0.05,
+                  "redundancy_penalty": -0.0,
+                  "semantic_score": 0.1,
+                  "similarity_score": 0.1,
+                  "source_priority": 0.06,
+                  "status_penalty": -0.0,
+                  "usage_count": 0.0
+                },
+                "features": {
+                  "confidence": 0.8,
+                  "importance": 0.5,
+                  "lexical_overlap": 0.0,
+                  "query_source_boost": 0.0,
+                  "recency": 0.5,
+                  "redundancy_penalty": 0.0,
+                  "semantic_score": 0.5,
+                  "similarity_score": 0.5,
+                  "source_priority": 0.6,
+                  "status_penalty": 0.0,
+                  "usage_count": 0.0
+                },
+                "final_score": 0.505,
+                "weights": {
+                  "confidence": 0.15,
+                  "importance": 0.15,
+                  "lexical_overlap": 0.35,
+                  "query_source_boost": 0.25,
+                  "recency": 0.1,
+                  "redundancy_penalty": 1.0,
+                  "semantic_score": 0.2,
+                  "similarity_score": 0.2,
+                  "source_priority": 0.1,
+                  "status_penalty": 1.0,
+                  "usage_count": 0.05
+                }
+              },
+              "status": "active"
+            },
+            "record_id": "distractor:1",
+            "score": 0.505,
+            "source": "document_memory",
+            "source_message_ids": []
+          }
+        ],
+        "reranker_top_source": "document_memory",
+        "retrieved_candidates": [
+          {
+            "chat_id": "abstain_with_distractor-current",
+            "content": "What private database password did I store?",
+            "metadata": {
+              "created_at": "2026-06-28T14:13:31+00:00",
+              "order": 0,
+              "role": "user",
+              "summarized": false
+            },
+            "record_id": 1,
+            "score": null,
+            "source": "recent_messages",
+            "source_message_ids": [
+              1
+            ]
+          },
+          {
+            "chat_id": null,
+            "content": "The project stores chat messages in SQLite. No credentials are documented.",
+            "metadata": {
+              "retrieval_backend": "e2e_fixture_document",
+              "status": "active"
+            },
+            "record_id": "distractor:1",
+            "score": 0.8,
+            "source": "document_memory",
+            "source_message_ids": []
+          }
+        ],
+        "source_plans": [
+          {
+            "enabled": true,
+            "filters": {},
+            "reason": "Controlled E2E scenario source plan.",
+            "source": "recent_messages"
+          },
+          {
+            "enabled": true,
+            "filters": {},
+            "reason": "Controlled E2E scenario source plan.",
+            "source": "structured_memory"
+          },
+          {
+            "enabled": true,
+            "filters": {},
+            "reason": "Controlled E2E scenario source plan.",
+            "source": "document_memory"
+          },
+          {
+            "enabled": false,
+            "filters": {},
+            "reason": "Controlled E2E scenario source plan.",
+            "source": "current_chat_gist"
+          },
+          {
+            "enabled": false,
+            "filters": {},
+            "reason": "Controlled E2E scenario source plan.",
+            "source": "previous_chat_gist"
+          },
+          {
+            "enabled": false,
+            "filters": {},
+            "reason": "Controlled E2E scenario source plan.",
+            "source": "raw_message_span"
+          }
+        ],
+        "workflow_metadata": {
+          "answer_reserve": 512,
+          "context_comparison": {
+            "metadata": {
+              "comparison_type": "legacy_short_term_vs_trace_context_packet",
+              "full_prompts_included": false
+            },
+            "new_context_packet": {
+              "estimated_tokens": 83,
+              "has_latest_user_message": true,
+              "has_recent_messages": false,
+              "has_structured_memory": false,
+              "message_count": 3,
+              "section_order": [
+                "system",
+                "retrieved_memory",
+                "latest_user_message"
+              ]
+            },
+            "old_prompt": {
+              "estimated_tokens": 49,
+              "has_latest_user_message": true,
+              "has_recent_messages": false,
+              "has_structured_memory": false,
+              "message_count": 2,
+              "section_order": [
+                "system",
+                "latest_user_message"
+              ]
+            },
+            "token_difference": 34,
+            "token_difference_ratio": 0.694,
+            "warnings": []
+          },
+          "context_limit": 4096,
+          "context_manager": {
+            "context_manager_used": true,
+            "dropped_candidate_counts_by_source": {
+              "recent_messages": 1
+            },
+            "final_prompt_sections": [
+              "system",
+              "structured_memory",
+              "retrieved_memory",
+              "recent_messages",
+              "latest_user_message"
+            ],
+            "included_candidate_counts_by_source": {
+              "document_memory": 1
+            },
+            "source_budgets": {
+              "document_memory": 1258,
+              "recent_messages": 1006,
+              "structured_memory": 1006
+            }
+          },
+          "dropped_candidate_ids": [
+            1
+          ],
+          "dropped_candidate_reasons": [
+            {
+              "reason": "latest_user_message_excluded",
+              "record_id": 1,
+              "source": "recent_messages"
+            }
+          ],
+          "estimated_prompt_tokens": 83,
+          "fallback_reason": null,
+          "overflow_detected": false,
+          "overflow_tokens": 0,
+          "prompt_source": "context_packet",
+          "reranker": {
+            "combined_scores": [],
+            "cross_encoder_model": null,
+            "cross_encoder_scores": [],
+            "cross_encoder_top_k": null,
+            "cross_encoder_used": false,
+            "cross_encoder_weight": null,
+            "deterministic_scores": [
+              {
+                "candidate_id": "c0",
+                "deterministic_rank": 0,
+                "feature_contributions": {
+                  "confidence": 0.075,
+                  "importance": 0.075,
+                  "lexical_overlap": 0.35,
+                  "query_source_boost": 0.0,
+                  "recency": 0.1,
+                  "redundancy_penalty": -0.0,
+                  "semantic_score": 0.1,
+                  "similarity_score": 0.1,
+                  "source_priority": 0.09000000000000001,
+                  "status_penalty": -0.0,
+                  "usage_count": 0.0
+                },
+                "original_rank": 0,
+                "score": 0.89,
+                "source": "recent_messages"
+              },
+              {
+                "candidate_id": "c1",
+                "deterministic_rank": 1,
+                "feature_contributions": {
+                  "confidence": 0.12,
+                  "importance": 0.075,
+                  "lexical_overlap": 0.0,
+                  "query_source_boost": 0.0,
+                  "recency": 0.05,
+                  "redundancy_penalty": -0.0,
+                  "semantic_score": 0.1,
+                  "similarity_score": 0.1,
+                  "source_priority": 0.06,
+                  "status_penalty": -0.0,
+                  "usage_count": 0.0
+                },
+                "original_rank": 1,
+                "score": 0.505,
+                "source": "document_memory"
+              }
+            ],
+            "deterministic_top_margin": 0.385,
+            "fallback_reason": null,
+            "fallback_used": false,
+            "final_ranks": [
+              {
+                "candidate_id": "c0",
+                "final_rank": 0,
+                "original_rank": 0,
+                "source": "recent_messages"
+              },
+              {
+                "candidate_id": "c1",
+                "final_rank": 1,
+                "original_rank": 1,
+                "source": "document_memory"
+              }
+            ],
+            "hybrid_backend": null,
+            "llm_confidence": null,
+            "llm_ranked_candidate_ids": [],
+            "llm_rerank_considered": false,
+            "llm_rerank_skip_reason": null,
+            "llm_rerank_used": false,
+            "post_cross_encoder_top_margin": null,
+            "reranker_mode": "deterministic",
+            "top_candidate_sources": [
+              "recent_messages",
+              "document_memory"
+            ]
+          },
+          "retrieved_document_rows": [
+            {
+              "chunk_id": null,
+              "chunk_index": null,
+              "content": "The project stores chat messages in SQLite. No credentials are documented.",
+              "document_id": null,
+              "file_extension": null,
+              "file_name": null,
+              "record_id": "distractor:1",
+              "retrieval_backend": "e2e_fixture_document",
+              "retrieval_mode": null,
+              "similarity_score": 0.8,
+              "source": "document_memory",
+              "title": null
+            }
+          ],
+          "retrieved_memory_rows": [],
+          "routing_decision": {
+            "active_sources": [
+              "recent_messages",
+              "structured_memory",
+              "document_memory"
+            ],
+            "confidence": 1.0,
+            "context_profile": "mixed_memory_document",
+            "disabled_sources": [
+              "current_chat_gist",
+              "previous_chat_gist",
+              "raw_message_span"
+            ],
+            "fallback_mode": false,
+            "intent": "abstain_with_distractor",
+            "reason": "Document-like query detected; recent, structured, and document memory enabled.",
+            "routing_fallback_reason": null,
+            "routing_mode": "rule",
+            "use_document_memory": true,
+            "use_recent_messages": true,
+            "use_structured_memory": true
+          },
+          "safety_margin": 286,
+          "saved_memory_rows": [],
+          "timings_ms": {
+            "context_budget_allocation": 0.17,
+            "context_comparison": 0.05,
+            "context_packet_building": 0.17,
+            "context_packet_validation": 0.05,
+            "legacy_context_building": 0.85,
+            "main_model_call": 4407.29,
+            "reranking": 0.22,
+            "retrieval": 1.91,
+            "route_planning": 0.02,
+            "save_assistant_message": 3.08,
+            "save_user_message": 0.8,
+            "total_turn": 4416.23,
+            "update_memory_if_needed": 1.67
+          },
+          "token_estimator": "approximate"
+        }
+      }
+    },
+    {
+      "abstain_correct": null,
+      "answer_contains_expected": true,
+      "case_id": "hybrid_reranker_ordering",
+      "expected_context_included": true,
+      "expected_source_present": true,
+      "failed_reasons": [],
+      "forbidden_claim_violations": [],
+      "reranker_top_source_correct": true,
+      "scenario_pass": true,
+      "trace": {
+        "active_sources": [
+          "structured_memory",
+          "document_memory",
+          "raw_message_span"
+        ],
+        "answer": "The evidence supporting your library preference is found in the raw message span `[old-rerank-chat:1-2]`, where you explicitly stated, \"I prefer mature stable libraries.\"",
+        "case_id": "hybrid_reranker_ordering",
+        "context_packet": {
+          "candidate_sources": [
+            "structured_memory",
+            "document_memory",
+            "raw_message_span"
+          ],
+          "model_messages": [
+            {
+              "content": "Answer using the supplied memory and retrieved context. If the answer is unsupported, say I don't know.",
+              "role": "system"
+            },
+            {
+              "content": "Current structured memory:\n- preferences.libraries: User prefers mature libraries.",
+              "role": "system"
+            },
+            {
+              "content": "Document Memory:\n- [doc:generic] A generic document discusses library selection.\n\nRaw Message Span:\n- [old-rerank-chat:1-2] user: I prefer mature stable libraries.\nassistant: Noted.",
+              "role": "system"
+            },
+            {
+              "content": "What exact evidence supports my library preference?",
+              "role": "user"
+            }
+          ],
+          "sections": [
+            "system",
+            "structured_memory",
+            "retrieved_memory",
+            "recent_messages",
+            "latest_user_message"
+          ]
+        },
+        "errors": [],
+        "mode": "model",
+        "notes": "Hybrid reranker uses a fake structured ranking response without a live API.",
+        "query": "What exact evidence supports my library preference?",
+        "reranked_candidates": [
+          {
+            "chat_id": "old-rerank-chat",
+            "content": "user: I prefer mature stable libraries.\nassistant: Noted.",
+            "metadata": {
+              "end_message_id": 2,
+              "final_rank": 0,
+              "gist_id": null,
+              "message_count": 2,
+              "original_rank": 2,
+              "ranking_profile": "e2e_scenario",
+              "reranker_candidate_id": "c2",
+              "retrieval_mode": "raw_span_lookup",
+              "score_breakdown": {
+                "contributions": {
+                  "confidence": 0.15,
+                  "importance": 0.075,
+                  "lexical_overlap": 0.0,
+                  "query_source_boost": 0.25,
+                  "recency": 0.05,
+                  "redundancy_penalty": -0.0,
+                  "semantic_score": 0.1,
+                  "similarity_score": 0.1,
+                  "source_priority": 0.057999999999999996,
+                  "status_penalty": -0.0,
+                  "usage_count": 0.0
+                },
+                "features": {
+                  "confidence": 1.0,
+                  "importance": 0.5,
+                  "lexical_overlap": 0.0,
+                  "query_source_boost": 1.0,
+                  "recency": 0.5,
+                  "redundancy_penalty": 0.0,
+                  "semantic_score": 0.5,
+                  "similarity_score": 0.5,
+                  "source_priority": 0.58,
+                  "status_penalty": 0.0,
+                  "usage_count": 0.0
+                },
+                "final_score": 0.783,
+                "weights": {
+                  "confidence": 0.15,
+                  "importance": 0.15,
+                  "lexical_overlap": 0.35,
+                  "query_source_boost": 0.25,
+                  "recency": 0.1,
+                  "redundancy_penalty": 1.0,
+                  "semantic_score": 0.2,
+                  "similarity_score": 0.2,
+                  "source_priority": 0.1,
+                  "status_penalty": 1.0,
+                  "usage_count": 0.05
+                }
+              },
+              "source_chat_id": "old-rerank-chat",
+              "start_message_id": 1,
+              "status": "active",
+              "truncated": false
+            },
+            "record_id": "old-rerank-chat:1-2",
+            "score": 0.783,
+            "source": "raw_message_span",
+            "source_message_ids": [
+              1,
+              2
+            ]
+          },
+          {
+            "chat_id": "fixture-chat",
+            "content": "User prefers mature libraries.",
+            "metadata": {
+              "category": "preferences",
+              "confidence": 0.9,
+              "final_rank": 1,
+              "fixture": "e2e_scenario",
+              "key": "libraries",
+              "memory_id": "preferences:libraries",
+              "namespace": [
+                "user",
+                "default",
+                "semantic_memory"
+              ],
+              "original_rank": 0,
+              "ranking_profile": "e2e_scenario",
+              "reranker_candidate_id": "c0",
+              "retrieval_backend": "long_term_memory_chroma",
+              "retrieval_mode": "hybrid",
+              "score_breakdown": {
+                "contributions": {
+                  "confidence": 0.135,
+                  "importance": 0.075,
+                  "lexical_overlap": 0.0,
+                  "query_source_boost": 0.25,
+                  "recency": 0.05,
+                  "redundancy_penalty": -0.0,
+                  "semantic_score": 0.19,
+                  "similarity_score": 0.1,
+                  "source_priority": 0.095,
+                  "status_penalty": -0.0,
+                  "usage_count": 0.0
+                },
+                "features": {
+                  "confidence": 0.9,
+                  "importance": 0.5,
+                  "lexical_overlap": 0.0,
+                  "query_source_boost": 1.0,
+                  "recency": 0.5,
+                  "redundancy_penalty": 0.0,
+                  "semantic_score": 0.95,
+                  "similarity_score": 0.5,
+                  "source_priority": 0.95,
+                  "status_penalty": 0.0,
+                  "usage_count": 0.0
+                },
+                "final_score": 0.895,
+                "weights": {
+                  "confidence": 0.15,
+                  "importance": 0.15,
+                  "lexical_overlap": 0.35,
+                  "query_source_boost": 0.25,
+                  "recency": 0.1,
+                  "redundancy_penalty": 1.0,
+                  "semantic_score": 0.2,
+                  "similarity_score": 0.2,
+                  "source_priority": 0.1,
+                  "status_penalty": 1.0,
+                  "usage_count": 0.05
+                }
+              },
+              "source_chat_id": "fixture-chat",
+              "source_gist_id": null,
+              "source_message_ids": [],
+              "status": "active",
+              "vector_score": 0.95
+            },
+            "record_id": "preferences:libraries",
+            "score": 0.895,
+            "source": "structured_memory",
+            "source_message_ids": []
+          },
+          {
+            "chat_id": null,
+            "content": "A generic document discusses library selection.",
+            "metadata": {
+              "final_rank": 2,
+              "original_rank": 1,
+              "ranking_profile": "e2e_scenario",
+              "reranker_candidate_id": "c1",
+              "retrieval_backend": "e2e_fixture_document",
+              "score_breakdown": {
+                "contributions": {
+                  "confidence": 0.12,
+                  "importance": 0.075,
+                  "lexical_overlap": 0.06999999999999999,
+                  "query_source_boost": 0.0,
+                  "recency": 0.05,
+                  "redundancy_penalty": -0.0,
+                  "semantic_score": 0.1,
+                  "similarity_score": 0.1,
+                  "source_priority": 0.06,
+                  "status_penalty": -0.0,
+                  "usage_count": 0.0
+                },
+                "features": {
+                  "confidence": 0.8,
+                  "importance": 0.5,
+                  "lexical_overlap": 0.2,
+                  "query_source_boost": 0.0,
+                  "recency": 0.5,
+                  "redundancy_penalty": 0.0,
+                  "semantic_score": 0.5,
+                  "similarity_score": 0.5,
+                  "source_priority": 0.6,
+                  "status_penalty": 0.0,
+                  "usage_count": 0.0
+                },
+                "final_score": 0.575,
+                "weights": {
+                  "confidence": 0.15,
+                  "importance": 0.15,
+                  "lexical_overlap": 0.35,
+                  "query_source_boost": 0.25,
+                  "recency": 0.1,
+                  "redundancy_penalty": 1.0,
+                  "semantic_score": 0.2,
+                  "similarity_score": 0.2,
+                  "source_priority": 0.1,
+                  "status_penalty": 1.0,
+                  "usage_count": 0.05
+                }
+              },
+              "status": "active"
+            },
+            "record_id": "doc:generic",
+            "score": 0.575,
+            "source": "document_memory",
+            "source_message_ids": []
+          }
+        ],
+        "reranker_top_source": "raw_message_span",
+        "retrieved_candidates": [
+          {
+            "chat_id": "fixture-chat",
+            "content": "User prefers mature libraries.",
+            "metadata": {
+              "category": "preferences",
+              "confidence": 0.9,
+              "fixture": "e2e_scenario",
+              "key": "libraries",
+              "memory_id": "preferences:libraries",
+              "namespace": [
+                "user",
+                "default",
+                "semantic_memory"
+              ],
+              "retrieval_backend": "long_term_memory_chroma",
+              "retrieval_mode": "hybrid",
+              "source_chat_id": "fixture-chat",
+              "source_gist_id": null,
+              "source_message_ids": [],
+              "status": "active",
+              "vector_score": 0.95
+            },
+            "record_id": "preferences:libraries",
+            "score": 0.9,
+            "source": "structured_memory",
+            "source_message_ids": []
+          },
+          {
+            "chat_id": null,
+            "content": "A generic document discusses library selection.",
+            "metadata": {
+              "retrieval_backend": "e2e_fixture_document",
+              "status": "active"
+            },
+            "record_id": "doc:generic",
+            "score": 0.8,
+            "source": "document_memory",
+            "source_message_ids": []
+          },
+          {
+            "chat_id": "old-rerank-chat",
+            "content": "user: I prefer mature stable libraries.\nassistant: Noted.",
+            "metadata": {
+              "end_message_id": 2,
+              "gist_id": null,
+              "message_count": 2,
+              "retrieval_mode": "raw_span_lookup",
+              "source_chat_id": "old-rerank-chat",
+              "start_message_id": 1,
+              "status": "active",
+              "truncated": false
+            },
+            "record_id": "old-rerank-chat:1-2",
+            "score": 1.0,
+            "source": "raw_message_span",
+            "source_message_ids": [
+              1,
+              2
+            ]
+          }
+        ],
+        "source_plans": [
+          {
+            "enabled": false,
+            "filters": {},
+            "reason": "Controlled E2E scenario source plan.",
+            "source": "recent_messages"
+          },
+          {
+            "enabled": true,
+            "filters": {},
+            "reason": "Controlled E2E scenario source plan.",
+            "source": "structured_memory"
+          },
+          {
+            "enabled": true,
+            "filters": {},
+            "reason": "Controlled E2E scenario source plan.",
+            "source": "document_memory"
+          },
+          {
+            "enabled": false,
+            "filters": {},
+            "reason": "Controlled E2E scenario source plan.",
+            "source": "current_chat_gist"
+          },
+          {
+            "enabled": false,
+            "filters": {},
+            "reason": "Controlled E2E scenario source plan.",
+            "source": "previous_chat_gist"
+          },
+          {
+            "enabled": true,
+            "filters": {
+              "chat_id": "old-rerank-chat",
+              "end_message_id": 2,
+              "start_message_id": 1
+            },
+            "reason": "Controlled E2E scenario source plan.",
+            "source": "raw_message_span"
+          }
+        ],
+        "workflow_metadata": {
+          "answer_reserve": 512,
+          "context_comparison": {
+            "metadata": {
+              "comparison_type": "legacy_short_term_vs_trace_context_packet",
+              "full_prompts_included": false
+            },
+            "new_context_packet": {
+              "estimated_tokens": 130,
+              "has_latest_user_message": true,
+              "has_recent_messages": false,
+              "has_structured_memory": true,
+              "message_count": 4,
+              "section_order": [
+                "system",
+                "structured_memory",
+                "retrieved_memory",
+                "latest_user_message"
+              ]
+            },
+            "old_prompt": {
+              "estimated_tokens": 51,
+              "has_latest_user_message": true,
+              "has_recent_messages": false,
+              "has_structured_memory": false,
+              "message_count": 2,
+              "section_order": [
+                "system",
+                "latest_user_message"
+              ]
+            },
+            "token_difference": 79,
+            "token_difference_ratio": 1.549,
+            "warnings": [
+              "large_token_count_difference"
+            ]
+          },
+          "context_limit": 4096,
+          "context_manager": {
+            "context_manager_used": true,
+            "dropped_candidate_counts_by_source": {},
+            "final_prompt_sections": [
+              "system",
+              "structured_memory",
+              "retrieved_memory",
+              "recent_messages",
+              "latest_user_message"
+            ],
+            "included_candidate_counts_by_source": {
+              "document_memory": 1,
+              "raw_message_span": 1,
+              "structured_memory": 1
+            },
+            "source_budgets": {
+              "document_memory": 1636,
+              "raw_message_span": 327,
+              "structured_memory": 1308
+            }
+          },
+          "dropped_candidate_ids": [],
+          "dropped_candidate_reasons": [],
+          "estimated_prompt_tokens": 130,
+          "fallback_reason": null,
+          "overflow_detected": false,
+          "overflow_tokens": 0,
+          "prompt_source": "context_packet",
+          "reranker": {
+            "combined_scores": [],
+            "cross_encoder_model": "BAAI/bge-reranker-v2-m3",
+            "cross_encoder_scores": [],
+            "cross_encoder_top_k": 10,
+            "cross_encoder_used": false,
+            "cross_encoder_weight": 0.65,
+            "deterministic_scores": [
+              {
+                "candidate_id": "c0",
+                "deterministic_rank": 0,
+                "feature_contributions": {
+                  "confidence": 0.135,
+                  "importance": 0.075,
+                  "lexical_overlap": 0.0,
+                  "query_source_boost": 0.25,
+                  "recency": 0.05,
+                  "redundancy_penalty": -0.0,
+                  "semantic_score": 0.19,
+                  "similarity_score": 0.1,
+                  "source_priority": 0.095,
+                  "status_penalty": -0.0,
+                  "usage_count": 0.0
+                },
+                "original_rank": 0,
+                "score": 0.895,
+                "source": "structured_memory"
+              },
+              {
+                "candidate_id": "c2",
+                "deterministic_rank": 1,
+                "feature_contributions": {
+                  "confidence": 0.15,
+                  "importance": 0.075,
+                  "lexical_overlap": 0.0,
+                  "query_source_boost": 0.25,
+                  "recency": 0.05,
+                  "redundancy_penalty": -0.0,
+                  "semantic_score": 0.1,
+                  "similarity_score": 0.1,
+                  "source_priority": 0.057999999999999996,
+                  "status_penalty": -0.0,
+                  "usage_count": 0.0
+                },
+                "original_rank": 2,
+                "score": 0.783,
+                "source": "raw_message_span"
+              },
+              {
+                "candidate_id": "c1",
+                "deterministic_rank": 2,
+                "feature_contributions": {
+                  "confidence": 0.12,
+                  "importance": 0.075,
+                  "lexical_overlap": 0.06999999999999999,
+                  "query_source_boost": 0.0,
+                  "recency": 0.05,
+                  "redundancy_penalty": -0.0,
+                  "semantic_score": 0.1,
+                  "similarity_score": 0.1,
+                  "source_priority": 0.06,
+                  "status_penalty": -0.0,
+                  "usage_count": 0.0
+                },
+                "original_rank": 1,
+                "score": 0.575,
+                "source": "document_memory"
+              }
+            ],
+            "deterministic_top_margin": 0.11199999999999999,
+            "fallback_reason": null,
+            "fallback_used": false,
+            "final_ranks": [
+              {
+                "candidate_id": "c2",
+                "final_rank": 0,
+                "original_rank": 2,
+                "source": "raw_message_span"
+              },
+              {
+                "candidate_id": "c0",
+                "final_rank": 1,
+                "original_rank": 0,
+                "source": "structured_memory"
+              },
+              {
+                "candidate_id": "c1",
+                "final_rank": 2,
+                "original_rank": 1,
+                "source": "document_memory"
+              }
+            ],
+            "hybrid_backend": "auto",
+            "llm_confidence": 1.0,
+            "llm_ranked_candidate_ids": [
+              "c2",
+              "c0",
+              "c1"
+            ],
+            "llm_reason": "The user is asking for 'exact evidence'. Candidate c2 is a raw message span providing the direct quote from the user, which serves as the primary evidence. Candidate c0 is a structured summary of that preference, and c1 is a generic document that is likely irrelevant.",
+            "llm_rerank_considered": true,
+            "llm_rerank_skip_reason": null,
+            "llm_rerank_used": true,
+            "post_cross_encoder_top_margin": null,
+            "reranker_mode": "hybrid",
+            "top_candidate_sources": [
+              "structured_memory",
+              "raw_message_span",
+              "document_memory"
+            ]
+          },
+          "retrieved_document_rows": [
+            {
+              "chunk_id": null,
+              "chunk_index": null,
+              "content": "A generic document discusses library selection.",
+              "document_id": null,
+              "file_extension": null,
+              "file_name": null,
+              "record_id": "doc:generic",
+              "retrieval_backend": "e2e_fixture_document",
+              "retrieval_mode": null,
+              "similarity_score": 0.8,
+              "source": "document_memory",
+              "title": null
+            }
+          ],
+          "retrieved_memory_rows": [
+            {
+              "category": "preferences",
+              "key": "libraries",
+              "memory_id": "preferences:libraries",
+              "namespace": "user::default::semantic_memory",
+              "record_id": "preferences:libraries",
+              "source": "structured_memory",
+              "source_chat_id": "fixture-chat",
+              "source_message_ids": [],
+              "value": "User prefers mature libraries."
+            }
+          ],
+          "routing_decision": {
+            "active_sources": [
+              "structured_memory",
+              "document_memory",
+              "raw_message_span"
+            ],
+            "confidence": 1.0,
+            "context_profile": "mixed_memory_document",
+            "disabled_sources": [
+              "recent_messages",
+              "current_chat_gist",
+              "previous_chat_gist"
+            ],
+            "fallback_mode": false,
+            "intent": "hybrid_reranker_ordering",
+            "reason": "Document-like query detected; recent, structured, and document memory enabled.",
+            "routing_fallback_reason": null,
+            "routing_mode": "rule",
+            "use_document_memory": true,
+            "use_recent_messages": false,
+            "use_structured_memory": true
+          },
+          "safety_margin": 286,
+          "saved_memory_rows": [],
+          "timings_ms": {
+            "context_budget_allocation": 0.51,
+            "context_comparison": 0.11,
+            "context_packet_building": 0.51,
+            "context_packet_validation": 0.09,
+            "legacy_context_building": 5.84,
+            "main_model_call": 4985.25,
+            "reranking": 14261.2,
+            "retrieval": 1.49,
+            "route_planning": 0.02,
+            "save_assistant_message": 2.82,
+            "save_user_message": 0.77,
+            "total_turn": 19260.37,
+            "update_memory_if_needed": 2.16
+          },
+          "token_estimator": "approximate"
+        }
+      }
+    }
+  ],
+  "summary": {
+    "abstain_correctness": 1.0,
+    "answer_contains_expected": 1.0,
+    "expected_context_included": 1.0,
+    "expected_source_present": 1.0,
+    "failed_scenario_ids": [],
+    "forbidden_claim_violations": 0,
+    "reranker_top_source_correct": 1.0,
+    "scenario_pass_rate": 1.0,
+    "total_scenarios": 7
+  }
+}
