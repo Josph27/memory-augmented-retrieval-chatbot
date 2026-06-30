@@ -101,15 +101,29 @@ class CurrentChatGistSummarizer:
         min_messages_to_summarize: int = GIST_MIN_MESSAGES_TO_SUMMARIZE,
         keep_recent_messages: int = GIST_KEEP_RECENT_MESSAGES,
         max_messages_per_gist: int = GIST_MAX_MESSAGES_PER_GIST,
+        enabled: bool = False,
     ) -> None:
         self.database = database
         self.extractor = extractor or (LLMChatGistExtractor(model) if model else None)
         self.min_messages_to_summarize = min_messages_to_summarize
         self.keep_recent_messages = keep_recent_messages
         self.max_messages_per_gist = max_messages_per_gist
+        self.enabled = enabled
 
     def create_gist_if_needed(self, chat_id: str) -> ChatGistCreationResult:
-        """Create one current-chat gist from old unsummarized messages when eligible."""
+        """Backward-compatible alias for one explicit bounded gist batch."""
+        return self.process_current_chat_gist_batch(chat_id)
+
+    def process_current_chat_gist_batch(
+        self,
+        chat_id: str,
+    ) -> ChatGistCreationResult:
+        """Process at most one bounded current-chat orientation-gist batch."""
+        if not self.enabled:
+            return ChatGistCreationResult(
+                created=False,
+                skipped_reason="current_chat_gist_disabled",
+            )
         if self.extractor is None:
             return ChatGistCreationResult(
                 created=False,
@@ -151,8 +165,10 @@ class CurrentChatGistSummarizer:
                 "important_facts": summary.important_facts,
                 "corrections": summary.corrections,
                 "source_message_count": len(messages),
+                "source_message_ids": message_ids,
                 "summarizer": self.extractor.__class__.__name__,
                 "status": "active",
+                "evidence_role": "orientation_only",
             },
             gist_processed_message_ids=message_ids,
         )
