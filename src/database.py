@@ -97,7 +97,8 @@ class Database:
                     title TEXT,
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL,
-                    model_name TEXT
+                    model_name TEXT,
+                    active INTEGER NOT NULL DEFAULT 1
                 );
 
                 CREATE TABLE IF NOT EXISTS messages (
@@ -207,6 +208,7 @@ class Database:
             )
             self._ensure_messages_summarized_column(connection)
             self._ensure_chats_model_name_column(connection)
+            self._ensure_chats_active_column(connection)
             connection.execute(
                 """
                 CREATE INDEX IF NOT EXISTS idx_messages_chat_summarized
@@ -233,6 +235,17 @@ class Database:
         }
         if "model_name" not in columns:
             connection.execute("ALTER TABLE chats ADD COLUMN model_name TEXT")
+
+    def _ensure_chats_active_column(self, connection: sqlite3.Connection) -> None:
+        """Add `chats.active` for databases created before chat lifecycle support."""
+        columns = {
+            row["name"]
+            for row in connection.execute("PRAGMA table_info(chats)").fetchall()
+        }
+        if "active" not in columns:
+            connection.execute(
+                "ALTER TABLE chats ADD COLUMN active INTEGER NOT NULL DEFAULT 1"
+            )
 
     def create_chat(
         self,
@@ -325,6 +338,48 @@ class Database:
                 "UPDATE chats SET model_name = ? WHERE id = ?",
                 (model_name, chat_id),
             )
+
+    def mark_chat_active(self, chat_id: str) -> None:
+        """Mark a stored chat as active."""
+        with self.connect() as connection:
+            connection.execute(
+                "UPDATE chats SET active = 1 WHERE id = ?",
+                (chat_id,),
+            )
+
+    def mark_chat_inactive(self, chat_id: str) -> None:
+        """Mark a stored chat as inactive."""
+        with self.connect() as connection:
+            connection.execute(
+                "UPDATE chats SET active = 0 WHERE id = ?",
+                (chat_id,),
+            )
+
+    def list_active_chats(self) -> list[dict]:
+        """Return active chats ordered by most recent update."""
+        with self.connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT id, title, created_at, updated_at, model_name, active
+                FROM chats
+                WHERE active = 1
+                ORDER BY updated_at DESC, created_at DESC
+                """
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def list_inactive_chats(self) -> list[dict]:
+        """Return inactive chats ordered by most recent update."""
+        with self.connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT id, title, created_at, updated_at, model_name, active
+                FROM chats
+                WHERE active = 0
+                ORDER BY updated_at DESC, created_at DESC
+                """
+            ).fetchall()
+        return [dict(row) for row in rows]
 
     def message_count(self, chat_id: str) -> int:
         """Return the number of persisted messages for a chat."""
