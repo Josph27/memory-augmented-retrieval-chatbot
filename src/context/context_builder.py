@@ -167,6 +167,13 @@ class ContextBuilder:
         budget: int,
     ) -> SelectedContext:
         """Select highest-ranked candidates that fit in one source budget."""
+        if source == "recent_messages":
+            return select_newest_recent_suffix(
+                candidates=candidates,
+                budget=budget,
+                token_estimator=self.token_estimator,
+            )
+
         selected: list[MemoryCandidate] = []
         dropped: list[dict[str, Any]] = []
         used_tokens = 0
@@ -387,6 +394,44 @@ def prepare_recent_candidates(
         kept.append(candidate)
 
     return sorted(kept, key=recent_message_sort_key), dropped
+
+
+def select_newest_recent_suffix(
+    candidates: list[MemoryCandidate],
+    budget: int,
+    token_estimator: TokenEstimator,
+) -> SelectedContext:
+    """Select the newest contiguous recent-message suffix that fits."""
+    ordered = sorted(candidates, key=recent_message_sort_key)
+    selected_newest_first: list[MemoryCandidate] = []
+    used_tokens = 0
+    first_dropped_index = -1
+
+    for index in range(len(ordered) - 1, -1, -1):
+        candidate = ordered[index]
+        candidate_tokens = token_estimator.estimate_text(candidate.content)
+        if candidate_tokens + used_tokens > budget:
+            first_dropped_index = index
+            break
+        selected_newest_first.append(candidate)
+        used_tokens += candidate_tokens
+
+    selected = list(reversed(selected_newest_first))
+    dropped = [
+        {
+            "record_id": candidate.record_id,
+            "source": candidate.source,
+            "reason": "source_budget_exceeded",
+            "estimated_tokens": token_estimator.estimate_text(candidate.content),
+            "source_budget": budget,
+        }
+        for candidate in ordered[: first_dropped_index + 1]
+    ]
+    return SelectedContext(
+        selected=selected,
+        dropped=dropped,
+        used_tokens=used_tokens,
+    )
 
 
 def is_latest_user_candidate(

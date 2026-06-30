@@ -4,6 +4,19 @@ from src.context.context_builder import ContextBuilder
 from src.core.contracts import ContextBudget, MemoryCandidate, RoutePlan, SourcePlan
 
 
+class WordTokenEstimator:
+    """Deterministic token estimator for recent-message budget tests."""
+
+    backend = "test_words"
+    model_name = None
+
+    def estimate_text(self, text: str) -> int:
+        return len(text.split())
+
+    def estimate_messages(self, messages: list[dict[str, str]]) -> int:
+        return sum(self.estimate_text(message["content"]) for message in messages)
+
+
 def candidate(
     source: str,
     content: str,
@@ -50,14 +63,14 @@ def test_context_builder_respects_budgets_and_records_drops() -> None:
             0.8,
             "m2",
         ),
-        candidate("recent_messages", "short recent", 0.7, "r1", role="user"),
         candidate(
             "recent_messages",
             "this recent message is too long for the remaining tiny source budget",
             0.6,
-            "r2",
+            "r1",
             role="assistant",
         ),
+        candidate("recent_messages", "short recent", 0.7, "r2", role="user"),
     ]
 
     packet = builder.build(
@@ -268,6 +281,186 @@ def test_context_builder_excludes_latest_user_message_from_recent_candidates() -
         and item["reason"] == "latest_user_message_excluded"
         for item in packet.metadata["dropped_candidates"]
     )
+
+
+def test_recent_budget_retains_newest_fitting_suffix_in_chronological_order() -> None:
+    builder = ContextBuilder(token_estimator=WordTokenEstimator())
+    budget = ContextBudget(source_token_budgets={"recent_messages": 4})
+    ranked = [
+        candidate(
+            "recent_messages",
+            "newest message",
+            0.1,
+            "r3",
+            role="assistant",
+            source_message_id=3,
+        ),
+        candidate(
+            "recent_messages",
+            "second newest",
+            0.9,
+            "r2",
+            role="user",
+            source_message_id=2,
+        ),
+        candidate(
+            "recent_messages",
+            "oldest message",
+            0.8,
+            "r1",
+            role="assistant",
+            source_message_id=1,
+        ),
+    ]
+
+    packet = builder.build(
+        system_prompt="system",
+        latest_user_message={"role": "user", "content": "current query"},
+        ranked_candidates=ranked,
+        context_budget=budget,
+        route_plan=RoutePlan(query="q", sources=[]),
+    )
+
+    assert packet.recent_message_ids == [2, 3]
+    assert [message["content"] for message in packet.model_messages] == [
+        "system",
+        "second newest",
+        "newest message",
+        "current query",
+    ]
+    assert packet.metadata["dropped_candidate_ids"] == ["r1"]
+
+
+def test_recent_suffix_drops_older_messages_before_newer_messages() -> None:
+    builder = ContextBuilder(token_estimator=WordTokenEstimator())
+    budget = ContextBudget(source_token_budgets={"recent_messages": 4})
+    ranked = [
+        candidate(
+            "recent_messages",
+            "old fits",
+            0.9,
+            "r1",
+            role="user",
+            source_message_id=1,
+        ),
+        candidate(
+            "recent_messages",
+            "middle message cannot fit",
+            0.8,
+            "r2",
+            role="assistant",
+            source_message_id=2,
+        ),
+        candidate(
+            "recent_messages",
+            "new fits",
+            0.7,
+            "r3",
+            role="user",
+            source_message_id=3,
+        ),
+    ]
+
+    packet = builder.build(
+        system_prompt="system",
+        latest_user_message={"role": "user", "content": "current query"},
+        ranked_candidates=ranked,
+        context_budget=budget,
+        route_plan=RoutePlan(query="q", sources=[]),
+    )
+
+    assert packet.recent_message_ids == [3]
+    assert packet.metadata["dropped_candidate_ids"] == ["r1", "r2"]
+    assert [message["content"] for message in packet.model_messages] == [
+        "system",
+        "new fits",
+        "current query",
+    ]
+
+
+def test_only_newest_prior_recent_message_fits_with_current_turn_separate() -> None:
+    builder = ContextBuilder(token_estimator=WordTokenEstimator())
+    budget = ContextBudget(source_token_budgets={"recent_messages": 2})
+    latest = {"role": "user", "content": "current query"}
+    ranked = [
+        candidate(
+            "recent_messages",
+            "old message has extra words",
+            0.8,
+            "r1",
+            role="user",
+            source_message_id=1,
+        ),
+        candidate(
+            "recent_messages",
+            "new reply",
+            0.7,
+            "r2",
+            role="assistant",
+            source_message_id=2,
+        ),
+        candidate(
+            "recent_messages",
+            "current query",
+            1.0,
+            "r3",
+            role="user",
+            source_message_id=3,
+        ),
+    ]
+
+    packet = builder.build(
+        system_prompt="system",
+        latest_user_message=latest,
+        ranked_candidates=ranked,
+        context_budget=budget,
+        route_plan=RoutePlan(query="q", sources=[]),
+    )
+
+    assert packet.recent_message_ids == [2]
+    assert [message["content"] for message in packet.model_messages] == [
+        "system",
+        "new reply",
+        "current query",
+    ]
+    assert packet.model_messages.count(latest) == 1
+
+
+def test_no_prior_recent_message_fits_but_current_turn_remains_once() -> None:
+    builder = ContextBuilder(token_estimator=WordTokenEstimator())
+    budget = ContextBudget(source_token_budgets={"recent_messages": 0})
+    latest = {"role": "user", "content": "current query"}
+    ranked = [
+        candidate(
+            "recent_messages",
+            "old message",
+            0.5,
+            "r1",
+            role="assistant",
+            source_message_id=1,
+        ),
+        candidate(
+            "recent_messages",
+            "current query",
+            1.0,
+            "r2",
+            role="user",
+            source_message_id=2,
+        ),
+    ]
+
+    packet = builder.build(
+        system_prompt="system",
+        latest_user_message=latest,
+        ranked_candidates=ranked,
+        context_budget=budget,
+        route_plan=RoutePlan(query="q", sources=[]),
+    )
+
+    assert packet.recent_message_ids == []
+    assert packet.model_messages == [{"role": "system", "content": "system"}, latest]
+    assert packet.model_messages.count(latest) == 1
+    assert set(packet.metadata["dropped_candidate_ids"]) == {"r1", "r2"}
 
 
 def test_context_builder_detects_overflow_and_drops_low_ranked_non_recent() -> None:
