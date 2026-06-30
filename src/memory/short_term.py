@@ -25,6 +25,12 @@ from src.memory.structured_state import (
 
 
 MEMORY_CONTEXT_ROLE = "system"
+CHAT_END_NOOP_REASONS = frozenset(
+    {
+        "langmem_no_valid_memories",
+        "no_user_messages",
+    }
+)
 logger = logging.getLogger(__name__)
 
 
@@ -34,6 +40,18 @@ class ShortTermContext:
 
     memory_state: dict[str, list[dict[str, Any]]]
     raw_messages: list[StoredMessage]
+
+
+@dataclass(frozen=True)
+class ChatEndMemoryProcessingResult:
+    """Bounded chat-end memory processing outcome."""
+
+    processed_message_count: int
+    batch_count: int
+
+
+class ChatEndMemoryProcessingError(RuntimeError):
+    """Raised when a pending chat-end memory batch cannot be accepted."""
 
 
 class StructuredMemoryUpdater(Protocol):
@@ -193,6 +211,78 @@ class ShortTermMemory:
             raw_message_limit=self.raw_message_limit,
             batch_size=MEMORY_REBUILD_BATCH_SIZE,
         )
+
+    def process_all_for_chat_end(
+        self,
+        chat_id: str,
+    ) -> ChatEndMemoryProcessingResult:
+        """Process all pending messages in bounded configured-size batches.
+
+        Each batch follows the normal structured-memory storage path. Messages
+        are marked processed only after that batch is accepted and its
+        compatibility state is stored.
+        """
+        self.last_saved_memory_rows = []
+        processed_message_count = 0
+        batch_count = 0
+        batch_size = max(1, self.memory_update_batch_size)
+
+        while True:
+            messages = self.database.old_unsummarized_messages(
+                chat_id=chat_id,
+                raw_message_limit=0,
+                batch_size=batch_size,
+            )
+            if not messages:
+                return ChatEndMemoryProcessingResult(
+                    processed_message_count=processed_message_count,
+                    batch_count=batch_count,
+                )
+
+            current_memory = load_memory_state(
+                self.database.chat_memory_state(chat_id)
+            )
+            result = self.structured_memory.update(
+                existing_memory=current_memory,
+                messages=messages,
+            )
+            reason = result.rejection_reason or "unknown"
+            valid_noop = not result.accepted and reason in CHAT_END_NOOP_REASONS
+            if not result.accepted and not valid_noop:
+                logger.error(
+                    "chat end memory batch rejected chat_id=%s message_ids=%s reason=%s",
+                    chat_id,
+                    [message.id for message in messages],
+                    reason,
+                )
+                raise ChatEndMemoryProcessingError(
+                    f"Chat-end memory processing rejected for {chat_id}: {reason}"
+                )
+            if valid_noop:
+                logger.info(
+                    "chat end memory batch skipped chat_id=%s message_ids=%s reason=%s",
+                    chat_id,
+                    [message.id for message in messages],
+                    reason,
+                )
+
+            self.database.upsert_chat_memory_state(
+                chat_id,
+                dumps_memory_state(result.memory_state),
+            )
+            self.database.mark_messages_summarized(
+                [message.id for message in messages]
+            )
+            saved_records = getattr(
+                self.structured_memory,
+                "last_saved_records",
+                [],
+            )
+            self.last_saved_memory_rows.extend(
+                memory_write_to_trace_row(record) for record in saved_records
+            )
+            processed_message_count += len(messages)
+            batch_count += 1
 
 
 def elapsed_ms(started: float) -> float:
