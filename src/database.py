@@ -6,7 +6,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Iterator
+from typing import Any, Iterator
 
 
 def utc_now() -> str:
@@ -380,6 +380,137 @@ class Database:
                 """
             ).fetchall()
         return [dict(row) for row in rows]
+
+    def fork_chat(self, chat_id: str, new_chat_id: str) -> None:
+        """Transactionally copy one chat and remap chat-local message provenance.
+
+        The legacy per-chat compatibility cache and namespaced long-term
+        memories are intentionally not copied. User/project memories remain
+        shared through their existing namespaces, and the fork can rebuild any
+        derived per-chat cache from its copied raw messages.
+        """
+        timestamp = utc_now()
+        with self.connect() as connection:
+            chat = connection.execute(
+                """
+                SELECT title, model_name
+                FROM chats
+                WHERE id = ?
+                """,
+                (chat_id,),
+            ).fetchone()
+            if chat is None:
+                raise ValueError(f"Chat not found: {chat_id}")
+
+            connection.execute(
+                """
+                INSERT INTO chats (
+                    id, title, created_at, updated_at, model_name, active
+                )
+                VALUES (?, ?, ?, ?, ?, 1)
+                """,
+                (
+                    new_chat_id,
+                    chat["title"],
+                    timestamp,
+                    timestamp,
+                    chat["model_name"],
+                ),
+            )
+
+            message_id_map: dict[int, int] = {}
+            messages = connection.execute(
+                """
+                SELECT id, role, content, summarized, created_at
+                FROM messages
+                WHERE chat_id = ?
+                ORDER BY id ASC
+                """,
+                (chat_id,),
+            ).fetchall()
+            for message in messages:
+                cursor = connection.execute(
+                    """
+                    INSERT INTO messages (
+                        chat_id, role, content, summarized, created_at
+                    )
+                    VALUES (?, ?, ?, ?, ?)
+                    """,
+                    (
+                        new_chat_id,
+                        message["role"],
+                        message["content"],
+                        message["summarized"],
+                        message["created_at"],
+                    ),
+                )
+                message_id_map[int(message["id"])] = int(cursor.lastrowid)
+
+            gists = connection.execute(
+                """
+                SELECT
+                    source_type,
+                    gist_text,
+                    topics_json,
+                    decisions_json,
+                    open_tasks_json,
+                    start_message_id,
+                    end_message_id,
+                    created_at,
+                    updated_at,
+                    metadata_json
+                FROM chat_gists
+                WHERE chat_id = ?
+                ORDER BY id ASC
+                """,
+                (chat_id,),
+            ).fetchall()
+            for gist in gists:
+                start_message_id = remap_message_id(
+                    gist["start_message_id"],
+                    message_id_map,
+                )
+                end_message_id = remap_message_id(
+                    gist["end_message_id"],
+                    message_id_map,
+                )
+                metadata_json = remap_chat_local_json(
+                    gist["metadata_json"],
+                    message_id_map=message_id_map,
+                    source_chat_id=chat_id,
+                    new_chat_id=new_chat_id,
+                )
+                connection.execute(
+                    """
+                    INSERT INTO chat_gists (
+                        chat_id,
+                        source_type,
+                        gist_text,
+                        topics_json,
+                        decisions_json,
+                        open_tasks_json,
+                        start_message_id,
+                        end_message_id,
+                        created_at,
+                        updated_at,
+                        metadata_json
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        new_chat_id,
+                        gist["source_type"],
+                        gist["gist_text"],
+                        gist["topics_json"],
+                        gist["decisions_json"],
+                        gist["open_tasks_json"],
+                        start_message_id,
+                        end_message_id,
+                        gist["created_at"],
+                        gist["updated_at"],
+                        metadata_json,
+                    ),
+                )
 
     def message_count(self, chat_id: str) -> int:
         """Return the number of persisted messages for a chat."""
@@ -942,3 +1073,91 @@ class Database:
             updated_at=row["updated_at"],
             metadata_json=row["metadata_json"],
         )
+
+
+MESSAGE_ID_METADATA_KEYS = {
+    "start_message_id",
+    "end_message_id",
+    "message_start_id",
+    "message_end_id",
+    "last_summarized_message_id",
+}
+CHAT_ID_METADATA_KEYS = {"chat_id", "source_chat_id"}
+
+
+def remap_message_id(
+    message_id: int | None,
+    message_id_map: dict[int, int],
+) -> int | None:
+    """Map one optional chat-local message id or reject stale provenance."""
+    if message_id is None:
+        return None
+    try:
+        return message_id_map[int(message_id)]
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ValueError(f"Cannot remap chat-local message id: {message_id}") from exc
+
+
+def remap_chat_local_json(
+    value: str,
+    *,
+    message_id_map: dict[int, int],
+    source_chat_id: str,
+    new_chat_id: str,
+) -> str:
+    """Remap message/chat provenance inside one JSON document."""
+    try:
+        parsed = json.loads(value)
+    except (TypeError, json.JSONDecodeError) as exc:
+        raise ValueError("Cannot fork invalid chat-local JSON") from exc
+    remapped = remap_chat_local_provenance(
+        parsed,
+        message_id_map=message_id_map,
+        source_chat_id=source_chat_id,
+        new_chat_id=new_chat_id,
+    )
+    return json.dumps(remapped, ensure_ascii=True)
+
+
+def remap_chat_local_provenance(
+    value: Any,
+    *,
+    message_id_map: dict[int, int],
+    source_chat_id: str,
+    new_chat_id: str,
+) -> Any:
+    """Recursively remap recognized chat-local provenance fields."""
+    if isinstance(value, list):
+        return [
+            remap_chat_local_provenance(
+                item,
+                message_id_map=message_id_map,
+                source_chat_id=source_chat_id,
+                new_chat_id=new_chat_id,
+            )
+            for item in value
+        ]
+    if not isinstance(value, dict):
+        return value
+
+    remapped: dict[str, Any] = {}
+    for key, item in value.items():
+        if key == "source_message_ids":
+            if not isinstance(item, list):
+                raise ValueError("source_message_ids must be a list")
+            remapped[key] = [
+                remap_message_id(message_id, message_id_map)
+                for message_id in item
+            ]
+        elif key in MESSAGE_ID_METADATA_KEYS:
+            remapped[key] = remap_message_id(item, message_id_map)
+        elif key in CHAT_ID_METADATA_KEYS and item == source_chat_id:
+            remapped[key] = new_chat_id
+        else:
+            remapped[key] = remap_chat_local_provenance(
+                item,
+                message_id_map=message_id_map,
+                source_chat_id=source_chat_id,
+                new_chat_id=new_chat_id,
+            )
+    return remapped
