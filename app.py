@@ -170,9 +170,18 @@ async def on_message(message: cl.Message) -> None:
 
     await cl.Message(content=result.answer).send()
 
-    # P4.3: Chat page action buttons
+    # P4.3: Chat page action buttons — clickable breadcrumbs + end/fork/new
     await cl.Message(
-        content=" | ".join(["`[Home]`", "`[Chats]`", "`[Docs]`", "`[Mem]`"]),
+        content="**Actions**",
+        actions=[
+            cl.Action(name="end_chat", label="End Chat", payload={"value": "end"}),
+            cl.Action(name="fork_chat", label="Fork Chat", payload={"value": "fork"}),
+            cl.Action(name="new_chat", label="New Chat", payload={"value": "new"}),
+            cl.Action(name="nav_home", label="Home", payload={"value": "home"}),
+            cl.Action(name="nav_chats", label="Chats", payload={"value": "chats"}),
+            cl.Action(name="nav_documents", label="Docs", payload={"value": "docs"}),
+            cl.Action(name="nav_memories", label="Memories", payload={"value": "mem"}),
+        ],
     ).send()
 
     if demo_memory_trace_enabled():
@@ -286,6 +295,78 @@ def model_name_for_chat(chat_id: str) -> str:
     if chat and chat.model_name:
         return chat.model_name
     return MODEL_PROFILES_BY_KEY[DEFAULT_MODEL_PROFILE_KEY].model_name
+
+
+# ---------------------------------------------------------------------------
+# Phase 4: Action callbacks — wire UI buttons to backend actions
+# ---------------------------------------------------------------------------
+
+
+@cl.action_callback("end_chat")
+async def end_chat_handler(action: cl.Action) -> None:
+    """Process current chat into long-term memory and mark it inactive."""
+    chat_id = cl.user_session.get("chat_id")
+    if not chat_id:
+        await cl.Message(content="No active chat to end.").send()
+        return
+    model_name = cl.user_session.get("model_name") or model_name_for_chat(chat_id)
+    chat_service = chat_service_for_model(model_name)
+    ChatEndAction(database=database, memory=chat_service.memory).execute(chat_id)
+    cl.user_session.set("tab", "home")
+    await cl.Message(content=f"Chat ended. Memories extracted and saved.").send()
+    await show_home_page()
+
+
+@cl.action_callback("fork_chat")
+async def fork_chat_handler(action: cl.Action) -> None:
+    """Duplicate the current chat into a new active chat."""
+    chat_id = cl.user_session.get("chat_id")
+    if not chat_id:
+        await cl.Message(content="No active chat to fork.").send()
+        return
+    new_id = ChatForkAction(database=database).execute(chat_id)
+    cl.user_session.set("chat_id", new_id)
+    cl.user_session.set("tab", "chat")
+    await cl.Message(content=f"Chat forked. New chat ID: {new_id[:8]}...").send()
+
+
+@cl.action_callback("new_chat")
+async def new_chat_handler(action: cl.Action) -> None:
+    """Start a brand-new chat session."""
+    model_name = cl.user_session.get("model_name") or selected_model_name()
+    chat_service = chat_service_for_model(model_name)
+    chat_id = chat_service.start_chat()
+    cl.user_session.set("chat_id", chat_id)
+    cl.user_session.set("tab", "chat")
+    await cl.Message(content=f"New chat started ({chat_id[:8]}...).").send()
+
+
+@cl.action_callback("nav_home")
+async def nav_home_handler(action: cl.Action) -> None:
+    """Navigate to the home page."""
+    cl.user_session.set("tab", "home")
+    await show_home_page()
+
+
+@cl.action_callback("nav_chats")
+async def nav_chats_handler(action: cl.Action) -> None:
+    """Navigate to the chats list page."""
+    cl.user_session.set("tab", "chats")
+    await show_chats_page()
+
+
+@cl.action_callback("nav_documents")
+async def nav_documents_handler(action: cl.Action) -> None:
+    """Navigate to the documents page."""
+    cl.user_session.set("tab", "documents")
+    await show_documents_page()
+
+
+@cl.action_callback("nav_memories")
+async def nav_memories_handler(action: cl.Action) -> None:
+    """Navigate to the memories page."""
+    cl.user_session.set("tab", "memories")
+    await show_memories_page()
 
 
 # ---------------------------------------------------------------------------
