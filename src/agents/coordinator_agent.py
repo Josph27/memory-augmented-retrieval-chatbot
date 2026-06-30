@@ -1,19 +1,25 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from time import perf_counter
 from uuid import uuid4
 
-from openai import OpenAIError
+from openai import OpenAIError  # type: ignore[import-untyped]
 
 from src.agents.chat_agent import ChatAgent
 from src.agents.context_builder_agent import ContextBuilderAgent
 from src.agents.context_manager_agent import ContextManagerAgent
+from src.agents.gisting_agent import GistingAgent
+from src.agents.query_augmentation_agent import (
+    AugmentedQuery,
+    QueryAugmentationAgent,
+)
 from src.agents.short_term_memory_agent import ShortTermMemoryAgent
 from src.context.context_budget_allocator import ContextBudgetAllocator
 from src.context.context_builder import ContextBuilder as TraceContextBuilder
 from src.context.context_comparator import ContextComparator
 from src.context.prompt_messages import context_packet_to_model_messages
-from src.core.contracts import AgentTurnResult, WorkflowTrace
+from src.core.contracts import AgentTurnResult, MemoryCandidate, SubQuery, WorkflowTrace
 from src.database import Database
 from src.memory.memory_trace import (
     document_memory_candidate_trace_rows,
@@ -21,6 +27,7 @@ from src.memory.memory_trace import (
 )
 from src.retrieval.reranker import MemoryReranker
 from src.retrieval.retriever_dispatcher import RetrieverDispatcher
+from src.routing.query_analyzer import QueryAnalyzer
 from src.routing.route_planner import RoutePlanner
 from src.routing.routing_agent import RoutingAgent
 
@@ -46,6 +53,8 @@ class CoordinatorAgent:
         context_comparator: ContextComparator | None = None,
         routing_agent: RoutingAgent | None = None,
         context_manager_agent: ContextManagerAgent | None = None,
+        gisting_agent: GistingAgent | None = None,
+        query_augmentation_agent: QueryAugmentationAgent | None = None,
     ) -> None:
         self.database = database
         self.memory_agent = memory_agent
@@ -58,6 +67,8 @@ class CoordinatorAgent:
         self.context_budget_allocator = context_budget_allocator or ContextBudgetAllocator()
         self.trace_context_builder = trace_context_builder or TraceContextBuilder()
         self.context_manager_agent = context_manager_agent
+        self._gisting_agent = gisting_agent
+        self._query_augmentation_agent = query_augmentation_agent
         self.context_comparator = context_comparator or ContextComparator()
 
     def run_turn(self, chat_id: str, content: str) -> AgentTurnResult:
@@ -70,17 +81,52 @@ class CoordinatorAgent:
         route_plan = routing_decision.route_plan
         timings["route_planning"] = elapsed_ms(stage_started)
         stage_started = perf_counter()
+        if self._query_augmentation_agent is not None:
+            augmented_query = self._query_augmentation_agent.augment(content)
+        else:
+            augmented_query = AugmentedQuery(
+                sub_queries=[SubQuery(text=content)],
+                original=content,
+            )
+        timings["query_augmentation"] = elapsed_ms(stage_started)
+        stage_started = perf_counter()
         user_message_id = self.database.save_message(
             chat_id=chat_id,
             role="user",
             content=content,
         )
         timings["save_user_message"] = elapsed_ms(stage_started)
+        errors: list[str] = []
         stage_started = perf_counter()
-        retrieved_candidates = self.retriever_dispatcher.retrieve(
-            chat_id=chat_id,
-            route_plan=route_plan,
-        )
+        all_candidates: list[MemoryCandidate] = []
+        _query_analyzer = QueryAnalyzer()
+        for sub_query in augmented_query.sub_queries:
+            try:
+                needs_docs = _evaluate_doc_necessity(sub_query.text, _query_analyzer)
+                sources_for_sub = list(sub_query.sources)
+                if needs_docs and "document_memory" not in sources_for_sub:
+                    sources_for_sub.append("document_memory")
+                per_sub_sources = [
+                    replace(sp, query=sub_query.text) if sp.source in sources_for_sub else sp
+                    for sp in route_plan.sources
+                ]
+                sub_route_plan = replace(route_plan, sources=per_sub_sources)
+                candidates = self.retriever_dispatcher.retrieve(
+                    chat_id=chat_id,
+                    route_plan=sub_route_plan,
+                )
+                all_candidates.extend(candidates)
+            except Exception as exc:
+                errors.append(f"sub_query_failed: {exc}")
+                continue
+        seen: dict[str | int, MemoryCandidate] = {}
+        for c in all_candidates:
+            key = c.record_id
+            if key is None:
+                seen[f"_none_{id(c)}"] = c
+            elif key not in seen or (c.score or 0) > (seen[key].score or 0):
+                seen[key] = c
+        retrieved_candidates = list(seen.values())
         timings["retrieval"] = elapsed_ms(stage_started)
         stage_started = perf_counter()
         rerank_result = self.memory_reranker.rank_with_trace(
@@ -144,7 +190,6 @@ class CoordinatorAgent:
             fallback_reason = prompt_assembly.fallback_reason
             final_model_messages = model_messages
 
-        errors: list[str] = []
         try:
             stage_started = perf_counter()
             response = self.chat_agent.generate(final_model_messages)
@@ -165,6 +210,18 @@ class CoordinatorAgent:
             content=response,
         )
         timings["save_assistant_message"] = elapsed_ms(stage_started)
+        if self._gisting_agent is not None:
+            try:
+                stage_started = perf_counter()
+                self._gisting_agent.create_gist(
+                    chat_id=chat_id,
+                    query=content,
+                    answer=response,
+                )
+                timings["gist_creation"] = elapsed_ms(stage_started)
+            except Exception as gist_error:
+                timings["gist_creation"] = elapsed_ms(stage_started)
+                errors.append(f"gist: {gist_error}")
         try:
             stage_started = perf_counter()
             self.memory_agent.update_memory_if_needed(chat_id)
@@ -175,9 +232,7 @@ class CoordinatorAgent:
             # Memory updates should not break the visible chat response. The next
             # successful turn can retry because messages remain unprocessed.
         timings["total_turn"] = elapsed_ms(total_started)
-        saved_memory_rows = list(
-            getattr(self.memory_agent.memory, "last_saved_memory_rows", [])
-        )
+        saved_memory_rows = list(getattr(self.memory_agent.memory, "last_saved_memory_rows", []))
         retrieved_memory_rows = structured_memory_candidate_trace_rows(retrieved_candidates)
         retrieved_document_rows = document_memory_candidate_trace_rows(retrieved_candidates)
 
@@ -190,6 +245,7 @@ class CoordinatorAgent:
             context_budget=context_budget,
             context_packet=trace_context_packet,
             termination_reason=TERMINATION_RESPONSE_SAVED,
+            augmented_query=augmented_query,
             errors=errors,
             metadata={
                 "context_comparison": context_comparison.to_dict(),
@@ -205,13 +261,9 @@ class CoordinatorAgent:
                 "context_limit": trace_context_packet.metadata.get("context_limit"),
                 "answer_reserve": trace_context_packet.metadata.get("answer_reserve"),
                 "safety_margin": trace_context_packet.metadata.get("safety_margin"),
-                "overflow_detected": trace_context_packet.metadata.get(
-                    "overflow_detected"
-                ),
+                "overflow_detected": trace_context_packet.metadata.get("overflow_detected"),
                 "overflow_tokens": trace_context_packet.metadata.get("overflow_tokens"),
-                "dropped_candidate_ids": trace_context_packet.metadata.get(
-                    "dropped_candidate_ids"
-                ),
+                "dropped_candidate_ids": trace_context_packet.metadata.get("dropped_candidate_ids"),
                 "dropped_candidate_reasons": trace_context_packet.metadata.get(
                     "dropped_candidate_reasons"
                 ),
@@ -321,3 +373,9 @@ class CoordinatorAgent:
 def elapsed_ms(started: float) -> float:
     """Return elapsed milliseconds rounded for compact timing logs."""
     return round((perf_counter() - started) * 1000, 2)
+
+
+def _evaluate_doc_necessity(query_text: str, analyzer: QueryAnalyzer) -> bool:
+    """Use QueryAnalyzer lexical signals to decide if documents are needed."""
+    analysis = analyzer.analyze(query_text)
+    return analysis.signals.asks_about_documents

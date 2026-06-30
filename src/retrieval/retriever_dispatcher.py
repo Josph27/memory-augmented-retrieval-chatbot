@@ -35,6 +35,8 @@ class RetrieverDispatcher:
             "recent_messages": RecentMessagesRetriever(database, default_limit=raw_message_limit),
             "structured_memory": StructuredMemoryRetriever(database),
             "document_memory": langchain_chroma_retriever_for_env(database),
+            # GIST retrievers are now active by default when
+            # PREVIOUS_CHAT_GIST_RETRIEVAL_ENABLED is true (see P0.1).
             "current_chat_gist": CurrentChatGistRetriever(database),
             "previous_chat_gist": PreviousChatGistRetriever(database),
             "raw_message_span": RawMessageSpanRetriever(database),
@@ -60,7 +62,6 @@ def langchain_chroma_retriever_for_env(database: Database) -> SourceRetriever:
     mode = os.getenv("DOCUMENT_RETRIEVAL_MODE", "langchain_chroma").strip().lower()
     if mode != "langchain_chroma":
         print(
-            "unsupported_document_retrieval_mode "
-            f"mode={mode!r} falling_back_to='langchain_chroma'"
+            f"unsupported_document_retrieval_mode mode={mode!r} falling_back_to='langchain_chroma'"
         )
     return LangChainChromaRetriever.from_env(database=database)

@@ -227,7 +227,7 @@ design spec.
 - **Change per oracle correction #9 & H1:** Insert augmentation stage between routing and retrieval:
 
   ```python
-  def run_turn(self, chat_id: str, query: str) -> AgentTurnResult:
+  def run_turn(self, chat_id: str, content: str) -> AgentTurnResult:
       route_plan = self._routing_agent.route(query)
       # --- NEW: query augmentation ---
       if self.config.query_augmentation_enabled:
@@ -251,11 +251,13 @@ design spec.
 ### P1.5 — Per-sub-query retrieval loop
 
 - **Files (modify):**
-  - `src/agents/coordinator_agent.py`
-  - `src/retrieval/retriever_dispatcher.py` — per oracle F4, instead of adding a `query` parameter to the dispatcher (which would require modifying the `SourceRetriever` Protocol), set `source_plan.query = sub_query_text` on each `SourcePlan` before calling `RetrieverDispatcher.retrieve()` for that sub-query. This avoids a Protocol signature change.
+  - `src/agents/coordinator_agent.py` — per-sub-query loop with `replace()`-built `sub_route_plan`.
+  - `src/retrieval/retriever_dispatcher.py` — no changes needed; `RetrieverDispatcher.retrieve()` already accepts a `RoutePlan` with modified `SourcePlan` objects. Per-sub-query routing is achieved by building a fresh `RoutePlan` via `dataclasses.replace()` (see code block below).
 - **Change:**
 
   ```python
+  from dataclasses import replace
+
   all_candidates: list[MemoryCandidate] = []
   for sub_query in augmented.sub_queries:
       try:
@@ -264,14 +266,19 @@ design spec.
           sources_for_sub = list(sub_query.sources)
           if needs_docs and "document_memory" not in sources_for_sub:
               sources_for_sub.append("document_memory")
-          # Per oracle F4: set source_plan.query instead of modifying dispatcher
-          for sp in route_plan.sources:
-              if sp.source in sources_for_sub:
-                  sp.query = sub_query.text
+          # Build per-sub-query RoutePlan copies via replace() — never mutate frozen SourcePlan.
+          # Bug fix: SourcePlan is frozen; sp.query = ... would raise FrozenInstanceError.
+          # Bug fix: RetrieverDispatcher.retrieve() has no override_sources parameter.
+          per_sub_sources = [
+              replace(sp, query=sub_query.text)
+              if sp.source in sources_for_sub
+              else sp
+              for sp in route_plan.sources
+          ]
+          sub_route_plan = replace(route_plan, sources=per_sub_sources)
           candidates = self._retriever_dispatcher.retrieve(
               chat_id=chat_id,
-              route_plan=route_plan,
-              override_sources=tuple(sources_for_sub),
+              route_plan=sub_route_plan,
           )
           all_candidates.extend(candidates)
       except Exception as exc:
@@ -295,14 +302,26 @@ design spec.
   ```python
   def _evaluate_doc_necessity(self, query: str) -> bool:
       """Use QueryAnalyzer lexical signals to decide if this sub-query needs document retrieval."""
-      # Reuse existing lexical signal detection from QueryAnalyzer
+      # Bug fix: QueryAnalyzer is deterministic and stateless — instantiate standalone
+      # rather than drilling through RoutingAgent -> RoutePlanner -> QueryAnalyzer.
+      # self._query_analyzer is set in CoordinatorAgent.__init__ (see below).
       analysis = self._query_analyzer.analyze(query)
-      return analysis.is_document_query  # or equivalent signal field
+      return analysis.signals.asks_about_documents
   ```
 
-  If `QueryAnalyzer` does not expose `is_document_query`, add a small helper:
-  document signals include terms like "document", "file", "pdf", "chapter",
-  "according to the text", "in the uploaded", etc.
+  **CoordinatorAgent.__init__() must instantiate a standalone QueryAnalyzer:**
+
+  ```python
+  # Add to imports at top of coordinator_agent.py:
+  from src.routing.query_analyzer import QueryAnalyzer
+
+  # Add to CoordinatorAgent.__init__():
+  self._query_analyzer = QueryAnalyzer()
+  ```
+
+  `QueryAnalyzer` is deterministic, stateless, and has no side effects — a second
+  instance (separate from the one inside `RoutingAgent → RoutePlanner`) is harmless.
+  The signal field is `signals.asks_about_documents` (not `is_document_query`).
 
 - **Deps:** P1.4.
 - **Risk:** Retrieval time scales with sub-query count × sources. Mitigation: `MAX_SUB_QUERIES=3` (P1.1), doc retrieval gated per sub-query, embedding calls are cached.

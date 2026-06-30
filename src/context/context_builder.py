@@ -42,10 +42,40 @@ class SelectedContext:
 class ContextBuilder:
     """Build a trace-only context packet from ranked candidates and budgets."""
 
-    def __init__(self, token_estimator: TokenEstimator | None = None) -> None:
+    def __init__(
+        self,
+        token_estimator: TokenEstimator | None = None,
+        placement_mode: str = "budget_fitting",
+    ) -> None:
         self.token_estimator = token_estimator or ApproximateTokenEstimator()
+        self.placement_mode = placement_mode
 
     def build(
+        self,
+        system_prompt: str,
+        latest_user_message: dict[str, str],
+        ranked_candidates: list[MemoryCandidate],
+        context_budget: ContextBudget,
+        route_plan: RoutePlan,
+    ) -> ContextPacket:
+        """Build a ContextPacket; dispatch to ordered or budget-fitting strategy."""
+        if self.placement_mode == "ordered":
+            return self._build_ordered(
+                system_prompt=system_prompt,
+                latest_user_message=latest_user_message,
+                ranked_candidates=ranked_candidates,
+                context_budget=context_budget,
+                route_plan=route_plan,
+            )
+        return self._build_budget_fitting(
+            system_prompt=system_prompt,
+            latest_user_message=latest_user_message,
+            ranked_candidates=ranked_candidates,
+            context_budget=context_budget,
+            route_plan=route_plan,
+        )
+
+    def _build_budget_fitting(
         self,
         system_prompt: str,
         latest_user_message: dict[str, str],
@@ -104,9 +134,7 @@ class ContextBuilder:
         )
         estimated_tokens = token_accounting["total_prompt_tokens"]
         dropped_candidate_ids = [
-            item["record_id"]
-            for item in dropped_candidates
-            if item.get("record_id") is not None
+            item["record_id"] for item in dropped_candidates if item.get("record_id") is not None
         ]
         return ContextPacket(
             chat_id=first_chat_id(ranked_candidates),
@@ -137,8 +165,7 @@ class ContextBuilder:
                 "overflow_tokens": token_accounting["overflow_tokens"],
                 "token_accounting": token_accounting,
                 "source_token_usage": {
-                    source: selected.used_tokens
-                    for source, selected in selected_by_source.items()
+                    source: selected.used_tokens for source, selected in selected_by_source.items()
                 },
                 "dropped_candidates": dropped_candidates,
                 "dropped_candidate_ids": dropped_candidate_ids,
@@ -159,6 +186,305 @@ class ContextBuilder:
                 ],
             },
         )
+
+    def _build_ordered(
+        self,
+        system_prompt: str,
+        latest_user_message: dict[str, str],
+        ranked_candidates: list[MemoryCandidate],
+        context_budget: ContextBudget,
+        route_plan: RoutePlan,
+    ) -> ContextPacket:
+        """Build with 'lost in the middle' placement: docs(hi→lo), mem(lo→hi), recent, query."""
+        grouped = group_candidates_by_source(ranked_candidates)
+        dropped_candidates: list[dict[str, Any]] = []
+
+        # --- system prompt ---
+        messages: list[dict[str, str]] = [{"role": "system", "content": system_prompt}]
+
+        # --- document_memory: hi→lo score ---
+        doc_candidates = sorted(
+            grouped.get("document_memory", []),
+            key=lambda c: c.score or 0.0,
+            reverse=True,
+        )
+        selected_docs, doc_drops = self._fit_ordered(
+            candidates=doc_candidates,
+            budget=context_budget.source_token_budgets.get("document_memory", 0),
+            reason="ordered_budget_exceeded",
+        )
+        dropped_candidates.extend(doc_drops)
+        doc_section = format_source_section("document_memory", selected_docs)
+        if doc_section:
+            messages.append({"role": "system", "content": doc_section})
+
+        # --- structured_memory + gists: lo→hi score (middle — trim first on overflow) ---
+        mid_candidates: list[MemoryCandidate] = []
+        for source in (
+            "structured_memory",
+            "current_chat_gist",
+            "previous_chat_gist",
+            "raw_message_span",
+            "current_chat_chunks",
+            "previous_chat_memory",
+        ):
+            mid_candidates.extend(grouped.get(source, []))
+        mid_candidates.sort(key=lambda c: c.score or 0.0)  # lo→hi
+        mid_budget = sum(
+            context_budget.source_token_budgets.get(source, 0)
+            for source in (
+                "structured_memory",
+                "current_chat_gist",
+                "previous_chat_gist",
+                "raw_message_span",
+                "current_chat_chunks",
+                "previous_chat_memory",
+            )
+        )
+        selected_mid, mid_drops = self._fit_ordered(
+            candidates=mid_candidates,
+            budget=mid_budget,
+            reason="ordered_budget_exceeded",
+        )
+        dropped_candidates.extend(mid_drops)
+        mid_section = "\n\n".join(
+            section
+            for section in (
+                format_source_section(
+                    "structured_memory",
+                    [c for c in selected_mid if c.source == "structured_memory"],
+                ),
+                format_source_section(
+                    "current_chat_gist",
+                    [
+                        c
+                        for c in selected_mid
+                        if c.source in ("current_chat_gist", "current_chat_chunks")
+                    ],
+                ),
+                format_source_section(
+                    "previous_chat_gist",
+                    [
+                        c
+                        for c in selected_mid
+                        if c.source in ("previous_chat_gist", "previous_chat_memory")
+                    ],
+                ),
+                format_source_section(
+                    "raw_message_span", [c for c in selected_mid if c.source == "raw_message_span"]
+                ),
+            )
+            if section
+        )
+        if mid_section:
+            messages.append({"role": "system", "content": mid_section})
+
+        # --- recent messages (chronological, then latest user message) ---
+        recent_raw = grouped.get("recent_messages", [])
+        recent_candidates, recent_drops = prepare_recent_candidates(
+            recent_raw,
+            latest_user_message,
+        )
+        dropped_candidates.extend(recent_drops)
+        recent_selected, recent_over_drops = self._fit_ordered(
+            candidates=recent_candidates,
+            budget=context_budget.source_token_budgets.get("recent_messages", 0),
+            reason="ordered_budget_exceeded",
+        )
+        dropped_candidates.extend(recent_over_drops)
+        messages.extend(format_recent_message(candidate) for candidate in recent_selected)
+        messages.append(latest_user_message)
+
+        # --- overflow trim from middle ---
+        overflow_drops = self._drop_mid_for_ordered_overflow(
+            messages=messages,
+            system_prompt=system_prompt,
+            latest_user_message=latest_user_message,
+            mid_candidates=selected_mid,
+            context_budget=context_budget,
+        )
+        dropped_candidates.extend(overflow_drops)
+        # Re-filter middle after overflow drops
+        kept_mid = [
+            c
+            for c in selected_mid
+            if c not in {d["_candidate"] for d in overflow_drops if d.get("_candidate")}
+        ]
+        selected_candidates = selected_docs + kept_mid + recent_selected
+
+        token_accounting = self.build_token_accounting(
+            system_prompt=system_prompt,
+            selected_by_source={
+                "document_memory": SelectedContext(
+                    selected=selected_docs,
+                    dropped=[],
+                    used_tokens=0,
+                ),
+                "structured_memory": SelectedContext(
+                    selected=[c for c in kept_mid if c.source == "structured_memory"],
+                    dropped=[],
+                    used_tokens=0,
+                ),
+                "current_chat_gist": SelectedContext(
+                    selected=[
+                        c
+                        for c in kept_mid
+                        if c.source in ("current_chat_gist", "current_chat_chunks")
+                    ],
+                    dropped=[],
+                    used_tokens=0,
+                ),
+                "previous_chat_gist": SelectedContext(
+                    selected=[
+                        c
+                        for c in kept_mid
+                        if c.source in ("previous_chat_gist", "previous_chat_memory")
+                    ],
+                    dropped=[],
+                    used_tokens=0,
+                ),
+                "raw_message_span": SelectedContext(
+                    selected=[c for c in kept_mid if c.source == "raw_message_span"],
+                    dropped=[],
+                    used_tokens=0,
+                ),
+                "current_chat_chunks": SelectedContext(selected=[], dropped=[], used_tokens=0),
+                "previous_chat_memory": SelectedContext(selected=[], dropped=[], used_tokens=0),
+                "recent_messages": SelectedContext(
+                    selected=recent_selected,
+                    dropped=[],
+                    used_tokens=0,
+                ),
+            },
+            latest_user_message=latest_user_message,
+            model_messages=messages,
+            context_budget=context_budget,
+        )
+        estimated_tokens = token_accounting["total_prompt_tokens"]
+        dropped_candidate_ids = [
+            item["record_id"] for item in dropped_candidates if item.get("record_id") is not None
+        ]
+        return ContextPacket(
+            chat_id=first_chat_id(ranked_candidates),
+            system_prompt=system_prompt,
+            structured_memory=format_source_section(
+                "structured_memory",
+                [c for c in kept_mid if c.source == "structured_memory"],
+            ),
+            recent_message_ids=[
+                source_id
+                for candidate in recent_selected
+                for source_id in candidate.source_message_ids
+            ],
+            candidates=selected_candidates,
+            budget=context_budget,
+            model_messages=messages,
+            metadata={
+                "trace_only": True,
+                "placement_mode": "ordered",
+                "route_intent": route_plan.intent,
+                "context_profile": context_budget.metadata.get("context_profile"),
+                "estimated_token_usage": estimated_tokens,
+                "estimated_prompt_tokens": estimated_tokens,
+                "token_estimator": "approximate",
+                "context_limit": token_accounting["context_limit"],
+                "answer_reserve": token_accounting["answer_reserve"],
+                "safety_margin": token_accounting["safety_margin"],
+                "overflow_detected": token_accounting["overflow_detected"],
+                "overflow_tokens": token_accounting["overflow_tokens"],
+                "token_accounting": token_accounting,
+                "dropped_candidates": dropped_candidates,
+                "dropped_candidate_ids": dropped_candidate_ids,
+                "dropped_candidate_reasons": [
+                    {
+                        "record_id": item.get("record_id"),
+                        "source": item.get("source"),
+                        "reason": item.get("reason"),
+                    }
+                    for item in dropped_candidates
+                ],
+                "section_order": [
+                    "system",
+                    "document_memory",
+                    "mid_memory",
+                    "recent_messages",
+                    "latest_user_message",
+                ],
+            },
+        )
+
+    def _fit_ordered(
+        self,
+        candidates: list[MemoryCandidate],
+        budget: int,
+        reason: str,
+    ) -> tuple[list[MemoryCandidate], list[dict[str, Any]]]:
+        """Fit candidates into a token budget, preserving caller's sort order."""
+        selected: list[MemoryCandidate] = []
+        dropped: list[dict[str, Any]] = []
+        used = 0
+        for candidate in candidates:
+            tokens = self.token_estimator.estimate_text(candidate.content)
+            if budget <= 0 or used + tokens <= budget:
+                selected.append(candidate)
+                used += tokens
+            else:
+                dropped.append(
+                    {
+                        "record_id": candidate.record_id,
+                        "source": candidate.source,
+                        "reason": reason,
+                        "estimated_tokens": tokens,
+                        "source_budget": budget,
+                    }
+                )
+        return selected, dropped
+
+    def _drop_mid_for_ordered_overflow(
+        self,
+        messages: list[dict[str, str]],
+        system_prompt: str,
+        latest_user_message: dict[str, str],
+        mid_candidates: list[MemoryCandidate],
+        context_budget: ContextBudget,
+    ) -> list[dict[str, Any]]:
+        """Drop memory candidates from the middle when ordered prompt overflows."""
+        dropped: list[dict[str, Any]] = []
+        limit = context_budget.max_tokens or 0
+        reserve = context_budget.reserved_response_tokens or 0
+        safety = int(context_budget.metadata.get("safety_margin_tokens", 0) or 0)
+        if limit <= 0:
+            return dropped
+        while True:
+            total = self.token_estimator.estimate_messages(messages)
+            if total + reserve + safety <= limit:
+                return dropped
+            if not mid_candidates:
+                return dropped
+            # Remove from middle: drop the first (lowest-score) mid candidate
+            drop_candidate = mid_candidates.pop(0)
+            drop_content = format_source_section(drop_candidate.source, [drop_candidate])
+            # Remove its contribution from messages
+            messages = [
+                m
+                for m in messages
+                if not (
+                    m.get("role") == "system"
+                    and drop_content
+                    and drop_content in m.get("content", "")
+                )
+            ]
+            dropped.append(
+                {
+                    "record_id": drop_candidate.record_id,
+                    "source": drop_candidate.source,
+                    "reason": "ordered_overflow_mid_trim",
+                    "estimated_tokens": self.token_estimator.estimate_text(drop_candidate.content),
+                    "_candidate": drop_candidate,
+                }
+            )
+            if not messages:
+                return dropped
 
     def select_for_source(
         self,
@@ -329,18 +655,12 @@ class ContextBuilder:
         safety_margin = int(context_budget.metadata.get("safety_margin_tokens", 0) or 0)
         context_limit = context_budget.max_tokens or 0
         total_with_reserves = total_prompt_tokens + answer_reserve + safety_margin
-        overflow_tokens = (
-            max(0, total_with_reserves - context_limit)
-            if context_limit > 0
-            else 0
-        )
+        overflow_tokens = max(0, total_with_reserves - context_limit) if context_limit > 0 else 0
         estimator_info = estimator_metadata(self.token_estimator)
         return {
             "token_estimator": estimator_info,
             "system_tokens": self.token_estimator.estimate_text(system_prompt),
-            "structured_memory_tokens": self.token_estimator.estimate_text(
-                structured_memory
-            ),
+            "structured_memory_tokens": self.token_estimator.estimate_text(structured_memory),
             "retrieved_memory_tokens": retrieved_memory_tokens,
             "source_memory_tokens": source_memory_tokens,
             "recent_message_tokens": recent_message_tokens,

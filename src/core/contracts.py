@@ -106,6 +106,7 @@ class WorkflowTrace:
     context_packet: ContextPacket | None = None
     termination_reason: str | None = None
     errors: list[str] = field(default_factory=list)
+    augmented_query: "AugmentedQuery | None" = None
     metadata: dict[str, Any] = field(default_factory=dict)
 
 
@@ -120,3 +121,12 @@ class AgentTurnResult:
     trace: WorkflowTrace
     assistant_message_id: int | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class SubQuery:
+    """One decomposed sub-query with its intent and target memory sources."""
+
+    text: str
+    intent: str | None = None
+    sources: list[str] = field(default_factory=list)

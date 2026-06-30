@@ -112,9 +112,7 @@ class RoutePlanner:
                 enabled=source_enabled(source_policy, analysis),
                 reason=source_reason(source_policy, analysis),
                 query=(
-                    analysis.normalized_query
-                    if source_enabled(source_policy, analysis)
-                    else None
+                    analysis.normalized_query if source_enabled(source_policy, analysis) else None
                 ),
                 limit=source_policy.limit,
             )
@@ -162,11 +160,8 @@ def source_enabled(
     """Return whether a source should be enabled for this query."""
     if source_policy.source == "document_memory":
         return analysis.signals.asks_about_documents
-    if source_policy.source == "previous_chat_gist":
-        return (
-            previous_chat_gist_retrieval_enabled()
-            and analysis.signals.asks_about_previous_memory
-        )
+    if source_policy.source in {"current_chat_gist", "previous_chat_gist"}:
+        return previous_chat_gist_retrieval_enabled()
     return source_policy.enabled
 
 
@@ -177,6 +172,8 @@ def source_reason(
     """Return a per-query reason for a source plan."""
     if source_policy.source == "document_memory" and analysis.signals.asks_about_documents:
         return "Document-like query detected; enabling LangChain-Chroma document retrieval."
+    if source_policy.source == "current_chat_gist" and previous_chat_gist_retrieval_enabled():
+        return "GIST retrieval enabled; enabling current-chat gist retrieval."
     if (
         source_policy.source == "previous_chat_gist"
         and previous_chat_gist_retrieval_enabled()

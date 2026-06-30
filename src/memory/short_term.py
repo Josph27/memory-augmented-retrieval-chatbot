@@ -115,8 +115,7 @@ class ShortTermMemory:
             )
 
         model_messages.extend(
-            {"role": message.role, "content": message.content}
-            for message in context.raw_messages
+            {"role": message.role, "content": message.content} for message in context.raw_messages
         )
         if latest_user_message is not None:
             model_messages.append(latest_user_message)
@@ -193,6 +192,24 @@ class ShortTermMemory:
             raw_message_limit=self.raw_message_limit,
             batch_size=MEMORY_REBUILD_BATCH_SIZE,
         )
+
+    def process_all_for_chat_end(self, chat_id: str) -> None:
+        """Process ALL unsummarized messages for a chat being ended."""
+        messages = self.database.old_unsummarized_messages(
+            chat_id=chat_id,
+            raw_message_limit=0,
+            batch_size=9999,
+        )
+        if not messages:
+            return
+        current_memory = load_memory_state(self.database.chat_memory_state(chat_id))
+        result = self.structured_memory.update(
+            existing_memory=current_memory,
+            messages=messages,
+        )
+        if result.accepted:
+            self.database.upsert_chat_memory_state(chat_id, dumps_memory_state(result.memory_state))
+            self.database.mark_messages_summarized([m.id for m in messages])
 
 
 def elapsed_ms(started: float) -> float:

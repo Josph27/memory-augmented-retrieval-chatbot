@@ -8,6 +8,8 @@ from src.agents.chat_agent import ChatAgent
 from src.agents.context_builder_agent import ContextBuilderAgent
 from src.agents.coordinator_agent import CoordinatorAgent
 from src.agents.document_ingestion_agent import DocumentIngestionAgent
+from src.agents.gisting_agent import GistingAgent
+from src.agents.query_augmentation_agent import QueryAugmentationAgent
 from src.agents.short_term_memory_agent import ShortTermMemoryAgent
 from src.core.contracts import AgentTurnResult
 from src.database import Database
@@ -15,6 +17,8 @@ from src.memory.previous_chat_gist import PreviousChatGistGenerator
 from src.memory.short_term import ShortTermMemory
 from src.model_wrapper import ModelWrapper
 from src.retrieval.reranker import MemoryReranker
+from src.routing.query_decomposer import QueryDecomposer
+from src.routing.semantic_expander import SemanticExpander
 from src.retrieval.retriever_dispatcher import RetrieverDispatcher
 from src.routing.routing_agent import RoutingAgent
 
@@ -51,6 +55,7 @@ class ChatService:
         reranker_llm_min_confidence: float = 0.55,
         previous_chat_gist_generation_enabled: bool = False,
         previous_chat_gist_generator: PreviousChatGistGenerator | None = None,
+        query_augmentation_enabled: bool = True,
     ) -> None:
         self.database = database
         self.model = model
@@ -59,6 +64,7 @@ class ChatService:
         self.reranker_mode = reranker_mode
         self.previous_chat_gist_generation_enabled = previous_chat_gist_generation_enabled
         self.previous_chat_gist_generator = previous_chat_gist_generator
+        self.query_augmentation_enabled = query_augmentation_enabled
         self.document_ingestion_agent = DocumentIngestionAgent(
             database=database,
             indexer=document_indexer,
@@ -69,6 +75,18 @@ class ChatService:
             raw_message_limit=raw_message_limit,
             memory_update_batch_size=memory_update_batch_size,
         )
+        gisting_agent = None
+        if previous_chat_gist_generation_enabled:
+            gisting_agent = GistingAgent(database=database, model=model)
+        if query_augmentation_enabled:
+            query_augmentation_agent: QueryAugmentationAgent | None = (
+                QueryAugmentationAgent(
+                    decomposer=QueryDecomposer(model=model),
+                    expander=SemanticExpander(model=model),
+                )
+            )
+        else:
+            query_augmentation_agent = None
         self.coordinator = CoordinatorAgent(
             database=database,
             memory_agent=ShortTermMemoryAgent(self.memory),
@@ -86,6 +104,8 @@ class ChatService:
                 llm_top_k=reranker_llm_top_k,
                 llm_min_confidence=reranker_llm_min_confidence,
             ),
+            gisting_agent=gisting_agent,
+            query_augmentation_agent=query_augmentation_agent,
         )
 
     def start_chat(self, chat_id: str | None = None) -> str:

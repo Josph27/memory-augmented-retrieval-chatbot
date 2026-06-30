@@ -8,6 +8,8 @@ from chainlit.types import ChatProfile
 from chainlit.user import User
 
 from src.chainlit_data_layer import SQLiteChainlitDataLayer
+from src.actions.chat_end import ChatEndAction
+from src.actions.chat_fork import ChatForkAction
 from src.chat_service import ChatService
 from src.config import AppConfig
 from src.database import Database
@@ -98,9 +100,7 @@ async def chat_profiles(
         ChatProfile(
             name=profile.key,
             display_name=profile.display_name,
-            markdown_description=(
-                f"{profile.description}\n\nModel id: `{profile.model_name}`"
-            ),
+            markdown_description=(f"{profile.description}\n\nModel id: `{profile.model_name}`"),
             icon="bot",
             default=profile.key == DEFAULT_MODEL_PROFILE_KEY,
         )
@@ -117,6 +117,7 @@ async def on_chat_start() -> None:
     cl.user_session.set("chat_id", chat_id)
     cl.user_session.set("model_name", model_name)
 
+    cl.user_session.set("tab", "chat")
     await cl.Message(
         content=(
             "Chat is ready. Messages are stored in SQLite. Older turns update structured "
@@ -169,6 +170,11 @@ async def on_message(message: cl.Message) -> None:
 
     await cl.Message(content=result.answer).send()
 
+    # P4.3: Chat page action buttons
+    await cl.Message(
+        content=" | ".join(["`[Home]`", "`[Chats]`", "`[Docs]`", "`[Mem]`"]),
+    ).send()
+
     if demo_memory_trace_enabled():
         saved_trace = format_saved_memories_markdown(saved_memory_rows(result))
         if saved_trace:
@@ -215,8 +221,7 @@ def index_uploaded_files(message: cl.Message, chat_service: ChatService) -> list
             statuses.append(f"Could not index {name}: {type(error).__name__}: {error}")
         else:
             statuses.append(
-                f"Indexed {result.file_name} into document memory "
-                f"({result.chunk_count} chunks)."
+                f"Indexed {result.file_name} into document memory ({result.chunk_count} chunks)."
             )
     return statuses
 
@@ -235,11 +240,7 @@ def uploaded_file_name(element: object) -> str:
     if isinstance(element, dict):
         value = element.get("name") or element.get("path") or "uploaded file"
     else:
-        value = (
-            getattr(element, "name", None)
-            or getattr(element, "path", None)
-            or "uploaded file"
-        )
+        value = getattr(element, "name", None) or getattr(element, "path", None) or "uploaded file"
     return str(value)
 
 
@@ -287,6 +288,77 @@ def model_name_for_chat(chat_id: str) -> str:
     return MODEL_PROFILES_BY_KEY[DEFAULT_MODEL_PROFILE_KEY].model_name
 
 
+# ---------------------------------------------------------------------------
+# Phase 4: Multi-tab page renderers
+# ---------------------------------------------------------------------------
+
+
+async def render_breadcrumbs(current_tab: str) -> None:
+    """Render tab navigation breadcrumbs."""
+    await cl.Message(content="**Home** | **Chats** | **Docs** | **Memories**").send()
+
+
+async def show_home_page() -> None:
+    """Render the home/landing page with active chats."""
+    await render_breadcrumbs("home")
+    active = database.list_active_chats()
+    msg = "## Home\n"
+    if active:
+        for chat in active[:10]:
+            title = chat.get("title") or chat["id"][:8]
+            msg += f"- {title}\n"
+    else:
+        msg += "No active chats. Start a new one!\n"
+    await cl.Message(content=msg).send()
+
+
+async def show_chats_page() -> None:
+    """Render the chats list page."""
+    await render_breadcrumbs("chats")
+    active = database.list_active_chats()
+    inactive = database.list_inactive_chats()
+    msg = "## Chats\n\n### Active\n"
+    for chat in active[:10]:
+        msg += f"- {(chat.get('title') or chat['id'][:8])}\n"
+    if not active:
+        msg += "None.\n"
+    msg += "\n### Inactive\n"
+    for chat in inactive[:10]:
+        msg += f"- {(chat.get('title') or chat['id'][:8])}\n"
+    if not inactive:
+        msg += "None.\n"
+    await cl.Message(content=msg).send()
+
+
+async def show_documents_page() -> None:
+    """Render the documents list page."""
+    await render_breadcrumbs("documents")
+    docs = database.list_documents(active_only=False)
+    if not docs:
+        await cl.Message(content="## Documents\n\nNo documents uploaded yet.").send()
+        return
+    msg = "## Documents\n"
+    for doc in docs[:20]:
+        flag = "" if doc.get("active", 1) else " [suppressed]"
+        msg += f"- {doc['title']}{flag}\n"
+    await cl.Message(content=msg).send()
+
+
+async def show_memories_page() -> None:
+    """Render the memories list page."""
+    await render_breadcrumbs("memories")
+    memories = database.list_all_memories()
+    if not memories:
+        await cl.Message(content="## Memories\n\nNo memories stored yet.").send()
+        return
+    msg = "## Memories\n"
+    for mem in memories[:30]:
+        msg += f"- `{mem.get('category', '?')}.{mem['key']}`: {str(mem.get('value', ''))[:80]}\n"
+    if len(memories) > 30:
+        msg += f"\n... and {len(memories) - 30} more"
+    await cl.Message(content=msg).send()
+
+
 def chat_service_for_model(model_name: str) -> ChatService:
     """Build or reuse the chat service for a specific model id."""
     if model_name not in chat_services:
@@ -299,8 +371,7 @@ def chat_service_for_model(model_name: str) -> ChatService:
             reranker_mode=config.reranker_mode,
             reranker_llm_top_k=config.reranker_llm_top_k,
             reranker_llm_min_confidence=config.reranker_llm_min_confidence,
-            previous_chat_gist_generation_enabled=(
-                config.previous_chat_gist_generation_enabled
-            ),
+            previous_chat_gist_generation_enabled=(config.previous_chat_gist_generation_enabled),
+            query_augmentation_enabled=config.query_augmentation_enabled,
         )
     return chat_services[model_name]

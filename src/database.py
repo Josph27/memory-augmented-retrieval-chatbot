@@ -75,6 +75,8 @@ class Database:
         self.path = path
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self.init_schema()
+        with self.connect() as conn:
+            conn.execute("PRAGMA journal_mode=WAL")
 
     @contextmanager
     def connect(self) -> Iterator[sqlite3.Connection]:
@@ -207,6 +209,14 @@ class Database:
             )
             self._ensure_messages_summarized_column(connection)
             self._ensure_chats_model_name_column(connection)
+            self._ensure_long_term_memories_use_count_column(connection)
+            self._ensure_chat_gists_retrieved_lt_mem_list_column(connection)
+            self._ensure_chat_gists_new_memories_column(connection)
+            self._ensure_chats_active_column(connection)
+            self._ensure_long_term_memories_last_used_column(connection)
+            self._ensure_documents_active_column(connection)
+            self._ensure_document_chunks_active_column(connection)
+            self._ensure_document_chunks_chroma_id_column(connection)
             connection.execute(
                 """
                 CREATE INDEX IF NOT EXISTS idx_messages_chat_summarized
@@ -217,8 +227,7 @@ class Database:
     def _ensure_messages_summarized_column(self, connection: sqlite3.Connection) -> None:
         """Add `messages.summarized` for databases created before Short-Term Memory v2."""
         columns = {
-            row["name"]
-            for row in connection.execute("PRAGMA table_info(messages)").fetchall()
+            row["name"] for row in connection.execute("PRAGMA table_info(messages)").fetchall()
         }
         if "summarized" not in columns:
             connection.execute(
@@ -227,12 +236,87 @@ class Database:
 
     def _ensure_chats_model_name_column(self, connection: sqlite3.Connection) -> None:
         """Add `chats.model_name` for databases created before model profiles."""
-        columns = {
-            row["name"]
-            for row in connection.execute("PRAGMA table_info(chats)").fetchall()
-        }
+        columns = {row["name"] for row in connection.execute("PRAGMA table_info(chats)").fetchall()}
         if "model_name" not in columns:
             connection.execute("ALTER TABLE chats ADD COLUMN model_name TEXT")
+
+    def _ensure_chats_active_column(self, connection: sqlite3.Connection) -> None:
+        """Add `chats.active` for active/inactive chat tracking."""
+        try:
+            connection.execute("ALTER TABLE chats ADD COLUMN active INTEGER NOT NULL DEFAULT 1")
+        except sqlite3.OperationalError:
+            pass  # column already exists
+
+    def _ensure_long_term_memories_last_used_column(self, connection: sqlite3.Connection) -> None:
+        """Add `long_term_memories.last_used` for retrieval-time tracking."""
+        try:
+            connection.execute("ALTER TABLE long_term_memories ADD COLUMN last_used TEXT")
+        except sqlite3.OperationalError:
+            pass  # column already exists
+
+    def _ensure_long_term_memories_use_count_column(self, connection: sqlite3.Connection) -> None:
+        """Add `long_term_memories.use_count` for usage-tracking migrations."""
+        try:
+            connection.execute(
+                "ALTER TABLE long_term_memories ADD COLUMN use_count INTEGER NOT NULL DEFAULT 0"
+            )
+        except sqlite3.OperationalError:
+            pass  # column already exists
+
+    def _ensure_chat_gists_retrieved_lt_mem_list_column(
+        self, connection: sqlite3.Connection
+    ) -> None:
+        """Add `chat_gists.retrieved_lt_mem_list_json` for GIST retrieval tracking."""
+        try:
+            connection.execute(
+                "ALTER TABLE chat_gists ADD COLUMN retrieved_lt_mem_list_json"
+                " TEXT NOT NULL DEFAULT '[]'"
+            )
+        except sqlite3.OperationalError:
+            pass  # column already exists
+
+    def _ensure_chat_gists_new_memories_column(self, connection: sqlite3.Connection) -> None:
+        """Add `chat_gists.new_memories_json` for GIST memory-link tracking."""
+        try:
+            connection.execute(
+                "ALTER TABLE chat_gists ADD COLUMN new_memories_json TEXT NOT NULL DEFAULT '[]'"
+            )
+        except sqlite3.OperationalError:
+            pass  # column already exists
+
+    def increment_use_count(self, connection: sqlite3.Connection, memory_ids: list[int]) -> None:
+        """Increment the use_count and refresh last_used for a set of long-term memory rows."""
+        if not memory_ids:
+            return
+        placeholders = ",".join("?" for _ in memory_ids)
+        params = [utc_now()] + list(memory_ids)
+        connection.execute(
+            f"UPDATE long_term_memories SET use_count = use_count + 1, last_used = ? WHERE id IN ({placeholders})",
+            params,
+        )
+
+    def _ensure_documents_active_column(self, connection: sqlite3.Connection) -> None:
+        """Add `documents.active` for document suppression support."""
+        try:
+            connection.execute("ALTER TABLE documents ADD COLUMN active INTEGER NOT NULL DEFAULT 1")
+        except sqlite3.OperationalError:
+            pass  # column already exists
+
+    def _ensure_document_chunks_active_column(self, connection: sqlite3.Connection) -> None:
+        """Add `document_chunks.active` for per-chunk suppression."""
+        try:
+            connection.execute(
+                "ALTER TABLE document_chunks ADD COLUMN active INTEGER NOT NULL DEFAULT 1"
+            )
+        except sqlite3.OperationalError:
+            pass  # column already exists
+
+    def _ensure_document_chunks_chroma_id_column(self, connection: sqlite3.Connection) -> None:
+        """Add `document_chunks.chroma_id` for Chroma metadata sync."""
+        try:
+            connection.execute("ALTER TABLE document_chunks ADD COLUMN chroma_id TEXT")
+        except sqlite3.OperationalError:
+            pass  # column already exists
 
     def create_chat(
         self,
@@ -274,9 +358,9 @@ class Database:
         search: str | None = None,
         require_messages: bool = False,
     ) -> list[StoredChat]:
-        """List chat threads for Chainlit history."""
+        """List chat threads for Chainlit history (active only)."""
         parameters: list[object] = []
-        clauses: list[str] = []
+        clauses: list[str] = ["active = 1"]
         if require_messages:
             clauses.append("EXISTS (SELECT 1 FROM messages WHERE messages.chat_id = chats.id)")
         if cursor:
@@ -325,6 +409,119 @@ class Database:
                 "UPDATE chats SET model_name = ? WHERE id = ?",
                 (model_name, chat_id),
             )
+
+    def mark_chat_inactive(self, chat_id: str) -> None:
+        """Mark a chat as inactive (e.g. after CHAT_END_ACTION)."""
+        with self.connect() as connection:
+            connection.execute("UPDATE chats SET active = 0 WHERE id = ?", (chat_id,))
+
+    def mark_chat_active(self, chat_id: str) -> None:
+        """Mark a chat as active."""
+        with self.connect() as connection:
+            connection.execute("UPDATE chats SET active = 1 WHERE id = ?", (chat_id,))
+
+    def list_active_chats(self) -> list[dict]:
+        """Return all active chats ordered by last update."""
+        with self.connect() as connection:
+            rows = connection.execute(
+                "SELECT * FROM chats WHERE active = 1 ORDER BY updated_at DESC"
+            ).fetchall()
+            return [dict(row) for row in rows]
+
+    def list_inactive_chats(self) -> list[dict]:
+        """Return all inactive chats ordered by last update."""
+        with self.connect() as connection:
+            rows = connection.execute(
+                "SELECT * FROM chats WHERE active = 0 ORDER BY updated_at DESC"
+            ).fetchall()
+            return [dict(row) for row in rows]
+
+    # ------------------------------------------------------------------
+    # Document management
+    # ------------------------------------------------------------------
+
+    def suppress_document(self, doc_id: int) -> None:
+        """Set active=0 on a document and all its chunks."""
+        with self.connect() as conn:
+            conn.execute("UPDATE documents SET active = 0 WHERE id = ?", (doc_id,))
+            conn.execute("UPDATE document_chunks SET active = 0 WHERE document_id = ?", (doc_id,))
+
+    def delete_document(self, doc_id: int) -> None:
+        """Delete a document and cascade to chunks and embeddings."""
+        with self.connect() as conn:
+            conn.execute(
+                "DELETE FROM document_chunk_embeddings WHERE chunk_id IN"
+                " (SELECT id FROM document_chunks WHERE document_id = ?)",
+                (doc_id,),
+            )
+            conn.execute("DELETE FROM document_chunks WHERE document_id = ?", (doc_id,))
+            conn.execute("DELETE FROM documents WHERE id = ?", (doc_id,))
+
+    def list_documents(self, active_only: bool = True) -> list[dict]:
+        """List documents with optional active-only filter."""
+        with self.connect() as conn:
+            if active_only:
+                rows = conn.execute(
+                    "SELECT * FROM documents WHERE active = 1 ORDER BY created_at DESC"
+                ).fetchall()
+            else:
+                rows = conn.execute("SELECT * FROM documents ORDER BY created_at DESC").fetchall()
+            return [dict(row) for row in rows]
+
+    # ------------------------------------------------------------------
+    # Manual memory management
+    # ------------------------------------------------------------------
+
+    MAX_MANUAL_MEMORY_CHARS = 2000
+
+    def insert_manual_memory(
+        self,
+        *,
+        namespace: str,
+        key: str,
+        value: str,
+        category: str = "user_facts",
+        confidence: float = 1.0,
+    ) -> int:
+        """Insert a manually created memory. Returns the memory id."""
+        if len(value) > self.MAX_MANUAL_MEMORY_CHARS:
+            value = value[: self.MAX_MANUAL_MEMORY_CHARS]
+        now = utc_now()
+        namespace_json = json.dumps({"path": namespace.split(".")}, ensure_ascii=True)
+        with self.connect() as conn:
+            cursor = conn.execute(
+                """INSERT INTO long_term_memories (
+                       namespace_json, namespace_path, memory_id, category, key, value,
+                       confidence, status, source_chat_id, source_message_ids_json,
+                       created_at, updated_at, metadata_json
+                   ) VALUES (?, ?, ?, ?, ?, ?, ?, 'active', 'manual', '[]', ?, ?, '{}')""",
+                (namespace_json, namespace, key, category, key, value, confidence, now, now),
+            )
+            return int(cursor.lastrowid)
+
+    def delete_memory_by_id(self, memory_id: int) -> None:
+        """Soft-delete a memory by row id (sets status to 'deleted')."""
+        with self.connect() as conn:
+            conn.execute(
+                "UPDATE long_term_memories SET status = 'deleted', updated_at = ? WHERE id = ?",
+                (utc_now(), memory_id),
+            )
+
+    def list_all_memories(self, search: str | None = None) -> list[dict]:
+        """List active memories with optional search filter."""
+        with self.connect() as conn:
+            if search:
+                rows = conn.execute(
+                    "SELECT * FROM long_term_memories WHERE status = 'active' "
+                    "AND (key LIKE ? OR value LIKE ?) ORDER BY updated_at DESC",
+                    (f"%{search}%", f"%{search}%"),
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    "SELECT * FROM long_term_memories WHERE status = 'active' "
+                    "ORDER BY updated_at DESC"
+                ).fetchall()
+            return [dict(row) for row in rows]
 
     def message_count(self, chat_id: str) -> int:
         """Return the number of persisted messages for a chat."""
@@ -642,10 +839,7 @@ class Database:
                 chunk_ids,
             ).fetchall()
 
-        chunks_by_id = {
-            row["id"]: self._document_chunk_from_row(row)
-            for row in rows
-        }
+        chunks_by_id = {row["id"]: self._document_chunk_from_row(row) for row in rows}
         return [chunks_by_id[chunk_id] for chunk_id in chunk_ids if chunk_id in chunks_by_id]
 
     def upsert_chunk_embedding(

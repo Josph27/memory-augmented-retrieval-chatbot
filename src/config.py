@@ -37,6 +37,14 @@ class AppConfig:
     long_term_memory_collection: str
     previous_chat_gist_generation_enabled: bool
     previous_chat_gist_retrieval_enabled: bool
+    query_augmentation_enabled: bool
+    cross_encoder_model_name: str
+    cross_encoder_top_k: int
+    cross_encoder_mem_k: int
+    cross_encoder_doc_k: int
+    cross_encoder_timeout_ms: int
+    context_placement_mode: str
+    lt_mem_embedding_chunk_size: int
 
     @classmethod
     def from_env(cls) -> "AppConfig":
@@ -73,15 +81,17 @@ class AppConfig:
             reranker_mode=os.getenv(
                 "RERANKER_MODE",
                 "deterministic",
-            ).strip().lower(),
+            )
+            .strip()
+            .lower(),
             reranker_llm_top_k=int(os.getenv("RERANKER_LLM_TOP_K", "10")),
-            reranker_llm_min_confidence=float(
-                os.getenv("RERANKER_LLM_MIN_CONFIDENCE", "0.55")
-            ),
+            reranker_llm_min_confidence=float(os.getenv("RERANKER_LLM_MIN_CONFIDENCE", "0.55")),
             structured_memory_retrieval_mode=os.getenv(
                 "STRUCTURED_MEMORY_RETRIEVAL_MODE",
                 "sqlite",
-            ).strip().lower(),
+            )
+            .strip()
+            .lower(),
             long_term_memory_chroma_persist_dir=Path(
                 os.getenv(
                     "LONG_TERM_MEMORY_CHROMA_PERSIST_DIR",
@@ -94,12 +104,23 @@ class AppConfig:
             ),
             previous_chat_gist_generation_enabled=env_bool(
                 "PREVIOUS_CHAT_GIST_GENERATION_ENABLED",
-                default=False,
+                default=True,
             ),
             previous_chat_gist_retrieval_enabled=env_bool(
                 "PREVIOUS_CHAT_GIST_RETRIEVAL_ENABLED",
-                default=False,
+                default=True,
             ),
+            query_augmentation_enabled=env_bool("QUERY_AUGMENTATION_ENABLED", default=True),
+            cross_encoder_model_name=os.getenv(
+                "CROSS_ENCODER_MODEL_NAME",
+                "cross-encoder/ms-marco-MiniLM-L-6-v2",
+            ),
+            cross_encoder_top_k=int(os.getenv("CROSS_ENCODER_TOP_K", "20")),
+            cross_encoder_mem_k=int(os.getenv("CROSS_ENCODER_MEM_K", "8")),
+            cross_encoder_doc_k=int(os.getenv("CROSS_ENCODER_DOC_K", "4")),
+            cross_encoder_timeout_ms=int(os.getenv("CROSS_ENCODER_TIMEOUT_MS", "2000")),
+            context_placement_mode=os.getenv("CONTEXT_PLACEMENT_MODE", "budget_fitting"),
+            lt_mem_embedding_chunk_size=int(os.getenv("LT_MEM_EMBEDDING_CHUNK_SIZE", "256")),
         )
 
 

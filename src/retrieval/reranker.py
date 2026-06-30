@@ -6,9 +6,10 @@ from dataclasses import dataclass, field, replace
 from typing import Any, Protocol
 
 from src.core.contracts import MemoryCandidate
+from src.retrieval.cross_encoder_reranker import CrossEncoderReranker
 
 
-RERANKER_MODES = {"deterministic", "hybrid", "llm"}
+RERANKER_MODES = {"deterministic", "hybrid", "llm", "cross_encoder"}
 DEFAULT_LLM_TOP_K = 10
 DEFAULT_LLM_MIN_CONFIDENCE = 0.55
 
@@ -90,12 +91,22 @@ class MemoryReranker:
         model: RerankerModel | None = None,
         llm_top_k: int = DEFAULT_LLM_TOP_K,
         llm_min_confidence: float = DEFAULT_LLM_MIN_CONFIDENCE,
+        cross_encoder_reranker: CrossEncoderReranker | None = None,
+        cross_encoder_top_k: int = 20,
+        cross_encoder_mem_k: int = 8,
+        cross_encoder_doc_k: int = 4,
+        cross_encoder_timeout_ms: int = 2000,
     ) -> None:
         self.policy = policy or RerankerPolicy()
         self.mode = normalize_reranker_mode(mode)
         self.model = model
         self.llm_top_k = max(1, llm_top_k)
         self.llm_min_confidence = clamp(llm_min_confidence)
+        self._cross_encoder = cross_encoder_reranker
+        self._cross_top_k = cross_encoder_top_k
+        self._cross_mem_k = cross_encoder_mem_k
+        self._cross_doc_k = cross_encoder_doc_k
+        self._cross_timeout_ms = cross_encoder_timeout_ms
         self.last_trace_metadata: dict[str, Any] = {}
 
     def rank(
@@ -129,6 +140,30 @@ class MemoryReranker:
             self.last_trace_metadata = result.metadata
             return result
 
+        if (
+            self.mode == "cross_encoder"
+            and self._cross_encoder is not None
+            and len(deterministic) >= 2
+        ):
+            try:
+                pre_filtered = deterministic[: self._cross_top_k]
+                cross_ranked = self._cross_encoder.rank(
+                    query=query or "",
+                    candidates=pre_filtered,
+                    mem_k=self._cross_mem_k,
+                    doc_k=self._cross_doc_k,
+                    timeout_ms=self._cross_timeout_ms,
+                )
+                cross_ids = {id(c) for c in cross_ranked}
+                final = cross_ranked + [c for c in deterministic if id(c) not in cross_ids]
+                trace = deterministic_trace(self.mode, final)
+                trace["ranking_source"] = "cross_encoder"
+                result = result_with_final_trace(final, trace)
+                self.last_trace_metadata = result.metadata
+                return result
+            except Exception:
+                pass  # fall through to deterministic below
+
         if self.model is None:
             result = fallback_result(
                 mode=self.mode,
@@ -138,11 +173,7 @@ class MemoryReranker:
             self.last_trace_metadata = result.metadata
             return result
 
-        rerank_pool = (
-            deterministic[: self.llm_top_k]
-            if self.mode == "hybrid"
-            else deterministic
-        )
+        rerank_pool = deterministic[: self.llm_top_k] if self.mode == "hybrid" else deterministic
         try:
             payload = parse_llm_reranker_response(
                 self.model.chat(
@@ -153,8 +184,7 @@ class MemoryReranker:
             confidence = validate_llm_reranker_payload(
                 payload,
                 known_ids={
-                    candidate.metadata["reranker_candidate_id"]
-                    for candidate in rerank_pool
+                    candidate.metadata["reranker_candidate_id"] for candidate in rerank_pool
                 },
             )
             if confidence < self.llm_min_confidence:
@@ -175,9 +205,7 @@ class MemoryReranker:
                 {
                     "fallback_used": False,
                     "fallback_reason": None,
-                    "llm_ranked_candidate_ids": list(
-                        payload["ranked_candidate_ids"]
-                    ),
+                    "llm_ranked_candidate_ids": list(payload["ranked_candidate_ids"]),
                     "llm_confidence": confidence,
                     "llm_reason": str(payload.get("reason") or ""),
                 }
@@ -236,26 +264,16 @@ class MemoryReranker:
         weights = self.policy.weights
         contributions = {
             "lexical_overlap": features["lexical_overlap"] * weights.lexical_overlap,
-            "query_source_boost": (
-                features["query_source_boost"] * weights.query_source_boost
-            ),
+            "query_source_boost": (features["query_source_boost"] * weights.query_source_boost),
             "semantic_score": features["semantic_score"] * weights.semantic_score,
-            "similarity_score": (
-                features["similarity_score"] * weights.similarity_score
-            ),
+            "similarity_score": (features["similarity_score"] * weights.similarity_score),
             "importance": features["importance"] * weights.importance,
             "confidence": features["confidence"] * weights.confidence,
             "recency": features["recency"] * weights.recency,
             "usage_count": features["usage_count"] * weights.usage_count,
-            "source_priority": (
-                features["source_priority"] * weights.source_priority
-            ),
-            "status_penalty": (
-                -features["status_penalty"] * weights.status_penalty
-            ),
-            "redundancy_penalty": (
-                -features["redundancy_penalty"] * weights.redundancy_penalty
-            ),
+            "source_priority": (features["source_priority"] * weights.source_priority),
+            "status_penalty": (-features["status_penalty"] * weights.status_penalty),
+            "redundancy_penalty": (-features["redundancy_penalty"] * weights.redundancy_penalty),
         }
         final_score = sum(contributions.values())
         metadata = dict(candidate.metadata)
@@ -426,10 +444,7 @@ def llm_reranker_messages(
         },
         {
             "role": "user",
-            "content": (
-                f"Query: {query}\nCandidates:\n"
-                f"{json.dumps(rows, ensure_ascii=True)}"
-            ),
+            "content": (f"Query: {query}\nCandidates:\n{json.dumps(rows, ensure_ascii=True)}"),
         },
     ]
 
@@ -489,10 +504,7 @@ def apply_llm_order(
     ranked_ids: list[str],
 ) -> list[MemoryCandidate]:
     """Apply validated LLM order and append omitted candidates deterministically."""
-    by_id = {
-        candidate.metadata["reranker_candidate_id"]: candidate
-        for candidate in rerank_pool
-    }
+    by_id = {candidate.metadata["reranker_candidate_id"]: candidate for candidate in rerank_pool}
     used = set(ranked_ids)
     reranked = [by_id[candidate_id] for candidate_id in ranked_ids]
     reranked.extend(
@@ -539,9 +551,7 @@ def deterministic_trace(
                 "original_rank": candidate.metadata["original_rank"],
                 "deterministic_rank": rank,
                 "score": candidate.score,
-                "feature_contributions": candidate.metadata["score_breakdown"][
-                    "contributions"
-                ],
+                "feature_contributions": candidate.metadata["score_breakdown"]["contributions"],
             }
             for rank, candidate in enumerate(candidates)
         ],
@@ -619,9 +629,7 @@ def meaningful_terms(value: str) -> set[str]:
         "you",
     }
     return {
-        term
-        for term in normalize_text(value).split()
-        if len(term) > 1 and term not in stopwords
+        term for term in normalize_text(value).split() if len(term) > 1 and term not in stopwords
     }
 
 

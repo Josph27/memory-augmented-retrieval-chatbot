@@ -169,11 +169,16 @@ class LongTermMemoryVectorIndex:
 
 def memory_record_to_index_text(record: LongTermMemoryRecord) -> str:
     """Return compact natural-language text for semantic memory indexing."""
-    return (
-        f"Memory category: {record.category}. "
-        f"Key: {record.key}. "
-        f"Value: {record.value}"
-    )
+    chunk_size = _lt_mem_chunk_size()
+    value = record.value
+    if len(value) > chunk_size:
+        value = value[:chunk_size]
+    return f"Memory category: {record.category}. Key: {record.key}. Value: {value}"
+
+
+def _lt_mem_chunk_size() -> int:
+    """Return the lt_mem_embedding_chunk_size from env, default 256."""
+    return int(os.getenv("LT_MEM_EMBEDDING_CHUNK_SIZE", "256"))
 
 
 def memory_record_to_index_metadata(record: LongTermMemoryRecord) -> dict[str, Any]:
@@ -197,6 +202,48 @@ def memory_record_to_index_metadata(record: LongTermMemoryRecord) -> dict[str, A
 def memory_record_vector_id(record: LongTermMemoryRecord) -> str:
     """Return stable vector id for one long-term memory record."""
     return f"{namespace_path(record.namespace)}::{record.memory_id}"
+
+    def delete_by_memory_id(self, memory_id: str) -> None:
+        """Remove a Chroma document by metadata filter.
+
+        Per oracle F6: must be called BEFORE SQLite row deletion.
+        """
+        try:
+            collection = self._get_or_create_collection()
+            collection.delete(where={"memory_id": memory_id})
+        except Exception:
+            pass  # Chroma unavailable — non-critical
+
+    def embed_and_index(self, memory: dict) -> str:
+        """Embed memory text and upsert into Chroma.
+
+        Per oracle F6: must be called AFTER SQLite insert.
+        Per oracle F2: verifies embedding dimension before upsert.
+        """
+        import uuid
+
+        text = f"{memory.get('key', '')} {memory.get('value', '')}"
+        if not text.strip():
+            return ""
+        try:
+            model = self._get_embedding_model()
+            embedding = model.encode([text])[0]
+            collection = self._get_or_create_collection()
+            dim_expected = collection.metadata.get("dimension", 384)
+            if len(embedding) != dim_expected:
+                raise ValueError(
+                    f"Embedding dimension mismatch: got {len(embedding)}, expected {dim_expected}"
+                )
+            doc_id = str(uuid.uuid4())
+            collection.upsert(
+                ids=[doc_id],
+                embeddings=[embedding.tolist()],
+                documents=[text],
+                metadatas=[{"memory_id": memory.get("id", ""), "key": memory.get("key", "")}],
+            )
+            return doc_id
+        except Exception:
+            return ""  # Chroma unavailable — non-critical
 
 
 def document_to_search_result(

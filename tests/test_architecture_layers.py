@@ -331,7 +331,9 @@ def test_coordinator_trace_contains_all_trace_only_layers(tmp_path: Path) -> Non
         "recent_messages",
         "latest_user_message",
     ]
-    assert model.calls[0] == result.trace.context_packet.model_messages
+    # QueryAugmentationAgent may call the model for decomposition (if enabled).
+    # The chat-generate call is always the LAST model call.
+    assert model.calls[-1] == result.trace.context_packet.model_messages
 
 
 def test_coordinator_falls_back_when_context_packet_is_invalid(tmp_path: Path) -> None:
@@ -351,5 +353,5 @@ def test_coordinator_falls_back_when_context_packet_is_invalid(tmp_path: Path) -
     assert result.answer == "fake response"
     assert result.trace.metadata["prompt_source"] == "legacy_short_term_memory_fallback"
     assert result.trace.metadata["fallback_reason"] == "latest_user_message_missing"
-    assert model.calls[0][-1] == {"role": "user", "content": "Remember this."}
-    assert model.calls[0] != result.trace.context_packet.model_messages
+    assert model.calls[-1][-1] == {"role": "user", "content": "Remember this."}
+    assert model.calls[-1] != result.trace.context_packet.model_messages

@@ -349,39 +349,7 @@ class SourcePlan:
         self.enabled = enabled
 ```
 
-**`__init__` patterns**: All `__init__` methods must have a `-> None` return annotation.
-
-```python
-# ✅ DO
-def __init__(self, database: Database, model: ModelWrapper) -> None:
-    self.database = database
-    self.model = model
-```
-
-**Keyword-only arguments**: Use `*` separator on public API methods with 3+ required parameters to prevent positional misuse at call sites. This is the established pattern in `ContextManagerAgent.build_context_packet()`.
-
-```python
-# ✅ DO — keyword-only for public API with many params
-class ContextManagerAgent:
-    def build_context_packet(
-        self,
-        *,
-        system_prompt: str,
-        latest_user_message: dict[str, str],
-        ranked_candidates: list[MemoryCandidate],
-        route_plan: RoutePlan,
-    ) -> ContextManagerResult:
-        ...
-
-# ✅ DO — positional is fine for simple signatures
-def rank_with_trace(
-    self,
-    candidates: list[MemoryCandidate],
-    ranking_profile: str | None,
-    query: str | None = None,
-) -> RerankResult:
-    ...
-```
+**`__init__` patterns**: All `__init__` methods must have a `-> None` return annotation. Use keyword-only arguments (`*`) only when the signature would be ambiguous — the codebase currently does not use this pattern widely.
 
 **`__post_init__`**: Used only on frozen dataclasses when default values require runtime computation.
 
@@ -507,27 +475,7 @@ except Exception as exc:
 
 **Error messages**: Use `{type(error).__name__}` to capture exception class names in fallback metadata.
 
-### 3.8 Per-Stage Timing
-
-**Rule**: Every pipeline stage in `CoordinatorAgent.run_turn()` and similar orchestration methods uses `perf_counter()` for timing. Use the `elapsed_ms()` helper (module-level pure function). Never use `time.time()`.
-
-```python
-from time import perf_counter
-
-def elapsed_ms(started: float) -> float:
-    """Return elapsed milliseconds rounded for compact timing logs."""
-    return round((perf_counter() - started) * 1000, 2)
-
-# In orchestrator methods:
-timings: dict[str, float] = {}
-stage_started = perf_counter()
-result = do_work()
-timings["stage_name"] = elapsed_ms(stage_started)
-```
-
-All timings are stored in `WorkflowTrace.metadata["timings_ms"]` for downstream analysis.
-
-### 3.9 Comments and Tracing
+### 3.8 Comments and Tracing
 
 **Inline comments**: Rare. Prefer descriptive variable names and docstrings. Use inline comments only for non-obvious logic.
 
@@ -579,7 +527,7 @@ print(
 )
 ```
 
-### 3.10 String Formatting
+### 3.9 String Formatting
 
 **Rule**: f-strings always. No `.format()`, no `%`-formatting.
 
@@ -601,7 +549,7 @@ f"UPDATE messages SET summarized = 1 WHERE id IN ({placeholders})"
 
 The `!r` conversion flag is used when embedding string values in log-style output to preserve quotes and escape sequences.
 
-### 3.11 Asynchronicity
+### 3.10 Asynchronicity
 
 **Rule**: All core business logic in `src/` is **synchronous**. Async is used only in the Chainlit adapter layer (`src/chainlit_data_layer.py`) because Chainlit's `BaseDataLayer` interface requires `async def`.
 
@@ -622,7 +570,7 @@ async def route(self, query: str) -> RoutingDecision:
     ...
 ```
 
-### 3.12 Line Length
+### 3.11 Line Length
 
 **Rule**: 100 characters maximum (enforced by ruff).
 
@@ -647,7 +595,7 @@ memory_update_batch_size=int(
 )
 ```
 
-### 3.13 Testing Patterns
+### 3.12 Testing Patterns
 
 **Framework**: pytest. Plain functions, no `unittest.TestCase`.
 
@@ -870,137 +818,7 @@ class RoutingDecision:
     fallback_mode: bool = False
 ```
 
-### 4.8 Immutable Updates with `replace()`
-
-**Rule**: Dataclasses are frozen. Use `from dataclasses import replace` to create modified copies. Used extensively in the reranker and context builder.
-
-```python
-from dataclasses import replace
-
-# ✅ DO — create a new instance with updated fields
-return replace(candidate, score=final_score, metadata=new_metadata)
-
-# ✅ DO — using dict copy + update
-metadata = dict(candidate.metadata)
-metadata.update({"ranking_profile": "default"})
-return replace(candidate, metadata=metadata)
-
-# ❌ DON'T — FrozenInstanceError
-candidate.score = final_score
-```
-
-### 4.9 Database Migration Pattern
-
-**Rule**: All additive schema changes use `_ensure_<table>_<column>_column(conn)` methods on `Database`. Never use raw `ALTER TABLE` outside these methods. Never drop or rename columns.
-
-```python
-class Database:
-    def init_schema(self) -> None:
-        with self.connect() as connection:
-            # ... base table creation ...
-            self._ensure_chats_active_column(connection)
-
-    def _ensure_chats_active_column(self, conn: sqlite3.Connection) -> None:
-        try:
-            conn.execute(
-                "ALTER TABLE chats ADD COLUMN active INTEGER NOT NULL DEFAULT 1"
-            )
-        except sqlite3.OperationalError:
-            pass  # column already exists
-```
-
-- Each migration method is idempotent (catches `OperationalError`).
-- Always use `NOT NULL DEFAULT <value>` for existing rows.
-- Migration methods called from `init_schema()`, never directly.
-
-### 4.10 Print-Based Structured Tracing
-
-**Rule**: `print()` with structured `key=value` formatting for debug/timing. Two established formats:
-
-```python
-# Format 1: workflow_trace (one line per turn)
-print(
-    "workflow_trace "
-    f"trace_id={trace.trace_id} "
-    f"chat_id={trace.chat_id} "
-    f"intent={route_intent} "
-    f"reranker_mode={reranker_mode} "
-    f"termination_reason={trace.termination_reason} "
-)
-
-# Format 2: turn_timing (one line per turn)
-print(
-    "turn_timing "
-    f"trace_id={trace.trace_id} "
-    f"route_planning_ms={timings.get('route_planning')} "
-    f"retrieval_ms={timings.get('retrieval')} "
-    f"total_turn_ms={timings.get('total_turn')}"
-)
-```
-
-- First token is a label (`workflow_trace`, `turn_timing`, `memory_update_timing`).
-- All subsequent tokens are `key=value` pairs (no spaces around `=`).
-- Token separator: single space.
-
-### 4.11 Dual-Pipeline Context Building
-
-**Rule**: `CoordinatorAgent.run_turn()` builds BOTH legacy and new trace context, then uses `ContextComparator` to select the best. This is a deliberate safety net.
-
-```python
-# Legacy path (always built, reliable fallback)
-context = self.memory_agent.build_context(chat_id=chat_id, ...)
-model_messages, _ = self.context_builder.build(chat_id=chat_id, ...)
-
-# New trace path (budget-aware, may overflow)
-context_manager_result = context_manager.build_context_packet(...)
-
-# Comparison + fallback
-context_comparison = self.context_comparator.compare(
-    old_model_messages=model_messages,
-    new_context_packet=trace_context_packet,
-    ...
-)
-if not prompt_assembly.valid:
-    prompt_source = "legacy_short_term_memory_fallback"
-    final_model_messages = model_messages
-```
-
-When adding new context features: always keep the legacy path functioning, add comparison metadata, never remove the fallback until proven stable.
-
-### 4.12 Dispatcher with Registry Dictionary
-
-**Rule**: Components dispatching to multiple implementations use a `dict[str, Protocol]` registry:
-
-```python
-class RetrieverDispatcher:
-    def __init__(
-        self,
-        database: Database,
-        retrievers: dict[str, SourceRetriever] | None = None,
-    ) -> None:
-        self.retrievers: dict[str, SourceRetriever] = retrievers or {
-            "recent_messages": RecentMessagesRetriever(database),
-            "structured_memory": StructuredMemoryRetriever(database),
-            "document_memory": LangChainChromaRetriever.from_env(database=database),
-        }
-
-    def retrieve(self, chat_id: str, route_plan: RoutePlan) -> list[MemoryCandidate]:
-        candidates: list[MemoryCandidate] = []
-        for source_plan in route_plan.sources:
-            if not source_plan.enabled:
-                continue
-            retriever = self.retrievers.get(source_plan.source)
-            if retriever is None:
-                continue
-            candidates.extend(retriever.retrieve(chat_id=chat_id, source_plan=source_plan))
-        return candidates
-```
-
-- Default registry in `__init__`, overrideable via constructor injection.
-- Unknown keys silently skipped.
-- Each implementation conforms to a single Protocol.
-
-### 4.13 Helper Function Pattern
+### 4.8 Helper Function Pattern
 
 Pure functions at module level for reusable logic. These stay close to the class that uses them.
 
@@ -1221,88 +1039,7 @@ connection.execute(
 
 ### 6.11 Print vs Logger
 
-**Gotcha**: The codebase uses `print()` for structured trace output (key=value) and `logging.getLogger(__name__)` for warnings/errors. Do not mix them.
-
-| Purpose | Tool | Format |
-|---------|------|--------|
-| Pipeline stage timing | `print(f"turn_timing ...")` | `key=value` pairs |
-| Workflow decisions | `print(f"workflow_trace ...")` | `key=value` pairs |
-| Memory update events | `print(f"memory_update_timing ...")` | `key=value` pairs |
-| Warnings | `logger.warning("msg %s", val)` | printf-style |
-| Critical errors | Let propagate (`raise ... from exc`) | Exception chaining |
-
-```python
-# ✅ DO — structured trace
-print(
-    "memory_update_timing "
-    f"chat_id={chat_id} triggered=True "
-    f"message_ids={[m.id for m in messages]} "
-)
-
-# ✅ DO — logger for operational issues
-logger.warning(
-    "memory update rejected chat_id=%s reason=%s",
-    chat_id,
-    result.rejection_reason or "unknown",
-)
-
-# ❌ DON'T — print for warnings
-print(f"WARNING: memory update failed for {chat_id}")
-
-# ❌ DON'T — logger for trace
-logger.info("retrieval took %dms", elapsed)
-```
-
----
-
-### 6.12 Default-Construct Collaborators
-
-**Gotcha**: Service classes that accept optional collaborators must construct sensible defaults inline. Use `self.collaborator = collaborator or CollaboratorClass()`. Never leave a collaborator as `None` without a default.
-
-```python
-# ✅ DO
-class RoutePlanner:
-    def __init__(self, analyzer: QueryAnalyzer | None = None) -> None:
-        self.analyzer = analyzer or QueryAnalyzer()
-
-# ❌ DON'T — leaves self.analyzer as None, causes AttributeError
-class RoutePlanner:
-    def __init__(self, analyzer: QueryAnalyzer | None = None) -> None:
-        self.analyzer = analyzer
-```
-
-### 6.13 Backward-Compatible String Aliases
-
-**Gotcha**: When renaming constants, keep old names as aliases with explanatory comments. Example from `MemorySourceType`:
-
-```python
-MemorySourceType = Literal[
-    "recent_messages",
-    "current_chat_gist",
-    "previous_chat_gist",
-    # Backward-compatible aliases.
-    "current_chat_chunks",
-    "previous_chat_memory",
-]
-```
-
-Never remove old string values from Literal types without a migration period.
-
-### 6.14 SQLite Row Factory
-
-**Gotcha**: Always set `connection.row_factory = sqlite3.Row` when opening a DB connection. Required for column-name access (`row["title"]`).
-
-```python
-@contextmanager
-def connect(self) -> Iterator[sqlite3.Connection]:
-    connection = sqlite3.connect(self.path)
-    connection.row_factory = sqlite3.Row  # REQUIRED
-    try:
-        yield connection
-        connection.commit()
-    finally:
-        connection.close()
-```
+**Gotcha**: The codebase uses `print()` for structured trace output (key=value) and `logging.getLogger(__name__)` for warnings/errors. Do not mix them. Trace/debug → `print()`. Warnings → `logger.warning()`. Critical errors → let them propagate.
 
 ---
 
