@@ -29,6 +29,7 @@ class ContextBudgetPolicy:
 
     default_model_context_limit: int = 4096
     default_answer_reserve: int = 512
+    minimum_candidate_source_tokens: int = 64
     profiles: dict[str, AllocationProfile] = field(
         default_factory=lambda: {
             "general_chat": AllocationProfile(
@@ -127,7 +128,25 @@ class ContextBudgetAllocator:
         allocatable = max(0, context_limit - system_estimate - safety_tokens - reserved_response_tokens)
 
         source_ratios = enabled_source_ratios(profile, enabled_sources)
-        source_budgets = allocate_source_budgets(allocatable, source_ratios)
+        candidate_source_minimum_budgets = candidate_source_minimum_budgets_for(
+            ranked_candidates=ranked_candidates,
+            enabled_sources=enabled_sources,
+            token_estimator=self.token_estimator,
+            minimum_tokens=self.policy.minimum_candidate_source_tokens,
+            allocatable_tokens=allocatable,
+        )
+        ratio_allocatable = max(
+            0,
+            allocatable - sum(candidate_source_minimum_budgets.values()),
+        )
+        source_budgets = allocate_source_budgets(
+            ratio_allocatable,
+            source_ratios,
+        )
+        for source, minimum_budget in candidate_source_minimum_budgets.items():
+            source_budgets[source] = (
+                source_budgets.get(source, 0) + minimum_budget
+            )
         recent_message_tokens = source_budgets.get("recent_messages", 0)
         structured_memory_tokens = source_budgets.get("structured_memory", 0)
         retrieval_tokens = sum(
@@ -156,6 +175,9 @@ class ContextBudgetAllocator:
                 "candidate_count": len(ranked_candidates),
                 "candidate_token_estimate": candidate_token_estimate,
                 "ratio_source": "normalized_enabled_sources",
+                "candidate_source_minimum_budgets": (
+                    candidate_source_minimum_budgets
+                ),
             },
         )
 
@@ -210,6 +232,48 @@ def allocate_source_budgets(allocatable_tokens: int, ratios: dict[str, float]) -
     return {
         source: max(0, int(allocatable_tokens * ratio))
         for source, ratio in ratios.items()
+    }
+
+
+def candidate_source_minimum_budgets_for(
+    *,
+    ranked_candidates: list[MemoryCandidate],
+    enabled_sources: set[str],
+    token_estimator: TokenEstimator,
+    minimum_tokens: int,
+    allocatable_tokens: int,
+) -> dict[str, int]:
+    """Reserve bounded minimums for every candidate-bearing enabled source."""
+    candidate_sizes: dict[str, list[int]] = {}
+    for candidate in ranked_candidates:
+        if candidate.source not in enabled_sources:
+            continue
+        candidate_sizes.setdefault(candidate.source, []).append(
+            token_estimator.estimate_text(candidate.content)
+        )
+
+    candidate_sources = sorted(candidate_sizes)
+    if not candidate_sources or allocatable_tokens <= 0:
+        return {}
+
+    requested = {
+        source: max(
+            1,
+            minimum_tokens,
+            min(candidate_sizes[source]),
+        )
+        for source in candidate_sources
+    }
+    requested_total = sum(requested.values())
+    if requested_total <= allocatable_tokens:
+        return requested
+
+    available_per_source = allocatable_tokens // len(candidate_sources)
+    if available_per_source <= 0:
+        return {}
+    return {
+        source: min(requested[source], available_per_source)
+        for source in candidate_sources
     }
 
 
