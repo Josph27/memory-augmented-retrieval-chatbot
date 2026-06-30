@@ -14,6 +14,10 @@ from src.memory.structured_state import ChatModel
 PREVIOUS_CHAT_GIST_SOURCE = "previous_chat_gist"
 
 
+class PreviousChatGistFinalizationError(RuntimeError):
+    """Raised when pending chat-end gist messages cannot be finalized safely."""
+
+
 @dataclass(frozen=True)
 class PreviousChatGistResult:
     """Result from generating previous-chat gists."""
@@ -22,6 +26,16 @@ class PreviousChatGistResult:
     skipped_count: int
     gist_ids: list[int] = field(default_factory=list)
     skipped_reasons: dict[str, str] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class PreviousChatGistFinalizationResult:
+    """Bounded episodic-gist finalization outcome for one ended chat."""
+
+    created_count: int
+    processed_message_count: int
+    batch_count: int
+    gist_ids: list[int] = field(default_factory=list)
 
 
 class DeterministicPreviousChatGistExtractor:
@@ -105,12 +119,80 @@ class PreviousChatGistGenerator:
 
     def generate_for_chat(self, chat: StoredChat) -> int | None:
         """Create one previous-chat gist for a single chat if eligible."""
-        messages = self.database.messages_for_chat(chat.id)[: self.max_messages_per_gist]
+        messages = [
+            message
+            for message in self.database.messages_for_chat(chat.id)
+            if not message.gist_processed
+        ][: self.max_messages_per_gist]
         if len(messages) < self.min_messages:
             return None
         summary = self.extractor.summarize(messages) if self.extractor else None
         if summary is None or not summary.summary.strip():
             return None
+        return self._store_gist(chat=chat, messages=messages, summary=summary)
+
+    def finalize_chat(self, chat_id: str) -> PreviousChatGistFinalizationResult:
+        """Finalize every pending episodic segment in bounded batches.
+
+        Assistant-only batches are valid no-ops and are marked gist-processed.
+        Invalid extractor output remains pending and fails chat end.
+        """
+        chat = self.database.get_chat(chat_id)
+        if chat is None:
+            raise ValueError(f"Chat not found: {chat_id}")
+        if self.extractor is None:
+            raise PreviousChatGistFinalizationError(
+                f"No gist extractor configured for chat: {chat_id}"
+            )
+
+        gist_ids: list[int] = []
+        processed_message_count = 0
+        batch_count = 0
+        batch_size = max(1, self.max_messages_per_gist)
+        while True:
+            messages = self.database.old_ungisted_messages(
+                chat_id=chat_id,
+                raw_message_limit=0,
+                batch_size=batch_size,
+            )
+            if not messages:
+                return PreviousChatGistFinalizationResult(
+                    created_count=len(gist_ids),
+                    processed_message_count=processed_message_count,
+                    batch_count=batch_count,
+                    gist_ids=gist_ids,
+                )
+
+            message_ids = [message.id for message in messages]
+            if not any(message.role == "user" for message in messages):
+                self.database.mark_messages_gist_processed(message_ids)
+                processed_message_count += len(messages)
+                batch_count += 1
+                continue
+
+            summary = self.extractor.summarize(messages)
+            if summary is None or not summary.summary.strip():
+                raise PreviousChatGistFinalizationError(
+                    f"Invalid or empty previous-chat gist for chat: {chat_id}"
+                )
+            gist_ids.append(
+                self._store_gist(
+                    chat=chat,
+                    messages=messages,
+                    summary=summary,
+                )
+            )
+            processed_message_count += len(messages)
+            batch_count += 1
+
+    def _store_gist(
+        self,
+        *,
+        chat: StoredChat,
+        messages: list[StoredMessage],
+        summary: ChatGistSummary,
+    ) -> int:
+        """Store one previous-chat gist and advance its episodic state atomically."""
         message_ids = [message.id for message in messages]
         return self.database.insert_chat_gist(
             chat_id=chat.id,
@@ -129,7 +211,9 @@ class PreviousChatGistGenerator:
                 "status": "active",
                 "chat_title": chat.title,
                 "gist_scope": "previous_chat",
+                "source_message_ids": message_ids,
             },
+            gist_processed_message_ids=message_ids,
         )
 
 

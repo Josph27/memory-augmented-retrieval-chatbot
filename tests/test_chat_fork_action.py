@@ -7,10 +7,65 @@ import pytest
 
 from src.actions.chat_fork import ChatForkAction
 from src.database import Database
+from src.memory.long_term_store import (
+    DEFAULT_USER_NAMESPACE,
+    LongTermMemoryWrite,
+    SQLiteLongTermMemoryStore,
+)
+from src.memory.short_term import ShortTermMemory
+from src.memory.structured_state import MemoryUpdateResult
 
 
 def action_for(database: Database, new_chat_id: str = "forked-chat") -> ChatForkAction:
     return ChatForkAction(database, id_factory=lambda: new_chat_id)
+
+
+class FakeModel:
+    def chat(
+        self,
+        messages: list[dict[str, str]],
+        temperature: float | None = None,
+    ) -> str:
+        del messages, temperature
+        return ""
+
+
+class PersistingFactUpdater:
+    """Store one distinct test record per processed user fact."""
+
+    def __init__(self, database: Database) -> None:
+        self.store = SQLiteLongTermMemoryStore(database)
+        self.processed_batches: list[list[str]] = []
+        self.write_count = 0
+        self.last_saved_records: list[object] = []
+
+    def update(self, existing_memory, messages):  # type: ignore[no-untyped-def]
+        self.processed_batches.append([message.content for message in messages])
+        for message in messages:
+            if message.role != "user" or not message.content.startswith("Fact:"):
+                continue
+            self.write_count += 1
+            self.store.upsert(
+                LongTermMemoryWrite(
+                    namespace=DEFAULT_USER_NAMESPACE,
+                    memory_id=f"test-fact-{self.write_count}",
+                    category="preferences",
+                    key=f"fact_{self.write_count}",
+                    value=message.content,
+                    source_chat_id=message.chat_id,
+                    source_message_ids=[message.id],
+                )
+            )
+        return MemoryUpdateResult(memory_state=existing_memory, accepted=True)
+
+
+def memory_for(database: Database, updater: PersistingFactUpdater) -> ShortTermMemory:
+    return ShortTermMemory(
+        database=database,
+        model=FakeModel(),
+        memory_update_batch_size=2,
+        structured_memory_updater=updater,
+    )
 
 
 def test_fork_empty_chat_creates_active_copy_and_preserves_original(
@@ -45,6 +100,7 @@ def test_fork_copies_messages_with_new_ids_and_preserves_order(
         database.save_message("original", "user", "Third"),
     ]
     database.mark_messages_summarized(original_ids[:2])
+    database.mark_messages_gist_processed(original_ids[1:])
     original_before = database.messages_for_chat("original")
 
     new_chat_id = action_for(database).execute("original")
@@ -58,8 +114,85 @@ def test_fork_copies_messages_with_new_ids_and_preserves_order(
         ("assistant", "Second"),
         ("user", "Third"),
     ]
-    assert [message.summarized for message in copied] == [True, True, False]
+    assert [message.summarized for message in copied] == [True, True, True]
+    assert [message.gist_processed for message in copied] == [False, True, True]
     assert {message.id for message in copied}.isdisjoint(original_ids)
+
+
+def test_pending_inherited_messages_are_not_semantically_reprocessed(
+    tmp_path: Path,
+) -> None:
+    database = Database(tmp_path / "chatbot.db")
+    database.create_chat("original")
+    database.save_message(
+        "original",
+        "user",
+        "Fact: I prefer mature open-source libraries.",
+    )
+    database.save_message("original", "assistant", "Recorded.")
+    updater = PersistingFactUpdater(database)
+
+    new_chat_id = action_for(database).execute("original")
+    original_result = memory_for(database, updater).process_all_for_chat_end("original")
+    fork_result = memory_for(database, updater).process_all_for_chat_end(new_chat_id)
+
+    records = updater.store.list(DEFAULT_USER_NAMESPACE)
+    assert original_result.processed_message_count == 2
+    assert fork_result.processed_message_count == 0
+    assert len(records) == 1
+    assert records[0].value == "Fact: I prefer mature open-source libraries."
+    assert records[0].source_chat_id == "original"
+    assert all(
+        message.summarized
+        for message in database.messages_for_chat(new_chat_id)
+    )
+
+
+def test_post_fork_messages_remain_semantically_processable(
+    tmp_path: Path,
+) -> None:
+    database = Database(tmp_path / "chatbot.db")
+    database.create_chat("original")
+    database.save_message(
+        "original",
+        "user",
+        "Fact: I prefer mature open-source libraries.",
+    )
+    database.save_message("original", "assistant", "Recorded.")
+    updater = PersistingFactUpdater(database)
+    memory_for(database, updater).process_all_for_chat_end("original")
+    original_before = database.messages_for_chat("original")
+
+    new_chat_id = action_for(database).execute("original")
+    new_message_id = database.save_message(
+        new_chat_id,
+        "user",
+        "Fact: I now prefer concise implementation notes.",
+    )
+    result = memory_for(database, updater).process_all_for_chat_end(new_chat_id)
+
+    records = updater.store.list(DEFAULT_USER_NAMESPACE)
+    assert result.processed_message_count == 1
+    assert len(records) == 2
+    assert {record.value for record in records} == {
+        "Fact: I prefer mature open-source libraries.",
+        "Fact: I now prefer concise implementation notes.",
+    }
+    assert sum(
+        record.value == "Fact: I prefer mature open-source libraries."
+        for record in records
+    ) == 1
+    new_record = next(
+        record
+        for record in records
+        if record.value == "Fact: I now prefer concise implementation notes."
+    )
+    assert new_record.source_chat_id == new_chat_id
+    assert new_record.source_message_ids == [new_message_id]
+    assert database.messages_for_chat("original") == original_before
+    assert new_chat_id in {
+        chat["id"] for chat in database.list_active_chats()
+    }
 
 
 def test_fork_remaps_gist_provenance_without_copying_legacy_memory(

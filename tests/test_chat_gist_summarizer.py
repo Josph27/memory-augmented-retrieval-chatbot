@@ -62,9 +62,10 @@ def test_no_gist_created_if_not_enough_messages(tmp_path: Path) -> None:
     assert result.skipped_reason == "not_enough_old_unsummarized_messages"
     assert db.chat_gists_for_chat("chat") == []
     assert all(not message.summarized for message in db.messages_for_chat("chat"))
+    assert all(not message.gist_processed for message in db.messages_for_chat("chat"))
 
 
-def test_older_messages_are_summarized_and_latest_recent_messages_are_kept(
+def test_older_messages_are_gist_processed_and_latest_recent_messages_are_kept(
     tmp_path: Path,
 ) -> None:
     db = Database(tmp_path / "chatbot.db")
@@ -97,9 +98,10 @@ def test_older_messages_are_summarized_and_latest_recent_messages_are_kept(
     assert metadata["source_message_count"] == 3
 
     messages = db.messages_for_chat("chat")
-    summarized = {message.id for message in messages if message.summarized}
-    assert summarized == set(ids[:3])
-    assert all(not message.summarized for message in messages[-2:])
+    gist_processed = {message.id for message in messages if message.gist_processed}
+    assert gist_processed == set(ids[:3])
+    assert all(not message.gist_processed for message in messages[-2:])
+    assert all(not message.summarized for message in messages)
 
 
 def test_latest_user_message_is_not_summarized_even_with_small_recent_window(
@@ -123,8 +125,8 @@ def test_latest_user_message_is_not_summarized_even_with_small_recent_window(
     assert result.created is True
     assert result.summarized_message_ids == [first_id, second_id]
     messages = {message.id: message for message in db.messages_for_chat("chat")}
-    assert messages[latest_user_id].summarized is False
-    assert messages[assistant_id].summarized is False
+    assert messages[latest_user_id].gist_processed is False
+    assert messages[assistant_id].gist_processed is False
 
 
 def test_messages_are_not_marked_summarized_if_insert_fails(tmp_path: Path) -> None:
@@ -144,6 +146,7 @@ def test_messages_are_not_marked_summarized_if_insert_fails(tmp_path: Path) -> N
     messages = db.messages_for_chat("chat")
     assert [message.id for message in messages] == ids
     assert all(not message.summarized for message in messages)
+    assert all(not message.gist_processed for message in messages)
 
 
 def test_empty_gist_is_rejected_without_marking_messages(tmp_path: Path) -> None:
@@ -163,6 +166,7 @@ def test_empty_gist_is_rejected_without_marking_messages(tmp_path: Path) -> None
     assert result.skipped_reason == "invalid_or_empty_gist"
     assert db.chat_gists_for_chat("chat") == []
     assert all(not message.summarized for message in db.messages_for_chat("chat"))
+    assert all(not message.gist_processed for message in db.messages_for_chat("chat"))
 
 
 def test_no_model_or_extractor_skips_without_side_effects(tmp_path: Path) -> None:
@@ -180,6 +184,50 @@ def test_no_model_or_extractor_skips_without_side_effects(tmp_path: Path) -> Non
     assert result.created is False
     assert result.skipped_reason == "no_gist_extractor_configured"
     assert db.chat_gists_for_chat("chat") == []
+
+
+def test_structured_summarized_messages_remain_eligible_for_gist(
+    tmp_path: Path,
+) -> None:
+    db = Database(tmp_path / "chatbot.db")
+    db.create_chat("chat")
+    ids = populate_messages(db, "chat", 5)
+    db.mark_messages_summarized(ids[:3])
+
+    result = CurrentChatGistSummarizer(
+        database=db,
+        extractor=FakeGistExtractor(),
+        min_messages_to_summarize=3,
+        keep_recent_messages=2,
+        max_messages_per_gist=3,
+    ).create_gist_if_needed("chat")
+
+    assert result.created is True
+    assert result.summarized_message_ids == ids[:3]
+    messages = {message.id: message for message in db.messages_for_chat("chat")}
+    assert all(messages[message_id].summarized for message_id in ids[:3])
+    assert all(messages[message_id].gist_processed for message_id in ids[:3])
+
+
+def test_gist_processing_does_not_mark_structured_memory_summarized(
+    tmp_path: Path,
+) -> None:
+    db = Database(tmp_path / "chatbot.db")
+    db.create_chat("chat")
+    ids = populate_messages(db, "chat", 5)
+
+    result = CurrentChatGistSummarizer(
+        database=db,
+        extractor=FakeGistExtractor(),
+        min_messages_to_summarize=3,
+        keep_recent_messages=2,
+        max_messages_per_gist=3,
+    ).create_gist_if_needed("chat")
+
+    assert result.created is True
+    messages = {message.id: message for message in db.messages_for_chat("chat")}
+    assert all(messages[message_id].gist_processed for message_id in ids[:3])
+    assert all(not message.summarized for message in messages.values())
 
 
 def test_parse_gist_summary_accepts_valid_json_and_rejects_transcripts() -> None:

@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from src.chat_service import ChatService
 from src.core.contracts import SourcePlan
 from src.database import Database, StoredMessage
@@ -34,6 +36,17 @@ class FakePreviousGistExtractor:
         )
 
 
+class EmptyPreviousGistExtractor:
+    def summarize(self, messages: list[StoredMessage]) -> ChatGistSummary:
+        del messages
+        return ChatGistSummary(summary="")
+
+
+class FailingGistInsertDatabase(Database):
+    def insert_chat_gist(self, *args, **kwargs) -> int:  # type: ignore[no-untyped-def]
+        raise RuntimeError("gist insert failed")
+
+
 class FakePreviousGistGenerator:
     def __init__(self) -> None:
         self.calls: list[str | None] = []
@@ -50,6 +63,7 @@ def test_previous_chat_gist_generator_creates_gist_for_existing_chat(
     database.create_chat("old-chat", title="Old chat")
     first_id = database.save_message("old-chat", "user", "mature libraries preference")
     second_id = database.save_message("old-chat", "assistant", "noted")
+    database.mark_messages_summarized([first_id])
 
     result = PreviousChatGistGenerator(
         database=database,
@@ -67,6 +81,9 @@ def test_previous_chat_gist_generator_creates_gist_for_existing_chat(
     assert gist.start_message_id == first_id
     assert gist.end_message_id == second_id
     assert database.chat_gists_for_chat("old-chat", "previous_chat_gist")
+    messages = database.messages_for_chat("old-chat")
+    assert [message.summarized for message in messages] == [True, False]
+    assert all(message.gist_processed for message in messages)
 
 
 def test_previous_chat_gist_generator_skips_active_and_existing_gists(
@@ -187,3 +204,44 @@ def test_deterministic_previous_gist_extractor_requires_no_model() -> None:
     assert summary is not None
     assert "mature open-source libraries" in summary.summary
     assert summary.topics
+
+
+def test_invalid_previous_gist_does_not_advance_gist_state(tmp_path: Path) -> None:
+    database = Database(tmp_path / "chatbot.db")
+    database.create_chat("old-chat")
+    database.save_message("old-chat", "user", "temporary")
+    database.save_message("old-chat", "assistant", "ack")
+
+    result = PreviousChatGistGenerator(
+        database=database,
+        extractor=EmptyPreviousGistExtractor(),
+        min_messages=2,
+    ).generate_for_existing_chats()
+
+    assert result.created_count == 0
+    assert database.chat_gists_for_chat("old-chat") == []
+    assert all(
+        not message.gist_processed
+        for message in database.messages_for_chat("old-chat")
+    )
+
+
+def test_failed_previous_gist_insert_does_not_advance_gist_state(
+    tmp_path: Path,
+) -> None:
+    database = FailingGistInsertDatabase(tmp_path / "chatbot.db")
+    database.create_chat("old-chat")
+    database.save_message("old-chat", "user", "durable discussion")
+    database.save_message("old-chat", "assistant", "ack")
+
+    with pytest.raises(RuntimeError, match="gist insert failed"):
+        PreviousChatGistGenerator(
+            database=database,
+            extractor=FakePreviousGistExtractor(),
+            min_messages=2,
+        ).generate_for_existing_chats()
+
+    assert all(
+        not message.gist_processed
+        for message in database.messages_for_chat("old-chat")
+    )

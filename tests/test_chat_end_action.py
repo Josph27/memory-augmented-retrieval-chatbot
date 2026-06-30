@@ -6,13 +6,21 @@ from pathlib import Path
 import pytest
 
 from src.actions.chat_end import ChatEndAction
+from src.agents.context_manager_agent import ContextManagerAgent
 from src.database import Database
+from src.memory.previous_chat_gist import (
+    DeterministicPreviousChatGistExtractor,
+    PreviousChatGistGenerator,
+)
 from src.memory.short_term import (
     ChatEndMemoryProcessingError,
     ChatEndMemoryProcessingResult,
     ShortTermMemory,
 )
 from src.memory.structured_state import MemoryUpdateResult
+from src.retrieval.previous_chat_gist_retriever import PreviousChatGistRetriever
+from src.retrieval.retriever_dispatcher import RetrieverDispatcher
+from src.routing.route_planner import RoutePlanner
 
 
 class FakeModel:
@@ -80,6 +88,23 @@ class RaisingUpdater:
     def update(self, existing_memory, messages):  # type: ignore[no-untyped-def]
         del existing_memory, messages
         raise RuntimeError("model unavailable")
+
+
+class RaisingGistExtractor:
+    def summarize(self, messages):  # type: ignore[no-untyped-def]
+        del messages
+        raise RuntimeError("gist model unavailable")
+
+
+def deterministic_gist_finalizer(
+    database: Database,
+    max_messages_per_gist: int = 80,
+) -> PreviousChatGistGenerator:
+    return PreviousChatGistGenerator(
+        database=database,
+        extractor=DeterministicPreviousChatGistExtractor(),
+        max_messages_per_gist=max_messages_per_gist,
+    )
 
 
 def test_chat_end_success_processes_memory_then_marks_inactive(tmp_path: Path) -> None:
@@ -286,3 +311,183 @@ def test_updater_exception_keeps_chat_active_and_message_pending(tmp_path: Path)
 
     assert [chat["id"] for chat in database.list_active_chats()] == ["chat"]
     assert database.messages_for_chat("chat")[0].summarized is False
+
+
+def test_chat_end_finalizes_pending_previous_chat_gist_segments(
+    tmp_path: Path,
+) -> None:
+    database = Database(tmp_path / "chatbot.db")
+    database.create_chat("chat")
+    message_ids = [
+        database.save_message("chat", "user", "Distinctive cobalt deployment fact."),
+        database.save_message("chat", "assistant", "Recorded."),
+        database.save_message("chat", "user", "Also retain the rollback checklist."),
+        database.save_message("chat", "assistant", "Recorded too."),
+    ]
+    action = ChatEndAction(
+        database,
+        RecordingMemoryProcessor(ChatEndMemoryProcessingResult(0, 0)),
+        gist_finalizer=deterministic_gist_finalizer(
+            database,
+            max_messages_per_gist=2,
+        ),
+    )
+
+    result = action.execute("chat")
+
+    gists = database.chat_gists_for_chat("chat", "previous_chat_gist")
+    assert result.gist_count == 2
+    assert result.gist_processed_message_count == 4
+    assert result.gist_batch_count == 2
+    assert [chat["id"] for chat in database.list_inactive_chats()] == ["chat"]
+    assert len(gists) == 2
+    assert sorted(
+        (gist.start_message_id, gist.end_message_id)
+        for gist in gists
+    ) == [
+        (message_ids[0], message_ids[1]),
+        (message_ids[2], message_ids[3]),
+    ]
+    assert all(
+        message.gist_processed
+        for message in database.messages_for_chat("chat")
+    )
+
+
+def test_chat_end_assistant_only_gist_batch_is_valid_noop(
+    tmp_path: Path,
+) -> None:
+    database = Database(tmp_path / "chatbot.db")
+    database.create_chat("chat")
+    database.save_message("chat", "assistant", "No user episode to summarize.")
+
+    result = ChatEndAction(
+        database,
+        RecordingMemoryProcessor(ChatEndMemoryProcessingResult(0, 0)),
+    ).execute("chat")
+
+    assert result.gist_count == 0
+    assert result.gist_processed_message_count == 1
+    assert database.chat_gists_for_chat("chat", "previous_chat_gist") == []
+    assert database.messages_for_chat("chat")[0].gist_processed is True
+    assert [chat["id"] for chat in database.list_inactive_chats()] == ["chat"]
+
+
+def test_gist_finalization_failure_keeps_chat_active_without_partial_gist(
+    tmp_path: Path,
+) -> None:
+    database = Database(tmp_path / "chatbot.db")
+    database.create_chat("chat")
+    database.save_message("chat", "user", "Remember this episode.")
+    finalizer = PreviousChatGistGenerator(
+        database=database,
+        extractor=RaisingGistExtractor(),
+    )
+
+    with pytest.raises(RuntimeError, match="gist model unavailable"):
+        ChatEndAction(
+            database,
+            RecordingMemoryProcessor(ChatEndMemoryProcessingResult(0, 0)),
+            gist_finalizer=finalizer,
+        ).execute("chat")
+
+    assert [chat["id"] for chat in database.list_active_chats()] == ["chat"]
+    assert database.chat_gists_for_chat("chat", "previous_chat_gist") == []
+    assert database.messages_for_chat("chat")[0].gist_processed is False
+
+
+def test_repeated_chat_end_does_not_duplicate_previous_chat_gists(
+    tmp_path: Path,
+) -> None:
+    database = Database(tmp_path / "chatbot.db")
+    database.create_chat("chat")
+    database.save_message("chat", "user", "Remember the cobalt release.")
+    database.save_message("chat", "assistant", "Recorded.")
+    action = ChatEndAction(
+        database,
+        RecordingMemoryProcessor(ChatEndMemoryProcessingResult(0, 0)),
+        gist_finalizer=deterministic_gist_finalizer(database),
+    )
+
+    first = action.execute("chat")
+    second = action.execute("chat")
+
+    assert first.gist_count == 1
+    assert second.gist_count == 0
+    assert second.gist_processed_message_count == 0
+    assert len(
+        database.chat_gists_for_chat("chat", "previous_chat_gist")
+    ) == 1
+
+
+def test_semantically_processed_messages_still_finalize_as_gist(
+    tmp_path: Path,
+) -> None:
+    database = Database(tmp_path / "chatbot.db")
+    database.create_chat("chat")
+    message_ids = [
+        database.save_message("chat", "user", "Keep the semantic and gist states separate."),
+        database.save_message("chat", "assistant", "Understood."),
+    ]
+    database.mark_messages_summarized(message_ids)
+
+    result = ChatEndAction(
+        database,
+        RecordingMemoryProcessor(ChatEndMemoryProcessingResult(0, 0)),
+        gist_finalizer=deterministic_gist_finalizer(database),
+    ).execute("chat")
+
+    messages = database.messages_for_chat("chat")
+    assert result.gist_count == 1
+    assert all(message.summarized for message in messages)
+    assert all(message.gist_processed for message in messages)
+
+
+def test_finalized_previous_chat_gist_reaches_context_packet(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("PREVIOUS_CHAT_GIST_RETRIEVAL_ENABLED", "1")
+    database = Database(tmp_path / "chatbot.db")
+    database.create_chat("ended-chat")
+    first_id = database.save_message(
+        "ended-chat",
+        "user",
+        "The distinctive release codename is cobalt.",
+    )
+    second_id = database.save_message("ended-chat", "assistant", "Recorded.")
+    ChatEndAction(
+        database,
+        RecordingMemoryProcessor(ChatEndMemoryProcessingResult(0, 0)),
+        gist_finalizer=deterministic_gist_finalizer(database),
+    ).execute("ended-chat")
+    database.create_chat("current-chat")
+    query = "What did we discuss last time about the release codename?"
+    route_plan = RoutePlanner().plan(query)
+    candidates = RetrieverDispatcher(
+        database,
+        retrievers={
+            "previous_chat_gist": PreviousChatGistRetriever(database),
+        },
+    ).retrieve("current-chat", route_plan)
+
+    context = ContextManagerAgent().build_context_packet(
+        system_prompt="Use available memory.",
+        latest_user_message={"role": "user", "content": query},
+        ranked_candidates=candidates,
+        route_plan=route_plan,
+    ).context_packet
+
+    gists = [
+        candidate
+        for candidate in context.candidates
+        if candidate.source == "previous_chat_gist"
+    ]
+    assert len(gists) == 1
+    assert "cobalt" in gists[0].content
+    assert gists[0].source_message_ids == [first_id, second_id]
+    assert any(
+        "Previous Chat Gist:" in message["content"]
+        and "cobalt" in message["content"]
+        for message in context.model_messages
+    )

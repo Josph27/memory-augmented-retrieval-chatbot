@@ -116,7 +116,7 @@ class CurrentChatGistSummarizer:
                 skipped_reason="no_gist_extractor_configured",
             )
 
-        messages = self.database.old_unsummarized_messages(
+        messages = self.database.old_ungisted_messages(
             chat_id=chat_id,
             raw_message_limit=self.keep_recent_messages,
             batch_size=self.max_messages_per_gist,
@@ -154,8 +154,8 @@ class CurrentChatGistSummarizer:
                 "summarizer": self.extractor.__class__.__name__,
                 "status": "active",
             },
+            gist_processed_message_ids=message_ids,
         )
-        self.database.mark_messages_summarized(message_ids)
         return ChatGistCreationResult(
             created=True,
             gist_id=gist_id,

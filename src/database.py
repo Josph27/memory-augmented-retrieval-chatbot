@@ -24,6 +24,7 @@ class StoredMessage:
     content: str
     created_at: str
     summarized: bool = False
+    gist_processed: bool = False
 
 
 @dataclass(frozen=True)
@@ -107,6 +108,7 @@ class Database:
                     role TEXT NOT NULL CHECK (role IN ('system', 'user', 'assistant')),
                     content TEXT NOT NULL,
                     summarized INTEGER NOT NULL DEFAULT 0,
+                    gist_processed INTEGER NOT NULL DEFAULT 0,
                     created_at TEXT NOT NULL,
                     FOREIGN KEY (chat_id) REFERENCES chats(id) ON DELETE CASCADE
                 );
@@ -207,12 +209,19 @@ class Database:
                 """
             )
             self._ensure_messages_summarized_column(connection)
+            self._ensure_messages_gist_processed_column(connection)
             self._ensure_chats_model_name_column(connection)
             self._ensure_chats_active_column(connection)
             connection.execute(
                 """
                 CREATE INDEX IF NOT EXISTS idx_messages_chat_summarized
                 ON messages(chat_id, summarized, id)
+                """
+            )
+            connection.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_messages_chat_gist_processed
+                ON messages(chat_id, gist_processed, id)
                 """
             )
 
@@ -225,6 +234,42 @@ class Database:
         if "summarized" not in columns:
             connection.execute(
                 "ALTER TABLE messages ADD COLUMN summarized INTEGER NOT NULL DEFAULT 0"
+            )
+
+    def _ensure_messages_gist_processed_column(
+        self,
+        connection: sqlite3.Connection,
+    ) -> None:
+        """Add independent episodic-gist processing state to existing databases."""
+        columns = {
+            row["name"]
+            for row in connection.execute("PRAGMA table_info(messages)").fetchall()
+        }
+        if "gist_processed" not in columns:
+            connection.execute(
+                "ALTER TABLE messages "
+                "ADD COLUMN gist_processed INTEGER NOT NULL DEFAULT 0"
+            )
+            connection.execute(
+                """
+                UPDATE messages
+                SET gist_processed = 1
+                WHERE EXISTS (
+                    SELECT 1
+                    FROM chat_gists
+                    WHERE chat_gists.chat_id = messages.chat_id
+                      AND chat_gists.start_message_id IS NOT NULL
+                      AND chat_gists.end_message_id IS NOT NULL
+                      AND messages.id >= MIN(
+                          chat_gists.start_message_id,
+                          chat_gists.end_message_id
+                      )
+                      AND messages.id <= MAX(
+                          chat_gists.start_message_id,
+                          chat_gists.end_message_id
+                      )
+                )
+                """
             )
 
     def _ensure_chats_model_name_column(self, connection: sqlite3.Connection) -> None:
@@ -386,8 +431,9 @@ class Database:
 
         The legacy per-chat compatibility cache and namespaced long-term
         memories are intentionally not copied. User/project memories remain
-        shared through their existing namespaces, and the fork can rebuild any
-        derived per-chat cache from its copied raw messages.
+        shared through their existing namespaces. Inherited fork messages are
+        marked semantically processed so only post-fork messages can produce
+        new global structured memories.
         """
         timestamp = utc_now()
         with self.connect() as connection:
@@ -421,7 +467,7 @@ class Database:
             message_id_map: dict[int, int] = {}
             messages = connection.execute(
                 """
-                SELECT id, role, content, summarized, created_at
+                SELECT id, role, content, summarized, gist_processed, created_at
                 FROM messages
                 WHERE chat_id = ?
                 ORDER BY id ASC
@@ -432,15 +478,16 @@ class Database:
                 cursor = connection.execute(
                     """
                     INSERT INTO messages (
-                        chat_id, role, content, summarized, created_at
+                        chat_id, role, content, summarized, gist_processed, created_at
                     )
-                    VALUES (?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?)
                     """,
                     (
                         new_chat_id,
                         message["role"],
                         message["content"],
-                        message["summarized"],
+                        1,
+                        message["gist_processed"],
                         message["created_at"],
                     ),
                 )
@@ -526,7 +573,8 @@ class Database:
         with self.connect() as connection:
             rows = connection.execute(
                 """
-                SELECT id, chat_id, role, content, created_at, summarized
+                SELECT
+                    id, chat_id, role, content, created_at, summarized, gist_processed
                 FROM messages
                 WHERE chat_id = ?
                 ORDER BY id ASC
@@ -548,7 +596,8 @@ class Database:
         with self.connect() as connection:
             rows = connection.execute(
                 """
-                SELECT id, chat_id, role, content, created_at, summarized
+                SELECT
+                    id, chat_id, role, content, created_at, summarized, gist_processed
                 FROM messages
                 WHERE chat_id = ?
                   AND id >= ?
@@ -593,7 +642,8 @@ class Database:
         with self.connect() as connection:
             rows = connection.execute(
                 """
-                SELECT id, chat_id, role, content, created_at, summarized
+                SELECT
+                    id, chat_id, role, content, created_at, summarized, gist_processed
                 FROM messages
                 WHERE chat_id = ?
                 ORDER BY id DESC
@@ -614,7 +664,8 @@ class Database:
         with self.connect() as connection:
             rows = connection.execute(
                 """
-                SELECT id, chat_id, role, content, created_at, summarized
+                SELECT
+                    id, chat_id, role, content, created_at, summarized, gist_processed
                 FROM messages
                 WHERE chat_id = ?
                   AND id < ?
@@ -636,10 +687,41 @@ class Database:
         with self.connect() as connection:
             rows = connection.execute(
                 """
-                SELECT id, chat_id, role, content, created_at, summarized
+                SELECT
+                    id, chat_id, role, content, created_at, summarized, gist_processed
                 FROM messages
                 WHERE chat_id = ?
                   AND summarized = 0
+                  AND id NOT IN (
+                      SELECT id
+                      FROM messages
+                      WHERE chat_id = ?
+                      ORDER BY id DESC
+                      LIMIT ?
+                  )
+                ORDER BY id ASC
+                LIMIT ?
+                """,
+                (chat_id, chat_id, raw_message_limit, batch_size),
+            ).fetchall()
+
+        return [self._message_from_row(row) for row in rows]
+
+    def old_ungisted_messages(
+        self,
+        chat_id: str,
+        raw_message_limit: int,
+        batch_size: int,
+    ) -> list[StoredMessage]:
+        """Load gist-unprocessed messages outside the recent raw window."""
+        with self.connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT
+                    id, chat_id, role, content, created_at, summarized, gist_processed
+                FROM messages
+                WHERE chat_id = ?
+                  AND gist_processed = 0
                   AND id NOT IN (
                       SELECT id
                       FROM messages
@@ -665,7 +747,8 @@ class Database:
         with self.connect() as connection:
             rows = connection.execute(
                 """
-                SELECT id, chat_id, role, content, created_at, summarized
+                SELECT
+                    id, chat_id, role, content, created_at, summarized, gist_processed
                 FROM messages
                 WHERE chat_id = ?
                   AND id NOT IN (
@@ -717,6 +800,18 @@ class Database:
         with self.connect() as connection:
             connection.execute(
                 f"UPDATE messages SET summarized = 1 WHERE id IN ({placeholders})",
+                message_ids,
+            )
+
+    def mark_messages_gist_processed(self, message_ids: list[int]) -> None:
+        """Mark messages as included in an episodic gist."""
+        if not message_ids:
+            return
+
+        placeholders = ",".join("?" for _ in message_ids)
+        with self.connect() as connection:
+            connection.execute(
+                f"UPDATE messages SET gist_processed = 1 WHERE id IN ({placeholders})",
                 message_ids,
             )
 
@@ -904,8 +999,9 @@ class Database:
         start_message_id: int | None = None,
         end_message_id: int | None = None,
         metadata: dict | None = None,
+        gist_processed_message_ids: list[int] | None = None,
     ) -> int:
-        """Insert one chat gist without generating or validating its content."""
+        """Insert one gist and optionally advance gist state transactionally."""
         timestamp = utc_now()
         with self.connect() as connection:
             cursor = connection.execute(
@@ -939,6 +1035,13 @@ class Database:
                     json.dumps(metadata or {}, ensure_ascii=True),
                 ),
             )
+            if gist_processed_message_ids:
+                placeholders = ",".join("?" for _ in gist_processed_message_ids)
+                connection.execute(
+                    f"UPDATE messages SET gist_processed = 1 "
+                    f"WHERE id IN ({placeholders})",
+                    gist_processed_message_ids,
+                )
             return int(cursor.lastrowid)
 
     def chat_gist(self, gist_id: int) -> StoredChatGist | None:
@@ -1045,6 +1148,7 @@ class Database:
             content=row["content"],
             created_at=row["created_at"],
             summarized=bool(row["summarized"]),
+            gist_processed=bool(row["gist_processed"]),
         )
 
     def _document_chunk_from_row(self, row: sqlite3.Row) -> StoredDocumentChunk:
