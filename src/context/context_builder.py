@@ -10,6 +10,7 @@ from src.core.contracts import ContextBudget, ContextPacket, MemoryCandidate, Ro
 CONTEXT_SOURCE_ORDER = (
     "structured_memory",
     "current_chat_gist",
+    "current_chat_span",
     "previous_chat_gist",
     "document_memory",
     "raw_message_span",
@@ -22,6 +23,7 @@ CONTEXT_SOURCE_ORDER = (
 DROPPABLE_OVERFLOW_SOURCES = (
     "structured_memory",
     "current_chat_gist",
+    "current_chat_span",
     "previous_chat_gist",
     "document_memory",
     "raw_message_span",
@@ -218,6 +220,10 @@ class ContextBuilder:
                     selected_by_source["current_chat_gist"].selected,
                 ),
                 format_source_section(
+                    "current_chat_span",
+                    selected_by_source["current_chat_span"].selected,
+                ),
+                format_source_section(
                     "previous_chat_gist",
                     selected_by_source["previous_chat_gist"].selected,
                 ),
@@ -313,6 +319,7 @@ class ContextBuilder:
             source: format_source_section(source, selected_by_source[source].selected)
             for source in (
                 "current_chat_gist",
+                "current_chat_span",
                 "previous_chat_gist",
                 "document_memory",
                 "raw_message_span",

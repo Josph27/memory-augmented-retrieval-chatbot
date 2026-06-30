@@ -9,6 +9,7 @@ MemorySourceType = Literal[
     "structured_memory",
     "document_memory",
     "current_chat_gist",
+    "current_chat_span",
     "previous_chat_gist",
     "raw_message_span",
     # Backward-compatible aliases. Prefer current_chat_gist and

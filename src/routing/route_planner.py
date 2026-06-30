@@ -40,6 +40,11 @@ class RoutePlannerPolicy:
             reason="Current-chat gist retrieval is not implemented yet.",
         ),
         SourceRoutingPolicy(
+            source="current_chat_span",
+            enabled=False,
+            reason="Exact current-chat span retrieval is opt-in.",
+        ),
+        SourceRoutingPolicy(
             source="previous_chat_gist",
             enabled=False,
             reason="Previous-chat gist retrieval is not implemented yet.",

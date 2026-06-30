@@ -7,6 +7,7 @@ from src.core.contracts import MemoryCandidate, RoutePlan, SourcePlan
 from src.database import Database
 from src.memory.constants import RAW_MESSAGE_LIMIT
 from src.retrieval.current_chat_gist_retriever import CurrentChatGistRetriever
+from src.retrieval.current_chat_span_retriever import CurrentChatSpanRetriever
 from src.retrieval.langchain_chroma_retriever import LangChainChromaRetriever
 from src.retrieval.previous_chat_gist_retriever import PreviousChatGistRetriever
 from src.retrieval.raw_message_span_retriever import RawMessageSpanRetriever
@@ -36,6 +37,7 @@ class RetrieverDispatcher:
             "structured_memory": StructuredMemoryRetriever(database),
             "document_memory": langchain_chroma_retriever_for_env(database),
             "current_chat_gist": CurrentChatGistRetriever(database),
+            "current_chat_span": CurrentChatSpanRetriever(database),
             "previous_chat_gist": PreviousChatGistRetriever(database),
             "raw_message_span": RawMessageSpanRetriever(database),
         }
