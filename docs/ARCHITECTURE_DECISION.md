@@ -13,6 +13,7 @@ User query
 -> RoutingAgent / QueryAnalyzer / RoutePlanner
 -> source-specific retrievers
 -> MemoryCandidate[]
+-> optional gist-to-raw-span expansion
 -> MemoryReranker
 -> ContextManagerAgent / ContextBudgetAllocator / ContextBuilder
 -> ContextPacket
@@ -81,14 +82,35 @@ use_count / last_used metadata if feasible
 memory/document inspector actions if feasible
 future semantic index over long-term memory
 
+Integration constraints remain:
+
+- `demo_mid_term`/the current integration line is the stable base;
+  `origin/playground-j` is reference material, not a wholesale merge target.
+- Keep the existing adaptive `MemoryReranker`,
+  `ContextManagerAgent`/`ContextPacket`, and `previous_chat_gist` provenance
+  wrapper.
+- Use mature tools as bounded backends: LangMem for durable structured memory,
+  LangChain/Chroma for document and derived vector components, and
+  sentence-transformers CrossEncoder for neural reranking.
+- Do not add LlamaIndex solely for summarization.
+- Do not migrate to LangGraph checkpoint orchestration unless the whole
+  coordinator/state ownership model is intentionally migrated.
+
 Current implementation status:
 
 Implemented:
 
 recent_messages retrieval
+newest fitting recent-message suffix under budget
 structured_memory retrieval from SQLite long_term_memories
+optional vector/hybrid structured retrieval with automatic SQLite-to-vector sync
 chat_memory_state compatibility fallback
 document_memory retrieval through LangChain-Chroma
+previous_chat_gist generation/retrieval and chat-end finalization
+raw_message_span explicit retrieval and automatic gist expansion
+current_chat_span exact same-chat SQLite retrieval
+default-off bounded current_chat_gist scaffold
+active/inactive chat lifecycle, safe chat end, and safe chat fork
 ContextPacket active prompt path after validation
 legacy ShortTermMemory prompt fallback
 WorkflowTrace metadata
@@ -99,21 +121,25 @@ document QA retrieval evals with oracle/model answer modes
 RAGAS-compatible export
 optional sentence-transformers/BGE cross-encoder reranking with deterministic fallback
 
-Partially implemented:
+Implemented but default-off or explicitly enabled:
 
-current_chat_gist storage and explicit summarizer service
-previous_chat_gist generator and retriever, disabled by default
-raw_message_span explicit lookup
+current_chat_gist generation and retrieval
+current_chat_span routing
+previous_chat_gist retrieval
+direct raw_message_span routing
+structured-memory vector/hybrid mode
+
+Partially validated:
+
 document metadata/chunk SQLite compatibility path
 
 Future / intended:
 
-semantic vector index over long-term memories
-automatic gist retrieval pipeline
-hybrid or LLM-backed routing
+production activation policy for current_chat_span/current_chat_gist
+live-model provenance and grounding evaluation
 query decomposition
-full memory lifecycle benchmark
-full external benchmark implementations
+current_chat_state
+larger external benchmark runs
 3. Core Design Claim
 
 The project unifies memory at the interface level, not necessarily at the storage level.
@@ -121,8 +147,8 @@ The project unifies memory at the interface level, not necessarily at the storag
 recent_messages
 structured_memory
 document_memory
-future gists
-future raw spans
+current_chat_gist / previous_chat_gist
+current_chat_span / raw_message_span
         ↓
 MemoryCandidate
         ↓
@@ -137,7 +163,9 @@ This preserves the semantics of each memory type while allowing a common downstr
 
 Recent messages preserve immediate conversation continuity.
 
-They are volatile and should stay close to the current turn.
+They are volatile and should stay close to the current turn. Under a tight
+budget the builder retains the newest fitting suffix, restores chronological
+order, and excludes the separately supplied latest user turn.
 
 4.2 Structured Long-Term Memory
 
@@ -157,6 +185,11 @@ old messages
 -> SQLite long_term_memories
 -> StructuredMemoryRetriever
 -> MemoryCandidate(source="structured_memory")
+
+SQLite is authoritative. `STRUCTURED_MEMORY_RETRIEVAL_MODE=vector|hybrid`
+enables a derived semantic index with stable IDs and automatic synchronization
+for insert, update, deactivate, and delete operations. SQLite mode does not
+require the vector backend.
 4.3 Document Memory
 
 Document memory stores external knowledge from uploaded files.
@@ -174,28 +207,43 @@ document file
 
 Gists are compressed episodic memories of conversations.
 
-They are future or partial scope.
-
-Possible future flow:
+They are implemented episodic orientation, but production activation is
+conservative:
 
 old chat messages
 -> gist summarizer
 -> chat_gists
 -> gist retriever
 -> MemoryCandidate(source="current_chat_gist" or "previous_chat_gist")
+
+`ChatEndAction` finalizes pending previous-chat gist segments before marking a
+chat inactive. Rolling `current_chat_gist` generation exists behind
+`CURRENT_CHAT_GIST_GENERATION_ENABLED=0` and is not part of the normal answer
+path by default.
 4.5 Raw Message Spans
 
 Raw message spans provide provenance for compressed gists.
 
-Implemented explicit lookup:
+Implemented lookup and expansion:
 
 retrieved gist
 -> raw span metadata
 -> raw message span lookup
 -> MemoryCandidate(source="raw_message_span")
 
-This lookup is still a second-stage provenance tool. It is not automatically
-enabled in normal routing by default.
+Retrieved gists with valid provenance are expanded after dispatch into bounded
+exact raw spans before reranking. Missing provenance is a graceful no-op.
+`current_chat_span` separately performs deterministic lexical retrieval over
+exact messages from only the active chat and remains explicitly routed.
+
+The governing rule is:
+
+```text
+gist = lossy orientation
+span = exact transcript evidence
+gist tells where to look
+span proves exact content
+```
 5. Agent Design
 
 The system is multi-agent at the responsibility level.
@@ -265,24 +313,20 @@ This is easier to evaluate than a system where all context is mixed into anonymo
 
 9. Near-Term Scope
 
-Before the deadline, prioritize:
+Current next priorities:
 
-improved query routing
-reliable document ingestion/chunking
-traceable reranking
-deterministic context budgeting
-deterministic prompt construction
-scoped chat lifecycle
-document retrieval benchmark
-cross-chat structured memory benchmark
-small lifecycle benchmark
+real-model end-to-end demo runs with actual routing and trace inspection
+production activation decisions for current_chat_span and current_chat_gist
+model-grounded citation/provenance evaluation
+real Chroma stress testing for structured vector/hybrid mode
+current_chat_state if time permits
 
 Defer:
 
 full unified memory rewrite
 full gist vector retrieval
 query decomposition
-full LongMemEval / PerLTQA / LoCoMo implementation
+large-scale LongMemEval / PerLTQA / LoCoMo claims without saved model reports
 10. Final Presentation Summary
 
 The final design can be summarized as:

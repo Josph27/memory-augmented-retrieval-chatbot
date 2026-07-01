@@ -9,9 +9,10 @@ It is a memory-augmented chatbot with multiple memory sources:
 recent_messages
 structured_memory
 document_memory
-future current_chat_gist
-future previous_chat_gist
-future raw_message_span
+current_chat_gist (default-off scaffold)
+previous_chat_gist
+current_chat_span
+raw_message_span
 
 Therefore, evaluation should distinguish:
 
@@ -57,7 +58,16 @@ The deterministic retrieval metrics remain the primary reliable signal. Model
 answer mode and RAGAS-style evaluation depend on model/evaluator availability
 and should be reported separately.
 
-It does not fully evaluate:
+Additional implemented suites include:
+
+structured-memory lifecycle mock/oracle evaluation
+multi-source retrieval/source-selection evaluation
+generated-answer controlled evaluation
+E2E controlled scenarios
+LongMemEval pilot adapter with message-span representation
+production-style retrieval-to-ContextPacket acceptance tests
+
+These do not fully evaluate:
 
 final answer quality
 answer faithfulness
@@ -197,8 +207,11 @@ deadline.
 7. Suite E — Source Selection Evaluation
 Status
 
-Future / optional. Current routing is QueryAnalyzer + RoutePlanner and is
-mostly rule/keyword based.
+Implemented as a controlled deterministic suite in
+`evals/multi_source_retrieval`. Current routing is still mostly
+rule/keyword-based. Some cases use fixture route plans or fake retrievers, so
+this suite validates source contracts and metrics more strongly than production
+routing quality.
 
 Purpose
 
@@ -237,7 +250,10 @@ temporal reasoning
 knowledge updates
 abstention
 
-This is the best conceptual fit for structured long-term memory.
+This is the best conceptual fit for structured long-term memory. The repository
+contains an unofficial adapter and tiny fixture. Fixture mode validates adapter
+wiring; it is not official leaderboard evidence. Meaningful claims require a
+saved run over an external dataset subset with a configured answer model.
 
 PerLTQA
 
@@ -256,26 +272,34 @@ LoCoMo
 
 Useful for very long conversational memory and multi-session dialogue.
 
-Best suited for future gist and raw-message-span work.
+Best suited for episodic gist and raw-message-span work.
 
 9. Recommended Evaluation Roadmap
 
-Before deadline:
+Current next steps:
 
-1. Keep document hit@k benchmark.
-2. Save exact document benchmark outputs.
-3. Formalize the existing cross-chat verifier into a small structured memory benchmark.
-4. Add small lifecycle benchmark.
-5. Optionally add generated-answer RAG evaluation.
-
-Future:
-
-1. RAGAS / ARES generated-answer evaluation.
-2. LongMemEval-style memory benchmark.
-3. PerLTQA-style personalized memory QA benchmark.
-4. LoCoMo-style long conversation benchmark.
+1. Keep and report document hit@k outputs.
+2. Run real-model end-to-end recall scenarios using production routing.
+3. Inspect WorkflowTrace and ContextPacket evidence manually.
+4. Stress-test vector/hybrid structured recall against real Chroma.
+5. Add model-grounded citation/provenance checks.
+6. Save larger external LongMemEval pilot reports before making benchmark claims.
 10. Main Evaluation Claim
 
 The current evaluation should be presented honestly:
 
-We evaluate document retrieval with deterministic hit@k metrics, and we add controlled memory benchmarks for cross-chat structured memory and lifecycle behavior. Full RAGAS, LongMemEval, PerLTQA, and LoCoMo evaluation are future extensions.
+We evaluate document retrieval with deterministic hit@k metrics and use
+controlled suites for structured memory, lifecycle, source selection,
+generated answers, and integration wiring. Production-style acceptance tests
+show that selected memory sources can reach `ContextPacket`. Mock answer modes
+do not prove live-model grounding, and the LongMemEval adapter is unofficial
+wiring/pilot infrastructure rather than leaderboard evidence.
+
+Latest repository verification after the memory correctness work:
+
+```text
+290 passed, 1 skipped
+compileall passed
+Ruff passed
+git diff --check passed
+```

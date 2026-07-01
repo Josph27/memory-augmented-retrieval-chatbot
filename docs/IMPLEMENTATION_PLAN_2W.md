@@ -31,34 +31,47 @@ Chainlit chat interface
 SQLite chat/message history through SQLiteChainlitDataLayer
 Chainlit model profiles
 recent_messages retrieval
+newest-fitting recent suffix and latest-user deduplication
 LangMem structured extraction/update
 SQLite long_term_memories
+automatic structured-memory vector sync in vector/hybrid mode
 StructuredMemoryRetriever long_term_memories-first retrieval
 chat_memory_state compatibility fallback
 LangChain-Chroma document RAG
 ContextPacket active prompt path with legacy ShortTermMemory fallback
 WorkflowTrace metadata
+bounded source minimum budgets
+active/inactive chat lifecycle
+safe ChatEndAction and ChatForkAction
+previous-chat gist finalization/retrieval
+gist-to-raw-span expansion
+current_chat_span exact retrieval
+default-off bounded current_chat_gist scaffold
 DEMO_MEMORY_TRACE helpers
 document QA retrieval evals
 oracle/model answer mode for document QA
 RAGAS-compatible export
 
-Partially implemented:
+Implemented but default-off or explicitly routed:
 
-current_chat_gist storage and explicit summarizer
-previous_chat_gist and raw_message_span stubs/lookups
+current_chat_gist generation/retrieval
+current_chat_span routing
+previous_chat_gist retrieval
+direct raw_message_span routing
+structured-memory vector/hybrid retrieval
+
+Partially validated:
+
 memory trace UI/terminal display
 SQLite document chunk/embedding compatibility paths
 
 Future / intended:
 
-hybrid or LLM-backed routing
-semantic vector retrieval over long-term memories
-automatic gist generation/retrieval
+production activation policy for current_chat_span/current_chat_gist
+real-model grounding/provenance reports
+current_chat_state
 query decomposition
-cross-encoder reranking
-full memory lifecycle benchmark
-full external benchmark implementations
+larger external benchmark runs
 
 4. Implementation Strategy
 
@@ -202,9 +215,9 @@ DELETE_CHAT
 
 On chat end:
 
-mark chat inactive if supported
-trigger memory update if appropriate
-future: gist generation
+flush bounded structured-memory batches
+finalize pending bounded previous-chat gist segments
+mark inactive only after successful processing or valid NOOP
 Success Criteria
 
 The system can explain when memory is written and how chat state affects memory.
@@ -229,7 +242,7 @@ Success Criteria
 
 The final report can honestly say what is evaluated and what is future work.
 
-13. Optional Phase — Long-Term Memory Vector Index
+13. Completed Optional Phase — Long-Term Memory Vector Index
 Goal
 
 Adopt part of the teammate-style memory design.
@@ -239,7 +252,8 @@ SQLite long_term_memories = source of truth
 Chroma / sqlite-vec index = semantic retrieval index
 Rule
 
-Only implement this after the core pipeline is stable.
+SQLite remains authoritative. Vector/hybrid mode now synchronizes committed
+inserts, updates, deactivations, and deletes through stable derived IDs.
 
 Success Criteria
 
@@ -253,10 +267,10 @@ full unified memory rewrite
 full Mem0-style memory architecture
 full query decomposition
 full gist vector retrieval
-cross-encoder reranking
-full LLM reranking
 full multi-page frontend rewrite
-complete LongMemEval / PerLTQA / LoCoMo benchmark
+large-scale LongMemEval / PerLTQA / LoCoMo claims without saved reports
+production enablement of current_chat_gist
+current_chat_state
 15. Daily Working Rule
 
 At the end of each implementation session, record:

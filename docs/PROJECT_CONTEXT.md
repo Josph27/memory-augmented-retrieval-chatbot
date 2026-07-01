@@ -27,8 +27,9 @@ Chainlit UI
 -> RetrieverDispatcher
 -> source retrievers
 -> MemoryCandidate[]
+-> optional gist-to-raw-span expansion
 -> MemoryReranker
--> ContextBudgetAllocator
+-> ContextBudgetAllocator / ContextManagerAgent
 -> ContextBuilder
 -> ContextPacket
 -> ModelWrapper
@@ -54,7 +55,8 @@ SQLite
 └── chat_gists
 
 LangChain-Chroma
-└── document chunk vector retrieval
+├── document chunk vector retrieval
+└── optional derived structured-memory vector index
 
 LangMem
 └── structured memory extraction and update
@@ -77,17 +79,26 @@ SQLite chat and message history
 SQLiteChainlitDataLayer for Chainlit thread history
 Chainlit model profiles
 recent message retrieval
+newest-fitting recent-message suffix with chronological restoration
 LangMem-backed structured memory extraction
 SQLite long_term_memories
 StructuredMemoryRetriever reading long_term_memories first
 chat_memory_state compatibility fallback
 cross-chat structured memory retrieval
+automatic structured-memory vector synchronization in vector/hybrid mode
 LangChain-Chroma document retrieval
 document upload / indexing path for .txt / .md and optional .pdf
 MemoryCandidate
 ContextPacket as the active prompt path after validation
 ContextPacket fallback to legacy ShortTermMemory prompt when validation fails
 WorkflowTrace
+active/inactive chat lifecycle
+safe ChatEndAction structured-memory flush and previous-chat gist finalization
+safe ChatForkAction with provenance remapping and duplicate-extraction prevention
+previous_chat_gist generation/retrieval
+raw_message_span retrieval and automatic gist provenance expansion
+current_chat_span exact SQLite transcript retrieval
+default-off bounded current_chat_gist scaffold
 DEMO_MEMORY_TRACE=1 helpers in src/memory/memory_trace.py
 scripts/inspect_long_term_memory.py
 scripts/verify_natural_long_term_memory_flow.py
@@ -95,25 +106,27 @@ document retrieval benchmark scripts
 oracle/model answer modes for document QA eval
 RAGAS-compatible JSONL export and optional run_ragas_eval.py
 
-Partially implemented:
+Implemented but default-off or explicitly routed:
 
-current_chat_gist storage and explicit summarizer service
-previous_chat_gist storage/retriever stubs
-raw_message_span explicit lookup
+current_chat_gist bounded generation scaffold
+current_chat_span retrieval
+direct raw_message_span lookup
+previous_chat_gist retrieval
+structured-memory vector/hybrid retrieval
+
+Partially validated:
+
 memory trace display in UI/terminal for demo mode
 document metadata in SQLite alongside Chroma indexing
 
 Future / intended:
 
-semantic vector index over long-term memories
-automatic current-chat gist generation in normal runtime
-previous-chat gist generation
-automatic raw-message span drill-down
-hybrid or LLM-backed routing
+production routing policy for current_chat_span
+production answer-path enablement policy for current_chat_gist
+current_chat_state / active-task decision ledger
+live-model grounding and provenance evaluation
 query decomposition
-cross-encoder or LLM reranking
-full memory lifecycle benchmark
-full LongMemEval / PerLTQA / LoCoMo benchmark
+larger external LongMemEval / PerLTQA / LoCoMo runs
 
 4. Essential Current Features
 
@@ -134,19 +147,27 @@ document retrieval benchmark scripts
 
 5. Current Memory Sources
 
-Implemented core sources:
+Implemented sources:
 
 recent_messages
 structured_memory
 document_memory
-
-Partially implemented or future sources:
-
 current_chat_gist
 previous_chat_gist
 raw_message_span
+current_chat_span
 
-The final implementation should clearly distinguish between implemented sources and future extensions.
+Implementation does not imply default activation. `current_chat_gist` and
+`current_chat_span` remain disabled in normal production routing. Previous-chat
+gist retrieval and structured vector/hybrid retrieval are config-controlled.
+
+The source contract is unified through `MemoryCandidate`, while source
+semantics remain distinct. In particular:
+
+gist = lossy orientation
+span = exact transcript evidence
+gist tells where to look
+span proves exact content
 
 6. Design Philosophy
 
@@ -195,31 +216,49 @@ prompt layout
 
 This makes the system reliable, debuggable, and evaluable.
 
-8. Near-Term Goal
+8. Current Reliability Boundary
 
-The near-term goal is not a full rewrite.
+Reliable/default paths:
 
-The near-term goal is to improve the current system into a clear multi-agent typed-memory architecture by:
+recent-message continuity
+SQLite structured-memory recall
+document retrieval when configured
+deterministic reranking and context construction
+chat-end/fork lifecycle invariants
 
-clarifying agent contracts
-improving query routing
-improving document ingestion and chunking
-making reranking traceable
-keeping token budgeting and prompt construction deterministic
-adding scoped chat lifecycle actions
-strengthening evaluation for document retrieval and structured memory
+Implemented but opt-in:
+
+current-chat exact span retrieval
+rolling current-chat gist generation
+previous-chat gist retrieval
+structured vector/hybrid recall
+
+Some production-style acceptance tests use real routing, SQLite retrievers,
+budgeting, and ContextPacket construction. Other evals still use fixture route
+plans, fake retrievers, or mock answers and must not be presented as proof of
+live-model grounding.
+
 9. Future Work
 
 Future extensions may include:
 
-semantic vector index over long-term memories
-current-chat gist generation
-previous-chat gist generation
-raw-message span drill-down
+real model/routing/context demo runs with trace inspection
+production routing policy for current_chat_span
+production retrieval policy for current_chat_gist
+current_chat_state
 query decomposition
-cross-encoder reranking
-LLM-based reranking
-full memory lifecycle evaluation
-LongMemEval-style benchmark
+stress tests for real Chroma structured-memory synchronization
+model-grounded citation/provenance evaluation
+larger LongMemEval runs
 PerLTQA-style personalized memory QA benchmark
 LoCoMo-style long conversation evaluation
+
+Known risks and decisions still required:
+
+manual review of WorkflowTrace for several realistic recall scenarios
+whether current_chat_span should activate automatically for same-chat recall
+whether current_chat_gist should ever enter the production answer path
+real-model validation that generated answers use cited evidence faithfully
+the fork tradeoff: inherited messages are marked semantically processed in the
+fork, so extraction ownership remains with the original branch if it was not
+already processed

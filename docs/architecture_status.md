@@ -16,9 +16,11 @@ Chainlit app.py
 -> RoutingAgent / QueryAnalyzer / RoutePlanner
 -> Database.save_message(user)
 -> RetrieverDispatcher
--> RecentMessagesRetriever / StructuredMemoryRetriever / LangChainChromaRetriever
+-> source retrievers
+-> MemoryCandidate[]
+-> optional gist-to-raw-span expansion
 -> MemoryReranker
--> ContextBudgetAllocator
+-> ContextBudgetAllocator / ContextManagerAgent
 -> ContextBuilder / ContextPacket
 -> ContextComparator
 -> ShortTermMemoryAgent / ShortTermMemory.build_context
@@ -109,9 +111,11 @@ For document-like queries, it also enables:
 
 - `document_memory`
 
-Future sources may appear in the plan as disabled:
+Implemented optional sources appear in the plan as disabled unless explicitly
+configured or routed:
 
 - `current_chat_gist`
+- `current_chat_span`
 - `previous_chat_gist`
 - `raw_message_span`
 - `current_chat_chunks`
@@ -177,14 +181,18 @@ available; the LLM stage is reserved for difficult heterogeneous cases.
 `ContextBudgetAllocator` stores a `ContextBudget` on
 `WorkflowTrace.context_budget`. It supports profiles for `general_chat`,
 `memory_recall`, `document_question`, and `mixed_memory_document`.
+Candidate-bearing enabled sources receive a bounded minimum reservation, so a
+routed source such as `previous_chat_gist` cannot silently receive zero budget.
+Raw spans derived from an enabled gist inherit budget eligibility without
+making direct raw-span routing default-on.
 
 `ContextBuilder` stores a `ContextPacket` on
 `WorkflowTrace.context_packet`. It orders proposed context as system prompt,
 structured memory, retrieved/document memory, recent raw messages, and latest
 user message. Recent raw messages are chronology-preserving conversation
-context, not semantic retrieval results: they are ordered by persisted message
-order and the latest user query is excluded from the recent-message section so
-it appears only once as the final latest user message. Retrieved/gist/document
+context, not semantic retrieval results: the newest fitting suffix is selected
+under budget, chronological order is restored, and the latest user query is
+excluded so it appears once as the final latest user message. Retrieved/gist/document
 memories may use ranked order, but recent raw messages preserve conversation
 order. This packet is now the default model prompt source.
 
@@ -219,6 +227,7 @@ and dropped candidate IDs/reasons for compact debugging.
 Retrievers exist for disabled-by-default optional sources:
 
 - `current_chat_gist`
+- `current_chat_span`
 - `previous_chat_gist`
 - `raw_message_span`
 - `current_chat_chunks`
@@ -226,47 +235,53 @@ Retrievers exist for disabled-by-default optional sources:
 
 ## Gist Memory Infrastructure
 
-Raw chat messages remain the source of truth. Gists are planned as compressed
-summaries and retrieval pointers over raw message spans, not replacements for
-the transcript.
+Raw chat messages remain the source of truth. Gists are lossy orientation and
+retrieval pointers, not quotation evidence. Spans are exact transcript
+evidence: gist tells where to look; span proves exact content.
 
 The current gist infrastructure is present:
 
 - `chat_gists` stores gist rows with `source_type`, `gist_text`,
   optional topic/decision/task JSON, and `start_message_id` /
   `end_message_id` pointers back to raw messages.
-- `CurrentChatGistSummarizer` can be explicitly called to compact older
-  unsummarized current-chat messages into a `current_chat_gist` row.
+- `CurrentChatGistSummarizer` explicitly compacts one bounded batch of
+  `gist_processed = 0` messages. It is disabled by default.
 - `PreviousChatGistGenerator` can generate `previous_chat_gist` rows for
   existing chats, either through a deterministic offline extractor or an
   optional model-backed extractor.
-- `current_chat_gist` is the canonical future source for summaries of older
-  parts of the active chat.
+- `ChatEndAction` flushes structured memory, finalizes pending bounded
+  previous-chat gist segments, and then marks the chat inactive.
+- `current_chat_gist` is the orientation source for older active-chat content,
+  but remains outside the normal answer path by default.
 - `previous_chat_gist` is the canonical source for summaries of older chats.
-- `raw_message_span` is a second-stage drill-down source for fetching the
-  original raw messages behind a gist. It can resolve a `chat_gists.id` or an
-  explicit `chat_id` / message-id range into
-  `MemoryCandidate(source="raw_message_span")` with provenance metadata.
+- `GistRawSpanExpander` expands retrieved provenance-bearing gists into bounded
+  exact `raw_message_span` candidates before reranking.
+- `current_chat_span` performs deterministic lexical retrieval over exact
+  messages from the current chat only and remains explicitly routed.
 
 Current limitations:
 
-- automatic previous-chat gist generation is disabled by default and must be
-  enabled with `PREVIOUS_CHAT_GIST_GENERATION_ENABLED=1`
+- startup scanning for previous-chat gists remains config-controlled, while
+  explicit chat-end finalization is implemented
 - no vector retrieval over gists
 - no background compaction job
 - gist retrievers are disabled by default in routing; previous-chat gist
   retrieval can be enabled with `PREVIOUS_CHAT_GIST_RETRIEVAL_ENABLED=1`
-- raw-message span lookup is explicit/provenance-oriented and is not injected
-  automatically by default
+- `CURRENT_CHAT_GIST_GENERATION_ENABLED=0` remains the generation default
+- current-chat span routing remains an explicit decision
 
-`CurrentChatGistSummarizer` keeps a configurable recent raw window, excludes
-the newest user message, summarizes only older unsummarized messages, stores a
-gist with raw message span pointers, and marks source messages as summarized
-only after a successful gist insert. The current gist retrievers read stored
-rows and use temporary lexical filtering when a query is provided. Future work
-should add embeddings/vector retrieval over gists, a background compaction job,
-and richer optional automatic raw-span drill-down after the storage contract is
-stable.
+`messages.summarized` means processed for semantic/LangMem memory.
+`messages.gist_processed` independently means included in episodic gist
+processing. Gist insertion and state advancement are transactional.
+
+## Structured Memory Index Consistency
+
+SQLite `long_term_memories` is authoritative and SQLite retrieval remains the
+default. In `STRUCTURED_MEMORY_RETRIEVAL_MODE=vector|hybrid`, committed SQLite
+writes synchronize to the dedicated long-term-memory vector index. Stable
+`namespace::memory_id` IDs make updates idempotent; inactive/deleted records
+remove their derived entries. Failures are explicit, and `sync_all()` provides
+repair/backfill for existing rows.
 
 Useful commands:
 

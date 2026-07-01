@@ -14,6 +14,8 @@ The app uses Chainlit for the browser chat UI, Python for backend logic, SQLite 
 - SQLite tables for chats, messages, long-term memories, compatibility memory
   state, document metadata/chunks, and chat gists
 - Recent-message memory plus LangMem-backed structured long-term memory
+- Typed episodic memory through previous-chat gists, exact raw spans, and an
+  opt-in current-chat span retriever
 - Document memory through LangChain-Chroma
 - Production-shaped prompt assembly through `ContextPacket`, with legacy
   `ShortTermMemory` prompt fallback
@@ -74,11 +76,11 @@ The default namespace is stable until real user/project IDs are available, so
 memory can be reused across chats.
 
 Final chat prompts are assembled through the production-shaped `ContextPacket`
-path. The current active sources are `recent_messages`, `structured_memory`, and
-`document_memory` for document-like queries. Current-chat chunks and
-previous-chat memory are still disabled/stubbed. If the `ContextPacket` is
-invalid, the coordinator falls back to the legacy `ShortTermMemory` prompt
-messages.
+path. `recent_messages` and SQLite `structured_memory` are active by default;
+document-like queries also activate `document_memory`. Previous-chat gist
+retrieval is config-controlled. `current_chat_span`, `current_chat_gist`, and
+direct raw-span lookup remain opt-in. If the `ContextPacket` is invalid, the
+coordinator falls back to the legacy `ShortTermMemory` prompt messages.
 
 The current schema for `chat_memory_state.memory_json` stores typed memory records:
 
@@ -106,7 +108,55 @@ support before writing both the long-term store and the compatibility mirror.
 
 Supported memory categories are `user_facts`, `project_facts`, `decisions`, `corrections`, `open_tasks`, `preferences`, and `constraints`.
 
-The MVP policy keeps the latest `RAW_MESSAGE_LIMIT` messages raw. Older unprocessed messages update structured memory only when at least `MEMORY_UPDATE_BATCH_SIZE` eligible messages exist. After a batch is processed, those message rows are marked with `summarized = 1`, so they are not processed again. The column name is historical; it now means "processed into the derived memory cache."
+The MVP policy retrieves the latest `RAW_MESSAGE_LIMIT` messages, then retains
+the newest fitting suffix under the context budget and restores chronological
+order. The latest user turn is supplied separately and excluded from the recent
+section, so it appears exactly once.
+
+Older semantic-memory batches are marked with `summarized = 1` after LangMem
+processing. Episodic gist processing is independent and uses
+`gist_processed = 1`; one processor does not hide messages from the other.
+
+## Typed Memory Sources
+
+All retrieved sources become `MemoryCandidate` objects, but their underlying
+semantics and stores remain distinct:
+
+| Source | Meaning | Default status |
+|---|---|---|
+| `recent_messages` | Newest same-chat raw conversation suffix | On |
+| `structured_memory` | Durable preferences, facts, decisions, and constraints | SQLite on; vector/hybrid opt-in |
+| `document_memory` | Uploaded external document chunks | Query-routed when document backend is configured |
+| `previous_chat_gist` | Lossy orientation for ended chats | Lifecycle implemented; retrieval config-controlled |
+| `raw_message_span` | Exact transcript evidence, including gist expansion | Derived when an enabled gist has provenance; direct lookup opt-in |
+| `current_chat_span` | Exact older evidence from the active chat | Implemented, explicitly routed only |
+| `current_chat_gist` | Rolling lossy active-chat orientation | Scaffold implemented; generation and answer retrieval default-off |
+
+The design rule is:
+
+```text
+gist = lossy orientation
+span = exact transcript evidence
+gist tells where to look
+span proves exact content
+```
+
+Retrieved gist candidates are preserved as orientation and can be expanded,
+using SQLite provenance, into bounded `raw_message_span` candidates before
+reranking. Gist text is not treated as exact quotation evidence.
+
+Chat lifecycle behavior is explicit. `ChatEndAction` flushes bounded structured
+memory batches, finalizes pending previous-chat gist segments, and marks the
+chat inactive only after both succeed. `ChatForkAction` remaps chat-local
+message/gist provenance and marks inherited fork messages semantically
+processed, preventing duplicate global LangMem extraction while leaving new
+post-fork messages eligible.
+
+SQLite `long_term_memories` remains the structured-memory source of truth.
+When `STRUCTURED_MEMORY_RETRIEVAL_MODE=vector|hybrid`, committed SQLite writes,
+updates, deactivations, and deletes synchronize automatically to the dedicated
+long-term-memory vector index using stable `namespace::memory_id` IDs. SQLite
+mode does not require Chroma.
 
 This is intentionally based on fixed message counts for now. The memory module accepts a future `token_budget` parameter so the selector can later be replaced or extended with token-budget-based context selection.
 
@@ -185,7 +235,7 @@ Inside SQLite:
 
 ```sql
 SELECT * FROM chat_memory_state;
-SELECT id, role, summarized, content FROM messages ORDER BY id;
+SELECT id, role, summarized, gist_processed, content FROM messages ORDER BY id;
 ```
 
 Expected result:
@@ -193,6 +243,7 @@ Expected result:
 - A row exists in `chat_memory_state` after the memory update threshold is reached
 - `memory_json` contains active records such as `user_facts.name`, not copied `user:` / `assistant:` transcript text
 - Older messages included in the memory update have `summarized = 1`
+- Messages included in episodic gists independently have `gist_processed = 1`
 - The newest `RAW_MESSAGE_LIMIT` messages remain available as raw messages
 - Already processed rows are not processed again on later turns
 
@@ -327,6 +378,9 @@ src/chainlit_data_layer.py  SQLite-backed Chainlit thread history
 src/memory/short_term.py  Recent-message selection and memory update trigger
 src/memory/langmem_structured.py  LangMem-backed structured memory extraction
 src/memory/long_term_store.py  SQLite namespace/key long-term memory store
+src/memory/structured_memory_vector_sync.py  Derived vector-index synchronization
+src/retrieval/current_chat_span_retriever.py  Exact active-chat span retrieval
+src/retrieval/gist_raw_span_expander.py  Gist provenance expansion
 src/retrieval/langchain_chroma_retriever.py  Primary document RAG backend
 src/context/context_builder.py  ContextPacket prompt assembly
 evals/document_qa/      Document QA retrieval/model-answer/RAGAS export evals
