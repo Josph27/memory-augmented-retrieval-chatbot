@@ -7,6 +7,8 @@ import chainlit as cl
 from chainlit.types import ChatProfile
 from chainlit.user import User
 
+from src.actions.chat_end import ChatEndAction
+from src.actions.chat_fork import ChatForkAction
 from src.chainlit_data_layer import SQLiteChainlitDataLayer
 from src.chat_service import ChatService
 from src.config import AppConfig
@@ -115,6 +117,7 @@ async def on_chat_start() -> None:
     chat_service = chat_service_for_model(model_name)
     chat_id = chat_service.start_chat(chat_id=current_chainlit_thread_id())
     cl.user_session.set("chat_id", chat_id)
+    cl.user_session.set("chat_ended", False)
     cl.user_session.set("model_name", model_name)
 
     await cl.Message(
@@ -135,6 +138,7 @@ async def on_chat_resume(thread: dict) -> None:
     chat_id = thread.get("id")
     if chat_id:
         cl.user_session.set("chat_id", chat_id)
+        cl.user_session.set("chat_ended", False)
     model_name = model_name_from_thread(thread)
     cl.user_session.set("model_name", model_name)
 
@@ -146,8 +150,14 @@ async def on_message(message: cl.Message) -> None:
     if not chat_id:
         model_name = selected_model_name()
         chat_service = chat_service_for_model(model_name)
-        chat_id = chat_service.start_chat(chat_id=current_chainlit_thread_id())
+        thread_id = (
+            None
+            if cl.user_session.get("chat_ended")
+            else current_chainlit_thread_id()
+        )
+        chat_id = chat_service.start_chat(chat_id=thread_id)
         cl.user_session.set("chat_id", chat_id)
+        cl.user_session.set("chat_ended", False)
         cl.user_session.set("model_name", model_name)
 
     model_name = cl.user_session.get("model_name") or model_name_for_chat(chat_id)
@@ -173,6 +183,89 @@ async def on_message(message: cl.Message) -> None:
         saved_trace = format_saved_memories_markdown(saved_memory_rows(result))
         if saved_trace:
             await cl.Message(content=saved_trace).send()
+    await send_chat_actions()
+
+
+async def send_chat_actions() -> None:
+    """Show lifecycle controls backed by the current chat action services."""
+    await cl.Message(
+        content="Actions",
+        actions=[
+            cl.Action(name="end_chat", label="End chat", payload={"value": "end"}),
+            cl.Action(name="fork_chat", label="Fork chat", payload={"value": "fork"}),
+            cl.Action(name="new_chat", label="New chat", payload={"value": "new"}),
+        ],
+    ).send()
+
+
+@cl.action_callback("end_chat")
+async def end_chat_handler(action: cl.Action) -> None:
+    """Finalize the current chat through the existing safe lifecycle action."""
+    del action
+    chat_id = cl.user_session.get("chat_id")
+    if not chat_id:
+        await cl.Message(content="No active chat to end.").send()
+        return
+
+    try:
+        model_name = cl.user_session.get("model_name") or model_name_for_chat(chat_id)
+        chat_service = chat_service_for_model(model_name)
+        ChatEndAction(database=database, memory=chat_service.memory).execute(chat_id)
+    except Exception as error:
+        await cl.Message(content=format_action_error("end chat", error)).send()
+        return
+
+    cl.user_session.set("chat_id", None)
+    cl.user_session.set("chat_ended", True)
+    await cl.Message(content="Chat ended and pending memory was finalized.").send()
+
+
+@cl.action_callback("fork_chat")
+async def fork_chat_handler(action: cl.Action) -> None:
+    """Fork the current chat through the existing transactional action."""
+    del action
+    chat_id = cl.user_session.get("chat_id")
+    if not chat_id:
+        await cl.Message(content="No active chat to fork.").send()
+        return
+
+    try:
+        new_chat_id = ChatForkAction(database=database).execute(chat_id)
+    except Exception as error:
+        await cl.Message(content=format_action_error("fork chat", error)).send()
+        return
+
+    cl.user_session.set("chat_id", new_chat_id)
+    cl.user_session.set("chat_ended", False)
+    await cl.Message(content=f"Chat forked. Active chat: `{new_chat_id}`.").send()
+    await send_chat_actions()
+
+
+@cl.action_callback("new_chat")
+async def new_chat_handler(action: cl.Action) -> None:
+    """Create a clean backend chat without mutating the previous chat."""
+    del action
+    try:
+        model_name = cl.user_session.get("model_name") or selected_model_name()
+        chat_service = chat_service_for_model(model_name)
+        chat_id = chat_service.start_chat()
+    except Exception as error:
+        await cl.Message(content=format_action_error("start a new chat", error)).send()
+        return
+
+    cl.user_session.set("chat_id", chat_id)
+    cl.user_session.set("chat_ended", False)
+    cl.user_session.set("model_name", model_name)
+    await cl.Message(content=f"New chat started: `{chat_id}`.").send()
+    await send_chat_actions()
+
+
+def format_action_error(action_name: str, error: Exception) -> str:
+    """Return a bounded UI-safe lifecycle error without a traceback."""
+    detail = str(error).strip() or type(error).__name__
+    if len(detail) > 160:
+        detail = f"{detail[:157]}..."
+    return f"Could not {action_name}: {detail}"
 
 
 def saved_memory_rows(result: object) -> list[dict]:
