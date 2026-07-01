@@ -30,6 +30,14 @@ class LongTermMemoryIndexResult:
 
 
 @dataclass(frozen=True)
+class LongTermMemorySyncReport:
+    """Result from synchronizing SQLite source records into the vector index."""
+
+    upserted_count: int
+    deleted_count: int
+
+
+@dataclass(frozen=True)
 class LongTermMemorySearchResult:
     """One semantic search result for a long-term memory."""
 
@@ -92,6 +100,31 @@ class LongTermMemoryVectorIndex:
             indexed_count=len(active_records),
             skipped_count=len(records) - len(active_records),
         )
+
+    def upsert_record(self, record: LongTermMemoryRecord) -> None:
+        """Upsert one active record or remove one inactive record by stable id."""
+        if record.status != "active":
+            self.delete_record(record.namespace, record.memory_id)
+            return
+        result = self.index_records([record])
+        if result.indexed_count != 1:
+            raise RuntimeError(
+                f"Could not index structured memory {record.memory_id!r}"
+            )
+
+    def delete_record(
+        self,
+        namespace: tuple[str, ...],
+        memory_id: str,
+    ) -> None:
+        """Idempotently remove one derived vector entry."""
+        vectorstore = self._vectorstore()
+        delete = getattr(vectorstore, "delete", None)
+        if not callable(delete):
+            raise LangChainChromaUnavailable(
+                "Long-term memory vector backend does not support delete."
+            )
+        delete(ids=[memory_vector_id(namespace, memory_id)])
 
     def rebuild_from_store(
         self,
@@ -180,10 +213,15 @@ def memory_record_to_index_metadata(record: LongTermMemoryRecord) -> dict[str, A
     """Return vector metadata for a long-term memory record."""
     return {
         "memory_id": record.memory_id,
+        "record_id": record.memory_id,
+        "source": "structured_memory",
         "namespace": namespace_path(record.namespace),
         "category": record.category,
         "memory_type": record.category,
         "key": record.key,
+        "confidence": record.confidence,
+        "status": record.status,
+        "active": record.status == "active",
         "source_chat_id": record.source_chat_id or "",
         "chat_id": record.source_chat_id or "",
         "source_message_ids": ",".join(str(item) for item in record.source_message_ids),
@@ -196,7 +234,12 @@ def memory_record_to_index_metadata(record: LongTermMemoryRecord) -> dict[str, A
 
 def memory_record_vector_id(record: LongTermMemoryRecord) -> str:
     """Return stable vector id for one long-term memory record."""
-    return f"{namespace_path(record.namespace)}::{record.memory_id}"
+    return memory_vector_id(record.namespace, record.memory_id)
+
+
+def memory_vector_id(namespace: tuple[str, ...], memory_id: str) -> str:
+    """Return the stable derived-index id for one SQLite memory key."""
+    return f"{namespace_path(namespace)}::{memory_id}"
 
 
 def document_to_search_result(

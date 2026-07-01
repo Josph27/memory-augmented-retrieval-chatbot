@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -172,11 +173,41 @@ class LongTermMemoryStore(Protocol):
         """List namespaces known to the store."""
 
 
+class StructuredMemoryVectorSync(Protocol):
+    """Optional derived-index synchronization contract."""
+
+    def sync_record(self, record: LongTermMemoryRecord) -> None:
+        """Synchronize one committed SQLite record."""
+
+    def delete_memory(
+        self,
+        namespace: tuple[str, ...],
+        memory_id: str,
+    ) -> None:
+        """Remove one committed SQLite record from the derived index."""
+
+
 class SQLiteLongTermMemoryStore:
     """SQLite-backed namespace store for semantic/procedural memory."""
 
-    def __init__(self, database: Any) -> None:
+    def __init__(
+        self,
+        database: Any,
+        vector_sync: StructuredMemoryVectorSync | None = None,
+        retrieval_mode: str | None = None,
+    ) -> None:
         self.database = database
+        self.vector_sync = vector_sync
+        mode = (
+            retrieval_mode
+            or os.getenv("STRUCTURED_MEMORY_RETRIEVAL_MODE", "sqlite")
+        ).strip().lower()
+        if self.vector_sync is None and mode in {"vector", "hybrid"}:
+            from src.memory.structured_memory_vector_sync import (
+                StructuredMemoryVectorSync as DefaultStructuredMemoryVectorSync,
+            )
+
+            self.vector_sync = DefaultStructuredMemoryVectorSync.from_env()
 
     def upsert(self, record: LongTermMemoryWrite) -> None:
         """Insert or update one memory row."""
@@ -233,6 +264,13 @@ class SQLiteLongTermMemoryStore:
                     metadata_json,
                 ),
             )
+        stored = self.get(record.namespace, record.memory_id)
+        if stored is None:
+            raise RuntimeError(
+                f"Structured-memory SQLite upsert missing after commit: {record.memory_id}"
+            )
+        if self.vector_sync is not None:
+            self.vector_sync.sync_record(stored)
 
     def get(self, namespace: tuple[str, ...], memory_id: str) -> LongTermMemoryRecord | None:
         """Get one memory row by namespace and key."""
@@ -273,6 +311,8 @@ class SQLiteLongTermMemoryStore:
                 """,
                 (timestamp, namespace_path(namespace), memory_id),
             )
+        if self.vector_sync is not None:
+            self.vector_sync.delete_memory(namespace, memory_id)
 
     def list(self, namespace: tuple[str, ...]) -> list[LongTermMemoryRecord]:
         """List all memories in one namespace."""
