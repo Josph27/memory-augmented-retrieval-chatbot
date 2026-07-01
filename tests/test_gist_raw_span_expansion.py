@@ -238,6 +238,213 @@ def test_overlapping_gist_expansions_merge_and_preserve_parent_links(
     assert len(set(expanded[0].source_message_ids)) == len(ids)
 
 
+def test_small_provenance_includes_all_messages_with_diagnostics(
+    tmp_path: Path,
+) -> None:
+    database = Database(tmp_path / "chatbot.db")
+    database.create_chat("chat")
+    ids = [
+        database.save_message("chat", "user", "first source message"),
+        database.save_message("chat", "assistant", "second source message"),
+        database.save_message("chat", "user", "third source message"),
+    ]
+    gist = MemoryCandidate(
+        source="previous_chat_gist",
+        content="Three-message orientation.",
+        record_id="small-gist",
+        chat_id="chat",
+        source_message_ids=ids,
+        metadata={
+            "start_message_id": ids[0],
+            "end_message_id": ids[-1],
+        },
+    )
+
+    expanded = GistRawSpanExpander(database, max_messages=3).expand(
+        [gist],
+        "source message",
+    )
+
+    assert len(expanded) == 1
+    raw = expanded[0]
+    assert raw.source_message_ids == ids
+    assert raw.content.splitlines() == [
+        "user: first source message",
+        "assistant: second source message",
+        "user: third source message",
+    ]
+    assert raw.metadata["provenance_message_count"] == 3
+    assert raw.metadata["included_message_ids"] == ids
+    assert raw.metadata["omitted_message_ids_count"] == 0
+    assert raw.metadata["selection_reason"] == "all_provenance_messages_fit"
+
+
+def test_large_provenance_selects_near_end_query_anchor_and_neighbors(
+    tmp_path: Path,
+) -> None:
+    database = Database(tmp_path / "chatbot.db")
+    database.create_chat("chat")
+    ids = [
+        database.save_message(
+            "chat",
+            "user" if index % 2 == 0 else "assistant",
+            (
+                "The near-end retrieval marker is VERMILION-88."
+                if index == 17
+                else f"unrelated source message {index}"
+            ),
+        )
+        for index in range(20)
+    ]
+    gist = MemoryCandidate(
+        source="previous_chat_gist",
+        content="Long source orientation.",
+        record_id="near-end-gist",
+        chat_id="chat",
+        metadata={
+            "start_message_id": ids[0],
+            "end_message_id": ids[-1],
+        },
+    )
+
+    expanded = GistRawSpanExpander(database, max_messages=5).expand(
+        [gist],
+        "What was the VERMILION-88 retrieval marker?",
+    )
+
+    assert len(expanded) == 1
+    raw = expanded[0]
+    assert ids[17] in raw.source_message_ids
+    assert ids[0] not in raw.source_message_ids
+    assert "The near-end retrieval marker is VERMILION-88." in raw.content
+    assert raw.source_message_ids == sorted(raw.source_message_ids)
+    assert raw.metadata["provenance_message_count"] == 20
+    assert raw.metadata["omitted_message_ids_count"] == 15
+    assert raw.metadata["selection_reason"] == "query_centered_contiguous_window"
+    assert raw.metadata["window_char_count"] <= 4000
+
+
+def test_adjacent_gists_keep_independent_query_centered_windows(
+    tmp_path: Path,
+) -> None:
+    database = Database(tmp_path / "chatbot.db")
+    database.create_chat("chat")
+    ids = [
+        database.save_message(
+            "chat",
+            "user",
+            (
+                f"segment anchor {index} shared retrieval phrase"
+                if index in {2, 9}
+                else f"unrelated message {index}"
+            ),
+        )
+        for index in range(12)
+    ]
+    first = MemoryCandidate(
+        source="previous_chat_gist",
+        content="First segment shared retrieval phrase.",
+        record_id="gist-first",
+        chat_id="chat",
+        metadata={
+            "start_message_id": ids[0],
+            "end_message_id": ids[5],
+        },
+    )
+    second = MemoryCandidate(
+        source="previous_chat_gist",
+        content="Second segment shared retrieval phrase.",
+        record_id="gist-second",
+        chat_id="chat",
+        metadata={
+            "start_message_id": ids[6],
+            "end_message_id": ids[11],
+        },
+    )
+
+    expanded = GistRawSpanExpander(database, max_messages=3).expand(
+        [first, second],
+        "shared retrieval phrase",
+    )
+
+    assert len(expanded) == 2
+    assert [candidate.metadata["parent_gist_id"] for candidate in expanded] == [
+        "gist-first",
+        "gist-second",
+    ]
+    assert ids[2] in expanded[0].source_message_ids
+    assert ids[9] in expanded[1].source_message_ids
+    assert all(
+        candidate.metadata["omitted_message_ids_count"] == 3
+        for candidate in expanded
+    )
+
+    route_plan = RoutePlan(
+        query="shared retrieval phrase",
+        intent="memory_recall",
+        sources=[
+            SourcePlan(
+                source="previous_chat_gist",
+                enabled=True,
+                query="shared retrieval phrase",
+            )
+        ],
+        context_profile="memory_recall",
+    )
+    packet = ContextManagerAgent(
+        budget_allocator=ContextBudgetAllocator(
+            policy=ContextBudgetPolicy(
+                default_model_context_limit=600,
+                default_answer_reserve=100,
+            )
+        ),
+        context_builder=ContextBuilder(),
+    ).build_context_packet(
+        system_prompt="Use exact raw evidence.",
+        latest_user_message={
+            "role": "user",
+            "content": "shared retrieval phrase",
+        },
+        ranked_candidates=expanded,
+        route_plan=route_plan,
+    ).context_packet
+
+    assert any(
+        candidate.source == "raw_message_span"
+        and "segment anchor 2 shared retrieval phrase" in candidate.content
+        for candidate in packet.candidates
+    )
+
+
+def test_window_diagnostics_are_bounded(tmp_path: Path) -> None:
+    database = Database(tmp_path / "chatbot.db")
+    database.create_chat("chat")
+    ids = [
+        database.save_message("chat", "user", f"message {index}")
+        for index in range(40)
+    ]
+    gist = MemoryCandidate(
+        source="previous_chat_gist",
+        content="Large provenance.",
+        record_id="bounded-diagnostics",
+        chat_id="chat",
+        metadata={
+            "start_message_id": ids[0],
+            "end_message_id": ids[-1],
+        },
+    )
+
+    raw = GistRawSpanExpander(database, max_messages=30).expand(
+        [gist],
+        "message 25",
+    )[0]
+
+    assert len(raw.source_message_ids) == 30
+    assert len(raw.metadata["included_message_ids"]) == 20
+    assert raw.metadata["provenance_message_count"] == 40
+    assert raw.metadata["omitted_message_ids_count"] == 10
+
+
 def test_current_gist_expands_only_when_source_is_explicitly_enabled(
     tmp_path: Path,
 ) -> None:

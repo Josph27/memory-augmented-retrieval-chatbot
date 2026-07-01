@@ -15,6 +15,7 @@ from src.retrieval.raw_message_span_retriever import (
 
 
 DEFAULT_GIST_EXPANSION_MAX_MESSAGES = 12
+MAX_DIAGNOSTIC_MESSAGE_IDS = 20
 GIST_SOURCES = {"current_chat_gist", "previous_chat_gist"}
 ValueT = TypeVar("ValueT")
 
@@ -81,6 +82,11 @@ class GistRawSpanExpander:
             )
             full_content = format_messages(included)
             included_ids = [message.id for message in included]
+            selection_reason = (
+                "all_provenance_messages_fit"
+                if len(included) == len(messages)
+                else "query_centered_contiguous_window"
+            )
             parent_ids = unique_values(
                 parent.record_id
                 for parent in request.parents
@@ -116,6 +122,16 @@ class GistRawSpanExpander:
                         ),
                         "parent_sources": parent_sources,
                         "anchor_message_ids": sorted(anchor_ids),
+                        "provenance_message_count": len(messages),
+                        "included_message_ids": included_ids[
+                            :MAX_DIAGNOSTIC_MESSAGE_IDS
+                        ],
+                        "omitted_message_ids_count": max(
+                            0,
+                            len(messages) - len(included),
+                        ),
+                        "selection_reason": selection_reason,
+                        "window_char_count": len(content),
                         "derived_from_source": (
                             parent_sources[0] if len(parent_sources) == 1 else None
                         ),
@@ -160,7 +176,7 @@ class GistRawSpanExpander:
 
 
 def merge_requests(requests: list[GistSpanRequest]) -> list[GistSpanRequest]:
-    """Merge overlapping or adjacent gist ranges within the same source chat."""
+    """Merge overlapping gist ranges without collapsing adjacent segments."""
     merged: list[GistSpanRequest] = []
     for request in sorted(
         requests,
@@ -169,7 +185,7 @@ def merge_requests(requests: list[GistSpanRequest]) -> list[GistSpanRequest]:
         if (
             not merged
             or merged[-1].chat_id != request.chat_id
-            or request.start_message_id > merged[-1].end_message_id + 1
+            or request.start_message_id > merged[-1].end_message_id
         ):
             merged.append(request)
             continue
