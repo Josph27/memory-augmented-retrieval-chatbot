@@ -220,3 +220,64 @@ No stale/deactivated memory was observed, and WorkflowTrace reported no errors.
 6. Keep `Conflict_Resolution` as future stress work until bounded multi-hop and
    conflict-aware consolidation exist.
 
+## Follow-up Diagnosis
+
+The `7008` miss was subsequently localized to replay message `2421`, inside
+gist segment `2401–2480`. That parent gist was not among the top eight retrieved
+gists, so no downstream raw-window selector could recover the message.
+
+This motivated a related conservative improvement: adjacent retrieved gist
+segments are no longer merged into one large provenance range before selecting
+a bounded raw window. See `docs/GIST_RAW_WINDOW_SELECTION.md`. Historical
+results above are unchanged; the targeted run was not rerun as part of that
+implementation.
+
+## Broader Native Whole-Pipeline Run
+
+The native adapter path was rerun without raw replay retrieval, embedding,
+hybrid retrieval, or CrossEncoder reranking:
+
+```bash
+uv run python evals/memory_agent_bench/run_memory_agent_bench.py \
+  --dataset-id ai-hyz/MemoryAgentBench \
+  --split Accurate_Retrieval --limit 50 --question-limit 1 \
+  --answer-mode mock \
+  --output reports/memory_agent_bench_accurate_retrieval_native_50.jsonl
+
+uv run python evals/memory_agent_bench/run_memory_agent_bench.py \
+  --dataset-id ai-hyz/MemoryAgentBench \
+  --split Test_Time_Learning --limit 50 --question-limit 1 \
+  --answer-mode mock \
+  --output reports/memory_agent_bench_test_time_learning_native_50.jsonl
+
+uv run python evals/memory_agent_bench/run_memory_agent_bench.py \
+  --dataset-id ai-hyz/MemoryAgentBench \
+  --split Long_Range_Understanding --limit 20 --question-limit 1 \
+  --answer-mode mock \
+  --output reports/memory_agent_bench_long_range_native_20.jsonl
+```
+
+| Split | Available/completed | Replayed chunks | Provenance | Gold in retrieved candidates | Gold in ContextPacket |
+|---|---:|---:|---:|---:|---:|
+| Accurate Retrieval | 22/22 | 6,876 | 22/22 | 3/22 | 2/22 |
+| Test-Time Learning | 6/6 | 2,034 | 6/6 | 5/6 | 5/6 |
+| Long Range Understanding | 20/20 | 5,689 | 20/20 | 0/20 | 0/20 |
+
+All 48 available rows completed. Every row invoked the incremental memory
+update path and one `ChatEndAction`; WorkflowTrace reported no errors. Observed
+context sources were `previous_chat_gist` and `raw_message_span`.
+
+The literal metric has important limits. Nineteen Accurate Retrieval rows and
+all twenty Long Range rows were classified as
+`dataset_or_metric_gold_not_in_replay`, so their zero literal containment
+cannot be interpreted as ordinary retrieval failure. Among the remaining
+Accurate Retrieval rows, two reached ContextPacket and one gold-bearing
+candidate was dropped during context selection. Test-Time Learning had one
+gist-retrieval/raw-window miss and five literal successes, with the prior
+short-label false-positive caveat still applying.
+
+This run demonstrates native lifecycle and context-pipeline reliability on a
+broader external sample. It does not test live-model grounding, official
+MemoryAgentBench scoring, real LangMem learning in mock mode, multi-hop
+reasoning, or conflict resolution. It does not establish that the production
+chatbot improved.
