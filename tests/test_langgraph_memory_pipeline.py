@@ -19,6 +19,7 @@ from src.retrieval.previous_chat_gist_retriever import PreviousChatGistRetriever
 from src.retrieval.reranker import MemoryReranker
 from src.retrieval.retriever_dispatcher import RetrieverDispatcher
 from src.routing.routing_agent import RoutingAgent
+from src.routing.semantic_router import SemanticRouter
 
 
 class FixedPlanner:
@@ -235,3 +236,93 @@ def test_trace_is_bounded_and_graph_has_no_write_nodes(tmp_path: Path) -> None:
     assert database.messages_for_chat("chat") == before_messages
     assert database.chat_gists_for_chat("chat") == before_gists
     assert database.chat_memory_state("chat") == before_memory
+
+
+def test_semantic_router_exact_quote_reaches_current_raw_span(
+    tmp_path: Path,
+) -> None:
+    database = Database(tmp_path / "chatbot.db")
+    database.create_chat("chat")
+    exact_id = database.save_message(
+        "chat",
+        "user",
+        "For Router V2, preserve the original query exactly.",
+    )
+    query = "What exact phrase did I use about Router V2?"
+    dispatcher = RetrieverDispatcher(
+        database,
+        retrievers={
+            "current_chat_span": CurrentChatSpanRetriever(database),
+        },
+    )
+    graph = build_langgraph_memory_pipeline(
+        routing_agent=None,
+        dispatcher=dispatcher,
+        semantic_router=SemanticRouter(),
+        use_semantic_router=True,
+    )
+
+    state = run_langgraph_memory_pipeline(
+        graph,
+        run_id="semantic-route-test",
+        chat_id="chat",
+        user_query=query,
+    )
+
+    assert state["semantic_route_plan"].original_query == query
+    assert state["evidence_contract"].requires_raw_span is True
+    assert state["insufficient_evidence"] is False
+    assert "current_chat_span" in state["trace"]["route_sources"]
+    assert "current_chat_span" in state["trace"]["context_sources"]
+    assert state["trace"]["routing"]["routing_mode"] == "semantic_v2"
+    assert state["trace"]["routing"]["intents"][0]["intent"] == "EXACT_QUOTE"
+    assert state["trace"]["routing"]["evidence_contract"]["requires_raw_span"] is True
+    span = next(
+        candidate
+        for candidate in state["context_packet"].candidates
+        if candidate.source == "current_chat_span"
+    )
+    assert exact_id in span.source_message_ids
+    assert state["routing_metadata"]["routing_mode"] == "semantic_v2"
+    assert state["mock_answer"].startswith("MOCK ANSWER:")
+
+
+def test_semantic_router_exact_quote_fails_closed_with_gist_only(
+    tmp_path: Path,
+) -> None:
+    database = Database(tmp_path / "chatbot.db")
+    database.create_chat("old-chat")
+    database.insert_chat_gist(
+        chat_id="old-chat",
+        source_type="previous_chat_gist",
+        gist_text="Router V2 phrasing was discussed.",
+    )
+    query = "What exact phrase did I use about Router V2?"
+    dispatcher = RetrieverDispatcher(
+        database,
+        retrievers={
+            "previous_chat_gist": PreviousChatGistRetriever(database),
+        },
+    )
+    graph = build_langgraph_memory_pipeline(
+        routing_agent=None,
+        dispatcher=dispatcher,
+        semantic_router=SemanticRouter(),
+        use_semantic_router=True,
+    )
+
+    state = run_langgraph_memory_pipeline(
+        graph,
+        run_id="semantic-gist-only-test",
+        chat_id="new-chat",
+        user_query=query,
+    )
+
+    assert state["evidence_contract"].requires_raw_span is True
+    assert state["trace"]["context_sources"] == ["previous_chat_gist"]
+    assert state["insufficient_evidence"] is True
+    assert state["mock_answer"].startswith("MOCK INSUFFICIENT EVIDENCE:")
+    assert all(
+        candidate.content != query
+        for candidate in state["context_packet"].candidates
+    )

@@ -11,24 +11,16 @@ from src.core.contracts import ContextPacket, MemoryCandidate, RoutePlan
 from src.retrieval.reranker import MemoryReranker
 from src.retrieval.retriever_dispatcher import RetrieverDispatcher
 from src.routing.routing_agent import RoutingAgent
+from src.routing.semantic_contracts import EvidenceContract, SemanticRoutePlan
+from src.routing.semantic_router import SemanticRouter
 
 
 MAX_BASE_CANDIDATES = 32
 MAX_EXPANDED_CANDIDATES = 16
 MAX_TRACE_CANDIDATES = 20
 MAX_TRACE_SNIPPET_CHARS = 160
+MAX_TRACE_QUERY_CHARS = 500
 RAW_EVIDENCE_SOURCES = frozenset({"raw_message_span", "current_chat_span"})
-
-
-@dataclass(frozen=True)
-class EvidenceContract:
-    """Evidence requirements checked against the final ContextPacket."""
-
-    requires_raw_span: bool = False
-    requires_document_citation: bool = False
-    requires_structured_memory: bool = False
-    allows_gist_orientation: bool = True
-    must_not_answer_from_gist_only: bool = False
 
 
 class MemoryGraphState(TypedDict, total=False):
@@ -40,6 +32,7 @@ class MemoryGraphState(TypedDict, total=False):
     user_query: str
     current_message_id: int | None
     route_plan: RoutePlan
+    semantic_route_plan: SemanticRoutePlan
     routing_metadata: dict[str, Any]
     evidence_contract: EvidenceContract
     candidates: list[MemoryCandidate]
@@ -62,7 +55,9 @@ class MemoryGraphState(TypedDict, total=False):
 class LangGraphSpikeServices:
     """Existing typed-memory services wrapped by graph nodes."""
 
-    routing_agent: RoutingAgent
+    routing_agent: RoutingAgent | None
+    semantic_router: SemanticRouter | None
+    use_semantic_router: bool
     dispatcher: RetrieverDispatcher
     reranker: MemoryReranker
     context_manager: ContextManagerAgent
@@ -71,16 +66,24 @@ class LangGraphSpikeServices:
 
 def build_langgraph_memory_pipeline(
     *,
-    routing_agent: RoutingAgent,
+    routing_agent: RoutingAgent | None,
     dispatcher: RetrieverDispatcher,
     reranker: MemoryReranker | None = None,
     context_manager: ContextManagerAgent | None = None,
     system_prompt: str = "Use only the supplied typed-memory evidence.",
     checkpointer: Any | None = None,
+    semantic_router: SemanticRouter | None = None,
+    use_semantic_router: bool = False,
 ) -> Any:
     """Build the isolated read-only graph without production registration."""
+    if not use_semantic_router and routing_agent is None:
+        raise ValueError("routing_agent is required unless Semantic Router v2 is enabled")
     services = LangGraphSpikeServices(
         routing_agent=routing_agent,
+        semantic_router=semantic_router or (
+            SemanticRouter() if use_semantic_router else None
+        ),
+        use_semantic_router=use_semantic_router,
         dispatcher=dispatcher,
         reranker=reranker or MemoryReranker(mode="deterministic"),
         context_manager=context_manager or ContextManagerAgent(),
@@ -153,6 +156,22 @@ def run_langgraph_memory_pipeline(
 def _route_node(services: LangGraphSpikeServices):  # type: ignore[no-untyped-def]
     def route_node(state: MemoryGraphState) -> MemoryGraphState:
         started = perf_counter()
+        if services.use_semantic_router:
+            if services.semantic_router is None:
+                raise RuntimeError("Semantic Router v2 was enabled without a router")
+            semantic_plan = services.semantic_router.route(state["user_query"])
+            route_plan = services.semantic_router.to_route_plan(semantic_plan)
+            return node_update(
+                state,
+                node="route",
+                started=started,
+                route_plan=route_plan,
+                semantic_route_plan=semantic_plan,
+                evidence_contract=semantic_plan.evidence_contract,
+                routing_metadata=semantic_route_trace(semantic_plan),
+            )
+        if services.routing_agent is None:
+            raise RuntimeError("routing agent is unavailable")
         decision = services.routing_agent.route(state["user_query"])
         return node_update(
             state,
@@ -333,6 +352,7 @@ def _trace_node():  # type: ignore[no-untyped-def]
                 if route_plan is not None
                 else []
             ),
+            "routing": dict(state.get("routing_metadata", {})),
             "candidates": candidate_trace(state.get("candidates", [])),
             "expanded_candidates": candidate_trace(
                 state.get("expanded_candidates", [])
@@ -430,3 +450,33 @@ def context_sources(packet: ContextPacket | None) -> list[str]:
     if packet is None:
         return []
     return [candidate.source for candidate in packet.candidates]
+
+
+def semantic_route_trace(plan: SemanticRoutePlan) -> dict[str, Any]:
+    """Return bounded typed routing metadata without generated evidence."""
+    return {
+        "routing_mode": plan.router_version,
+        "original_query": plan.original_query[:MAX_TRACE_QUERY_CHARS],
+        "normalized_query": plan.normalized_query[:MAX_TRACE_QUERY_CHARS],
+        "language": plan.language,
+        "intents": [
+            {
+                "intent": item.intent,
+                "confidence": item.confidence,
+                "reason": item.reason,
+            }
+            for item in plan.intents
+        ],
+        "temporal_scope": plan.temporal_scope,
+        "active_sources": list(plan.enabled_sources),
+        "retrieval_queries": [
+            {
+                "purpose": item.purpose,
+                "allowed_sources": list(item.allowed_sources),
+                "is_generated": item.is_generated,
+            }
+            for item in plan.retrieval_queries
+        ],
+        "confidence": plan.confidence,
+        "evidence_contract": asdict(plan.evidence_contract),
+    }
