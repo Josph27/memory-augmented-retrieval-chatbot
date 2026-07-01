@@ -10,6 +10,7 @@ from src.retrieval.current_chat_span_retriever import content_terms
 from src.retrieval.raw_message_span_retriever import (
     DEFAULT_RAW_SPAN_MAX_CHARS,
     format_messages,
+    format_raw_span_with_anchor,
 )
 
 
@@ -71,7 +72,13 @@ class GistRawSpanExpander:
             )
             if not included:
                 continue
-            content = format_messages(included, max_chars=self.max_chars)
+            anchor_ids = best_message_ids(included, query)
+            content = format_raw_span_with_anchor(
+                included,
+                anchor_message_ids=anchor_ids,
+                max_chars=self.max_chars,
+                query=query,
+            )
             full_content = format_messages(included)
             included_ids = [message.id for message in included]
             parent_ids = unique_values(
@@ -108,6 +115,7 @@ class GistRawSpanExpander:
                             parent_sources[0] if len(parent_sources) == 1 else None
                         ),
                         "parent_sources": parent_sources,
+                        "anchor_message_ids": sorted(anchor_ids),
                         "derived_from_source": (
                             parent_sources[0] if len(parent_sources) == 1 else None
                         ),
@@ -194,6 +202,26 @@ def bounded_messages(
     start = max(0, best_index - max_messages // 2)
     start = min(start, len(messages) - max_messages)
     return messages[start : start + max_messages]
+
+
+def best_message_ids(
+    messages: list[StoredMessage],
+    query: str,
+) -> set[int]:
+    """Return the query-best raw message IDs that char truncation must retain."""
+    query_terms = content_terms(query)
+    best_overlap = max(
+        len(query_terms & content_terms(message.content))
+        for message in messages
+    )
+    best = [
+        message
+        for message in messages
+        if len(query_terms & content_terms(message.content)) == best_overlap
+    ]
+    user_best = [message for message in best if message.role == "user"]
+    selected = max(user_best or best, key=lambda message: message.id)
+    return {selected.id}
 
 
 def int_metadata(metadata: dict[str, object], name: str) -> int | None:

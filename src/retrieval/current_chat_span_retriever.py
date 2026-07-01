@@ -5,6 +5,10 @@ from dataclasses import dataclass
 
 from src.core.contracts import MemoryCandidate, SourcePlan
 from src.database import Database, StoredMessage
+from src.retrieval.raw_message_span_retriever import (
+    DEFAULT_RAW_SPAN_MAX_CHARS,
+    format_raw_span_with_anchor,
+)
 
 
 DEFAULT_MAX_SPANS = 3
@@ -52,10 +56,12 @@ class CurrentChatSpanRetriever:
         database: Database,
         max_spans: int = DEFAULT_MAX_SPANS,
         window_messages: int = DEFAULT_WINDOW_MESSAGES,
+        max_chars: int = DEFAULT_RAW_SPAN_MAX_CHARS,
     ) -> None:
         self.database = database
         self.max_spans = max(1, max_spans)
         self.window_messages = max(0, window_messages)
+        self.max_chars = max(1, max_chars)
 
     def retrieve(
         self,
@@ -125,10 +131,21 @@ class CurrentChatSpanRetriever:
                 for hit in selected_hits
                 if start_index <= hit.index <= end_index
             )
+            max_chars = positive_int_filter(
+                source_plan.filters,
+                "max_chars",
+                default=self.max_chars,
+            )
+            content = format_raw_span_with_anchor(
+                span_messages,
+                anchor_message_ids=set(matched_ids),
+                max_chars=max_chars,
+                query=query,
+            )
             candidates.append(
                 MemoryCandidate(
                     source="current_chat_span",
-                    content=format_exact_messages(span_messages),
+                    content=content,
                     score=score,
                     record_id=f"{chat_id}:{span_ids[0]}-{span_ids[-1]}",
                     chat_id=chat_id,
@@ -138,7 +155,9 @@ class CurrentChatSpanRetriever:
                         "start_message_id": span_ids[0],
                         "end_message_id": span_ids[-1],
                         "matched_message_ids": matched_ids,
+                        "anchor_message_ids": matched_ids,
                         "message_count": len(span_messages),
+                        "truncated": content != format_exact_messages(span_messages),
                         "span_kind": "current_chat_exact_raw",
                         "retrieval_reason": "deterministic_lexical_match",
                         "retrieval_mode": "sqlite_current_chat_span",
