@@ -23,7 +23,7 @@ from src.retrieval.retriever_dispatcher import RetrieverDispatcher
 from src.retrieval.structured_memory_retriever import StructuredMemoryRetriever
 from src.routing.routing_agent import RoutingAgent
 
-from evals.memory_agent_bench.metrics import score_answer
+from evals.memory_agent_bench.metrics import normalize_text, score_answer
 from evals.memory_agent_bench.schemas import MABenchExample
 
 
@@ -54,6 +54,7 @@ class BenchmarkHarness(Protocol):
     memory_update_calls: int
     chat_end_calls: int
     structured_update_backend_calls: int | None
+    replayed_chunks: list[dict[str, Any]]
 
     def replay_session(self, example_id: str, session_id: str, chunks: tuple[str, ...]) -> None:
         """Replay one session incrementally and update memory."""
@@ -183,6 +184,7 @@ class ProductionLikeHarness:
         self.memory_update_calls = 0
         self.chat_end_calls = 0
         self.question_count = 0
+        self.replayed_chunks: list[dict[str, Any]] = []
 
     @property
     def structured_update_backend_calls(self) -> int | None:
@@ -198,9 +200,17 @@ class ProductionLikeHarness:
         chat_id = f"{example_id}-{session_id}"
         self.database.create_chat(chat_id, title=f"MemoryAgentBench {session_id}")
         self.current_chat_id = chat_id
-        for chunk in chunks:
-            self.database.save_message(chat_id, "user", chunk)
+        for chunk_index, chunk in enumerate(chunks):
+            user_message_id = self.database.save_message(chat_id, "user", chunk)
             self.database.save_message(chat_id, "assistant", "Acknowledged.")
+            self.replayed_chunks.append(
+                {
+                    "session_id": session_id,
+                    "chunk_index": chunk_index,
+                    "user_message_id": user_message_id,
+                    "content": chunk,
+                }
+            )
             self.memory_update_calls += 1
             self.memory.update_memory_if_needed(chat_id)
 
@@ -284,6 +294,18 @@ def run_example(
             evidence = "\n".join(candidate.content for candidate in candidates)
             metrics = score_answer(turn.answer, gold_answers, evidence)
             candidate_sources = {candidate.source for candidate in candidates}
+            diagnostics = evidence_diagnostics(
+                gold_answers=gold_answers,
+                replayed_chunks=getattr(selected_harness, "replayed_chunks", []),
+                retrieved=turn.trace.retrieved_candidates,
+                ranked=turn.trace.ranked_candidates,
+                context_candidates=candidates,
+                dropped_candidates=(
+                    packet.metadata.get("dropped_candidates", [])
+                    if packet is not None
+                    else []
+                ),
+            )
             rows.append(
                 {
                     "example_id": example.example_id,
@@ -342,6 +364,7 @@ def run_example(
                     ),
                     "chat_end_calls": selected_harness.chat_end_calls,
                     "workflow_trace": workflow_trace_summary(turn),
+                    "evidence_diagnostics": diagnostics,
                     "notes": (
                         ["Mock answer mode: generated-answer grounding was not tested."]
                         if mock_answer
@@ -412,3 +435,110 @@ def workflow_trace_summary(turn: AgentTurnResult) -> dict[str, Any]:
         "reranker": turn.trace.metadata.get("reranker"),
         "context_manager": turn.trace.metadata.get("context_manager"),
     }
+
+
+def evidence_diagnostics(
+    *,
+    gold_answers: tuple[str, ...],
+    replayed_chunks: list[dict[str, Any]],
+    retrieved: list[Any],
+    ranked: list[Any],
+    context_candidates: list[Any],
+    dropped_candidates: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Locate bounded gold evidence across replay and candidate pipeline stages."""
+    normalized_gold = [normalize_text(answer) for answer in gold_answers]
+    locations = []
+    for replayed in replayed_chunks:
+        normalized_content = normalize_text(str(replayed.get("content", "")))
+        matched = [
+            answer
+            for answer, normalized in zip(gold_answers, normalized_gold, strict=True)
+            if normalized and normalized in normalized_content
+        ]
+        if not matched:
+            continue
+        locations.append(
+            {
+                "session_id": replayed.get("session_id"),
+                "chunk_index": replayed.get("chunk_index"),
+                "user_message_id": replayed.get("user_message_id"),
+                "matched_gold_answers": matched,
+                "snippet": bounded_match_snippet(
+                    str(replayed.get("content", "")),
+                    matched[0],
+                ),
+            }
+        )
+
+    gold_message_ids = {
+        int(location["user_message_id"])
+        for location in locations
+        if isinstance(location.get("user_message_id"), int)
+    }
+    retrieved_text_ids = candidate_ids_containing_gold(retrieved, normalized_gold)
+    ranked_text_ids = candidate_ids_containing_gold(ranked, normalized_gold)
+    context_text_ids = candidate_ids_containing_gold(
+        context_candidates,
+        normalized_gold,
+    )
+    raw_provenance_ids = [
+        candidate_id(candidate)
+        for candidate in retrieved
+        if candidate.source == "raw_message_span"
+        and gold_message_ids.intersection(candidate.source_message_ids)
+    ]
+    if not locations:
+        failure_stage = "dataset_or_metric_gold_not_in_replay"
+    elif context_text_ids:
+        failure_stage = "none_literal_gold_reached_context"
+    elif raw_provenance_ids:
+        failure_stage = "raw_span_formatting_or_char_truncation"
+    elif retrieved_text_ids and not context_text_ids:
+        failure_stage = "context_budget_or_context_selection"
+    else:
+        failure_stage = "gist_retrieval_or_raw_window_selection"
+
+    return {
+        "normalized_gold_answers": normalized_gold,
+        "gold_in_replay": bool(locations),
+        "gold_replay_locations": locations[:20],
+        "gold_replay_location_count": len(locations),
+        "gold_message_ids": sorted(gold_message_ids),
+        "retrieved_candidate_ids_with_gold_text": retrieved_text_ids,
+        "ranked_candidate_ids_with_gold_text": ranked_text_ids,
+        "context_candidate_ids_with_gold_text": context_text_ids,
+        "raw_span_ids_covering_gold_message": raw_provenance_ids,
+        "dropped_candidates": dropped_candidates[:20],
+        "failure_stage": failure_stage,
+    }
+
+
+def candidate_ids_containing_gold(
+    candidates: list[Any],
+    normalized_gold: list[str],
+) -> list[str]:
+    """Return stable IDs for candidates containing a normalized gold string."""
+    return [
+        candidate_id(candidate)
+        for candidate in candidates
+        if any(
+            gold and gold in normalize_text(candidate.content)
+            for gold in normalized_gold
+        )
+    ]
+
+
+def candidate_id(candidate: Any) -> str:
+    """Return a report-safe candidate identity."""
+    return f"{candidate.source}:{candidate.record_id}"
+
+
+def bounded_match_snippet(content: str, answer: str, radius: int = 120) -> str:
+    """Return a bounded original-text snippet around a literal gold match."""
+    index = content.lower().find(answer.lower())
+    if index < 0:
+        return content[: radius * 2]
+    start = max(0, index - radius)
+    end = min(len(content), index + len(answer) + radius)
+    return content[start:end]

@@ -42,6 +42,7 @@ class RecordingHarness:
         self.structured_update_backend_calls: int | None = 0
         self.chat_end_calls = 0
         self.closed = False
+        self.replayed_chunks: list[dict[str, object]] = []
 
     def replay_session(
         self,
@@ -49,8 +50,16 @@ class RecordingHarness:
         session_id: str,
         chunks: tuple[str, ...],
     ) -> None:
-        for chunk in chunks:
+        for chunk_index, chunk in enumerate(chunks):
             self.replayed.append((example_id, session_id, chunk))
+            self.replayed_chunks.append(
+                {
+                    "session_id": session_id,
+                    "chunk_index": chunk_index,
+                    "user_message_id": chunk_index + 1,
+                    "content": chunk,
+                }
+            )
             self.memory_update_calls += 1
             assert self.structured_update_backend_calls is not None
             self.structured_update_backend_calls += 1
@@ -173,6 +182,10 @@ def test_context_evidence_and_provenance_are_reported() -> None:
     assert row["sources"] == ["previous_chat_gist"]
     assert row["provenance_present"] is True
     assert row["retrieved_candidates"][0]["source_message_ids"] == [11]
+    assert row["evidence_diagnostics"]["gold_in_replay"] is True
+    assert row["evidence_diagnostics"]["failure_stage"] == (
+        "none_literal_gold_reached_context"
+    )
 
 
 def test_mock_answer_mode_is_labeled_honestly() -> None:
