@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -18,6 +19,12 @@ from evals.memory_agent_bench.raw_replay import (
     EvalRawReplayChunkRetriever,
 )
 from evals.memory_agent_bench.runner import run_benchmark, write_jsonl_report
+from evals.memory_agent_bench.selection import filter_likely_single_evidence
+from evals.memory_agent_bench.selected_suite import (
+    load_selected_suite,
+    selected_report,
+    write_selected_jsonl,
+)
 from src.core.contracts import (
     AgentTurnResult,
     ContextPacket,
@@ -49,6 +56,17 @@ class DeterministicEmbeddingBackend:
         return [
             [1.0, 0.0] if "relocated to berlin" in text.lower() else [0.0, 1.0]
             for text in texts
+        ]
+
+
+class DeterministicCrossEncoderBackend:
+    model_name = "test-cross-encoder"
+
+    def score(self, query: str, candidate_texts: list[str]) -> list[float]:
+        del query
+        return [
+            0.9 if "cobalt lantern" in text.lower() else 0.1
+            for text in candidate_texts
         ]
 
 
@@ -159,6 +177,175 @@ def test_official_context_shape_is_chunked_and_question_limited() -> None:
     assert example.metadata["adapter_context_chunk_count"] > 1
 
 
+def test_huggingface_source_filter_is_eval_only_and_accounted(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    rows = [
+        {
+            "context": "Normandy is in France.",
+            "questions": ["Where is Normandy?"],
+            "answers": [["France"]],
+            "metadata": {"source": "ruler_qa1_197K"},
+        },
+        {
+            "context": "Two facts requiring composition.",
+            "questions": ["What follows from both facts?"],
+            "answers": [["combined"]],
+            "metadata": {"source": "ruler_qa2_421K"},
+        },
+    ]
+    fake_datasets = SimpleNamespace(load_dataset=lambda *args, **kwargs: rows)
+    monkeypatch.setitem(__import__("sys").modules, "datasets", fake_datasets)
+    stats: dict[str, object] = {}
+
+    examples = load_huggingface_examples(
+        "not-downloaded",
+        split="Accurate_Retrieval",
+        include_source_datasets=("ruler_qa1_197K",),
+        selection_stats=stats,
+    )
+
+    assert [example.metadata["source"] for example in examples] == [
+        "ruler_qa1_197K"
+    ]
+    assert stats["scanned_rows"] == 2
+    assert stats["source_filtered_rows"] == 1
+    assert stats["rows_after_source_filter"] == 1
+
+
+def test_likely_single_evidence_filter_is_conservative_and_reported() -> None:
+    examples = [
+        normalize_record(
+            {
+                "context": "The deployment codename is cobalt lantern.",
+                "questions": ["What is the deployment codename?"],
+                "answers": [["cobalt lantern"]],
+                "metadata": {"source": "single"},
+            },
+            competency="Accurate_Retrieval",
+            example_index=0,
+        ),
+        normalize_record(
+            {
+                "context": (
+                    "The current value is amber.\n\n"
+                    "The current value is amber."
+                ),
+                "questions": ["What is the latest current value?"],
+                "answers": [["amber"]],
+                "metadata": {"source": "temporal"},
+            },
+            competency="Accurate_Retrieval",
+            example_index=1,
+        ),
+    ]
+
+    selected, stats = filter_likely_single_evidence(examples)
+
+    assert [example.metadata["source"] for example in selected] == ["single"]
+    assert stats["heuristic_input_questions"] == 2
+    assert stats["heuristic_selected_questions"] == 1
+    assert stats["heuristic_filter_reasons"] == {
+        "temporal_or_conflict_cue": 1
+    }
+
+
+def test_selected_ruler_suite_requests_only_qa1_source() -> None:
+    calls: list[dict[str, object]] = []
+
+    def fake_loader(dataset_id: str, **kwargs):  # type: ignore[no-untyped-def]
+        calls.append({"dataset_id": dataset_id, **kwargs})
+        return []
+
+    examples, metadata = load_selected_suite(
+        "ruler_qa1",
+        loader=fake_loader,
+    )
+
+    assert examples == []
+    assert len(calls) == 1
+    assert calls[0]["split"] == "Accurate_Retrieval"
+    assert calls[0]["include_source_datasets"] == ("ruler_qa1_197K",)
+    assert "ruler_qa2_421K" not in calls[0]["include_source_datasets"]
+    assert metadata["selected_suite"] == "ruler_qa1"
+
+
+def test_selected_test_time_learning_uses_whole_split() -> None:
+    calls: list[dict[str, object]] = []
+
+    def fake_loader(dataset_id: str, **kwargs):  # type: ignore[no-untyped-def]
+        calls.append({"dataset_id": dataset_id, **kwargs})
+        return []
+
+    load_selected_suite("test_time_learning", loader=fake_loader)
+
+    assert calls[0]["split"] == "Test_Time_Learning"
+    assert calls[0]["include_source_datasets"] == ()
+    assert calls[0]["question_limit"] == 1
+
+
+def test_selected_suite_output_is_bounded_and_aggregated(tmp_path: Path) -> None:
+    native_report = {
+        "dataset_selection": {"selected_suite": "ruler_qa1"},
+        "results": [
+            {
+                "competency": "Accurate_Retrieval",
+                "source_dataset": "ruler_qa1_197K",
+                "row_index": 0,
+                "question_index": 0,
+                "question": "Q" * 900,
+                "gold_answers": ["A" * 400],
+                "sources": ["previous_chat_gist", "raw_message_span"],
+                "provenance_present": True,
+                "context_char_size": 1234,
+                "workflow_trace": {"errors": []},
+                "evidence_diagnostics": {
+                    "retrieved_candidate_ids_with_gold_text": ["raw:1"],
+                    "context_candidate_ids_with_gold_text": ["raw:1"],
+                    "failure_stage": "none_literal_gold_reached_context",
+                },
+                "notes": ["Mock answer mode."],
+            },
+            {
+                "competency": "Accurate_Retrieval",
+                "source_dataset": "ruler_qa1_197K",
+                "row_index": 0,
+                "question_index": 1,
+                "question": "Where?",
+                "gold_answers": ["France"],
+                "sources": ["previous_chat_gist"],
+                "provenance_present": True,
+                "context_char_size": 500,
+                "workflow_trace": {"errors": []},
+                "evidence_diagnostics": {
+                    "retrieved_candidate_ids_with_gold_text": [],
+                    "context_candidate_ids_with_gold_text": [],
+                    "failure_stage": "gist_retrieval_or_raw_window_selection",
+                },
+                "notes": [],
+            },
+        ],
+    }
+
+    report = selected_report("ruler_qa1", native_report)
+    output = tmp_path / "selected.jsonl"
+    write_selected_jsonl(output, report)
+
+    assert report["num_cases"] == 2
+    assert report["completed"] == 2
+    assert report["pipeline_error_count"] == 0
+    assert report["gold_candidates_count"] == 1
+    assert report["gold_context_count"] == 1
+    assert report["provenance_count"] == 2
+    assert report["raw_replay_enabled"] is False
+    assert report["failure_reasons"] == {
+        "gist_retrieval_or_raw_window_selection": 1
+    }
+    assert len(report["results"][0]["question"]) == 500
+    assert len(report["results"][0]["gold_answer_summary"][0]) == 160
+    assert max(map(len, output.read_text().splitlines())) < 3000
+
+
 def test_context_split_rejects_unreasonably_small_bound() -> None:
     with pytest.raises(ValueError, match="at least 100"):
         split_context("content", max_chars=50)
@@ -217,6 +404,23 @@ def test_mock_answer_mode_is_labeled_honestly() -> None:
     assert "not tested" in row["notes"][0]
     assert row["memory_update_calls"] == 2
     assert row["structured_update_backend_calls"] >= 1
+
+
+def test_cross_encoder_ablation_is_explicit_and_traceable() -> None:
+    report = run_benchmark(
+        load_examples(FIXTURE, limit=1),
+        answer_mode="mock",
+        reranker_mode="cross_encoder",
+        cross_encoder_backend=DeterministicCrossEncoderBackend(),
+    )
+
+    row = report["results"][0]
+    reranker = row["workflow_trace"]["reranker"]
+    assert report["reranker_mode"] == "cross_encoder"
+    assert report["raw_replay_enabled"] is False
+    assert reranker["reranker_mode"] == "cross_encoder"
+    assert reranker["cross_encoder_used"] is True
+    assert reranker["cross_encoder_model"] == "test-cross-encoder"
 
 
 def test_simple_answer_metrics() -> None:

@@ -15,6 +15,7 @@ from src.database import Database
 from src.memory.short_term import ShortTermMemory
 from src.memory.structured_state import MemoryUpdateResult
 from src.retrieval.current_chat_span_retriever import CurrentChatSpanRetriever
+from src.retrieval.cross_encoder_reranker import CrossEncoderBackend
 from src.retrieval.previous_chat_gist_retriever import PreviousChatGistRetriever
 from src.retrieval.raw_message_span_retriever import RawMessageSpanRetriever
 from src.retrieval.recent_messages_retriever import RecentMessagesRetriever
@@ -204,6 +205,10 @@ class ProductionLikeHarness:
         raw_replay_retrieval_mode: str = "lexical",
         raw_replay_embedding_backend: ReplayEmbeddingBackend | None = None,
         raw_replay_candidate_pool_size: int = 50,
+        reranker_mode: str = "deterministic",
+        cross_encoder_backend: CrossEncoderBackend | None = None,
+        cross_encoder_top_k: int = 10,
+        cross_encoder_weight: float = 0.65,
     ) -> None:
         self._temp_dir = tempfile.TemporaryDirectory(prefix="memory_agent_bench_")
         self.database = Database(Path(self._temp_dir.name) / "benchmark.db")
@@ -218,6 +223,10 @@ class ProductionLikeHarness:
             self.raw_replay_top_k,
             raw_replay_candidate_pool_size,
         )
+        self.reranker_mode = reranker_mode
+        self.cross_encoder_backend = cross_encoder_backend
+        self.cross_encoder_top_k = max(1, cross_encoder_top_k)
+        self.cross_encoder_weight = cross_encoder_weight
         self._raw_replay_retriever: EvalRawReplayChunkRetriever | None = None
         self._noop_updater = RecordingNoopUpdater() if mock_answer else None
         self.memory = ShortTermMemory(
@@ -313,7 +322,12 @@ class ProductionLikeHarness:
                 self.database,
                 retrievers=retrievers,  # type: ignore[arg-type]
             ),
-            memory_reranker=MemoryReranker(mode="deterministic"),
+            memory_reranker=MemoryReranker(
+                mode=self.reranker_mode,
+                cross_encoder_backend=self.cross_encoder_backend,
+                cross_encoder_top_k=self.cross_encoder_top_k,
+                cross_encoder_weight=self.cross_encoder_weight,
+            ),
             context_manager_agent=(
                 EvalRawReplayContextManager()
                 if self.raw_replay_enabled
@@ -348,6 +362,10 @@ def run_example(
     raw_replay_retrieval_mode: str = "lexical",
     raw_replay_embedding_backend: ReplayEmbeddingBackend | None = None,
     raw_replay_candidate_pool_size: int = 50,
+    reranker_mode: str = "deterministic",
+    cross_encoder_backend: CrossEncoderBackend | None = None,
+    cross_encoder_top_k: int = 10,
+    cross_encoder_weight: float = 0.65,
 ) -> list[dict[str, Any]]:
     """Replay one example incrementally, then evaluate its questions."""
     selected_model = model or MockAnswerModel()
@@ -360,6 +378,10 @@ def run_example(
         raw_replay_retrieval_mode=raw_replay_retrieval_mode,
         raw_replay_embedding_backend=raw_replay_embedding_backend,
         raw_replay_candidate_pool_size=raw_replay_candidate_pool_size,
+        reranker_mode=reranker_mode,
+        cross_encoder_backend=cross_encoder_backend,
+        cross_encoder_top_k=cross_encoder_top_k,
+        cross_encoder_weight=cross_encoder_weight,
     )
     try:
         for session in example.sessions:
@@ -372,10 +394,12 @@ def run_example(
                 selected_harness.end_current_session()
 
         rows = []
-        for question, gold_answers in zip(
-            example.questions,
-            example.answers,
-            strict=True,
+        for question_index, (question, gold_answers) in enumerate(
+            zip(
+                example.questions,
+                example.answers,
+                strict=True,
+            )
         ):
             turn = selected_harness.ask(question, gold_answers)
             packet = turn.trace.context_packet
@@ -423,6 +447,9 @@ def run_example(
                 {
                     "example_id": example.example_id,
                     "competency": example.competency,
+                    "source_dataset": example.metadata.get("source"),
+                    "row_index": example.metadata.get("adapter_row_index"),
+                    "question_index": question_index,
                     "session_count": len(example.sessions),
                     "replayed_chunk_count": sum(
                         len(session.chunks) for session in example.sessions
@@ -453,6 +480,7 @@ def run_example(
                         )
                     },
                     "context_packet_summary": evidence[:1000],
+                    "context_char_size": len(evidence),
                     "provenance_present": any(
                         candidate_has_provenance(candidate) for candidate in candidates
                     ),

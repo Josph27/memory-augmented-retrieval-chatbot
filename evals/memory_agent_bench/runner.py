@@ -7,6 +7,7 @@ from typing import Any
 from evals.memory_agent_bench.adapter import ChatModel, run_example
 from evals.memory_agent_bench.raw_replay import ReplayEmbeddingBackend
 from evals.memory_agent_bench.schemas import MABenchExample
+from src.retrieval.cross_encoder_reranker import CrossEncoderBackend
 
 
 def run_benchmark(
@@ -21,6 +22,11 @@ def run_benchmark(
     raw_replay_retrieval_mode: str = "lexical",
     raw_replay_embedding_backend: ReplayEmbeddingBackend | None = None,
     raw_replay_candidate_pool_size: int = 50,
+    reranker_mode: str = "deterministic",
+    cross_encoder_backend: CrossEncoderBackend | None = None,
+    cross_encoder_top_k: int = 10,
+    cross_encoder_weight: float = 0.65,
+    dataset_selection: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Run examples and return an honest adapter report."""
     if answer_mode not in {"mock", "model"}:
@@ -41,6 +47,10 @@ def run_benchmark(
             raw_replay_retrieval_mode=raw_replay_retrieval_mode,
             raw_replay_embedding_backend=raw_replay_embedding_backend,
             raw_replay_candidate_pool_size=raw_replay_candidate_pool_size,
+            reranker_mode=reranker_mode,
+            cross_encoder_backend=cross_encoder_backend,
+            cross_encoder_top_k=cross_encoder_top_k,
+            cross_encoder_weight=cross_encoder_weight,
         )
     ]
     return {
@@ -51,6 +61,8 @@ def run_benchmark(
         "raw_replay_enabled": raw_replay_enabled,
         "raw_replay_retrieval_mode": raw_replay_retrieval_mode,
         "raw_replay_candidate_pool_size": raw_replay_candidate_pool_size,
+        "reranker_mode": reranker_mode,
+        "dataset_selection": dataset_selection or {},
         "total_examples": len(examples),
         "total_questions": len(rows),
         "summary": summarize(rows),
@@ -104,7 +116,15 @@ def write_jsonl_report(path: Path, report: dict[str, Any]) -> None:
     """Write one summary row followed by one row per benchmark question."""
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8") as handle:
-        handle.write(json.dumps({"report_summary": report["summary"]}) + "\n")
+        handle.write(
+            json.dumps(
+                {
+                    "report_summary": report["summary"],
+                    "dataset_selection": report.get("dataset_selection", {}),
+                }
+            )
+            + "\n"
+        )
         for row in report["results"]:
             handle.write(json.dumps(row, ensure_ascii=True) + "\n")
 

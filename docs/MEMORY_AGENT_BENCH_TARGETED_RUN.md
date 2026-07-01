@@ -281,3 +281,162 @@ broader external sample. It does not test live-model grounding, official
 MemoryAgentBench scoring, real LangMem learning in mock mode, multi-hop
 reasoning, or conflict resolution. It does not establish that the production
 chatbot improved.
+
+## Selected Single-Evidence / Non-Multihop Subset
+
+Schema inspection found four common top-level fields: `context`, `questions`,
+`answers`, and `metadata`. Every split exposes `metadata.source`, but there is
+no general hop-count or single-hop field. Accurate Retrieval sources include
+`ruler_qa1_197K`, `ruler_qa2_421K`, EventQA variants, and `longmemeval_s*`.
+Only LongMemEval rows expose question types, and those describe session,
+preference, update, or temporal categories rather than hop count.
+
+Two eval-only selectors were added:
+
+- exact `metadata.source` inclusion/exclusion;
+- a conservative likely-single-evidence filter requiring one literal
+  gold-bearing replay chunk, lexical question/evidence overlap, and no obvious
+  temporal, conflict, or multi-evidence cue.
+
+Gold is used only to select and report the evaluation cohort. It is not passed
+to retrieval, ranking, or context construction.
+
+The strict heuristic selected no first-question Accurate Retrieval rows:
+13/22 lacked literal gold in replay, two had gold in multiple chunks, and seven
+had temporal/conflict cues. Rather than weaken the criteria, the explicit
+`ruler_qa1_197K` source was used as the cleaner QA1 cohort:
+
+```bash
+uv run python evals/memory_agent_bench/run_memory_agent_bench.py \
+  --dataset-id ai-hyz/MemoryAgentBench \
+  --split Accurate_Retrieval --limit 50 --question-limit 20 \
+  --answer-mode mock \
+  --include-source-dataset ruler_qa1_197K \
+  --output reports/memory_agent_bench_accurate_retrieval_ruler_qa1_native.jsonl
+
+uv run python evals/memory_agent_bench/run_memory_agent_bench.py \
+  --dataset-id ai-hyz/MemoryAgentBench \
+  --split Test_Time_Learning --limit 50 --question-limit 1 \
+  --answer-mode mock \
+  --output reports/memory_agent_bench_test_time_learning_native_selected.jsonl
+```
+
+| Cohort | Completed | Replayed chunks | Provenance | Gold in candidates | Gold in ContextPacket |
+|---|---:|---:|---:|---:|---:|
+| RULER QA1 | 20/20 questions | 280 | 20/20 | 17/20 | 9/20 |
+| Test-Time Learning | 6/6 rows | 2,034 | 6/6 | 5/6 | 5/6 |
+
+RULER QA1 had eight gold-bearing candidates dropped during context selection,
+two gist-retrieval/raw-window misses, and one raw-span formatting classification.
+This indicates that likely single-hop cases are not failing primarily because
+gold is absent: candidate recall is relatively high, while bounded context
+selection remains a substantial bottleneck. Test-Time Learning retained its
+previous 5/6 literal result and short-label false-positive caveat.
+
+Both runs used the native typed-memory adapter with deterministic reranking.
+Raw replay, embedding/hybrid raw replay, and CrossEncoder paths were disabled.
+There were no lifecycle, ChatEnd, retrieval, ContextPacket, or WorkflowTrace
+errors. These are mock-answer diagnostics, not live answer accuracy or proof
+that MemoryAgentBench is solved.
+
+### RULER QA1 Candidate-to-Context Promotion Diagnostic
+
+Eight of the seventeen questions with literal-gold candidates did not promote
+one into `ContextPacket`. Every affected gold-bearing candidate:
+
+- was a provenance-linked `raw_message_span`;
+- retained the literal gold text before context building;
+- had query-selected anchor metadata;
+- survived deterministic reranking;
+- was dropped as `source_budget_exceeded`.
+
+| Question index | Gold | Best gold rank | Candidate tokens / raw budget | Primary classification |
+|---:|---|---:|---:|---|
+| 0 | France | 2 | 996 / 1,059 | `RERANKED_TOO_LOW` |
+| 1 | 10th and 11th centuries | 2 | 1,000 / 1,123 | `RERANKED_TOO_LOW` |
+| 6 | Richard I | 7 | 988 / 1,050 | `RERANKED_TOO_LOW` |
+| 7 | Catholic | 2 | 949 / 1,134 | `RERANKED_TOO_LOW` |
+| 9 | 9th century | 6 | 1,001 / 1,117 | `RERANKED_TOO_LOW` |
+| 10 | 911 | 2 | 971 / 1,117 | `RERANKED_TOO_LOW` |
+| 12 | Seine | 2 | 971 / 954 | `SOURCE_BUDGET_TOO_SMALL` |
+| 14 | Catholicism | 3 | 999 / 1,075 | `RERANKED_TOO_LOW` |
+
+The raw-span budget usually admits one roughly 950–1,000-token span. In every
+affected case a different, higher-ranked raw span consumed that slot. The
+included span generally did not overlap the gold source message. This is a
+repeated ranking-plus-budget tradeoff, not an off-by-one, zero-budget,
+candidate-formatting, or anchor-truncation bug.
+
+Literal diagnostics also overstate relevance for common or short answers:
+`France`, `Catholic`, `9th century`, `911`, `Seine`, and `Catholicism` occur in
+multiple replay chunks. A literal-bearing candidate is not necessarily the
+question's correct evidence. No runtime fix was made. Broadly increasing raw
+budgets or top-k would change production context policy without establishing
+that these ambiguous candidates should be promoted.
+
+## Selected External MAB Suite
+
+The selected-suite CLI packages two real MemoryAgentBench cohorts aligned with
+the current project scope:
+
+- `ruler_qa1`: `Accurate_Retrieval` source `ruler_qa1_197K`, first 20 questions;
+- `test_time_learning`: all six available rows, one question per row;
+- `aligned`: both components combined.
+
+```bash
+uv run python evals/memory_agent_bench/run_memory_agent_bench.py \
+  --selected-suite ruler_qa1 --answer-mode mock \
+  --output reports/memory_agent_bench_selected_ruler_qa1.jsonl
+
+uv run python evals/memory_agent_bench/run_memory_agent_bench.py \
+  --selected-suite test_time_learning --answer-mode mock \
+  --output reports/memory_agent_bench_selected_test_time_learning.jsonl
+
+uv run python evals/memory_agent_bench/run_memory_agent_bench.py \
+  --selected-suite aligned --answer-mode mock \
+  --output reports/memory_agent_bench_selected_aligned.jsonl
+```
+
+| Suite | Completed | Pipeline errors | Gold candidates | Gold context | Provenance |
+|---|---:|---:|---:|---:|---:|
+| RULER QA1 | 20/20 | 0 | 17/20 | 9/20 | 20/20 |
+| Test-Time Learning | 6/6 | 0 | 5/6 | 5/6 | 6/6 |
+| Aligned | 26/26 | 0 | 22/26 | 14/26 | 26/26 |
+
+These suites use official `ai-hyz/MemoryAgentBench` rows and the native
+Coordinator-based typed-memory adapter. Raw replay, embedding/hybrid raw
+retrieval, and CrossEncoder paths are disabled. Output rows are bounded and
+record source/split identity, evidence containment, provenance, context size,
+and coarse failure stage.
+
+This selected external suite is distinct from `evals/typed_memory_e2e/`, which
+contains synthetic deterministic architecture-regression cases. Mock answers
+do not validate live-model grounding, and multi-hop retrieval and conflict
+resolution are not primary goals of this selected suite.
+
+### CrossEncoder Ablation on Selected Suites
+
+The selected-suite runner can explicitly enable the current repository's
+`BAAI/bge-reranker-v2-m3` CrossEncoder for evaluation. Deterministic reranking
+remains the default; raw replay and its embedding/hybrid modes remained
+disabled throughout this ablation.
+
+| Suite | Mode | Completed | Gold candidates | Gold context | Provenance | Runtime |
+|---|---|---:|---:|---:|---:|---:|
+| RULER QA1 | deterministic | 20/20 | 17/20 | 9/20 | 20/20 | 11.849 s |
+| RULER QA1 | CrossEncoder | 20/20 | 17/20 | 11/20 | 20/20 | 189.527 s |
+| Test-Time Learning | deterministic | 6/6 | 5/6 | 5/6 | 6/6 | 16.423 s |
+| Test-Time Learning | CrossEncoder | 6/6 | 5/6 | 5/6 | 6/6 | 75.227 s |
+| Aligned | deterministic | 26/26 | 22/26 | 14/26 | 26/26 | 24.252 s |
+| Aligned | CrossEncoder | 26/26 | 22/26 | 16/26 | 26/26 | 202.998 s |
+
+CrossEncoder ordering promoted two previously missed RULER questions into the
+context: question 0, "In what country is Normandy located?", and question 7,
+"What religion were the Normans". No baseline success regressed. Candidate
+sets and context budgets were unchanged, so these gains are attributable to
+reranking-driven promotion under the existing raw-span budget.
+
+The gain is measurable but modest and came with substantial model-load and CPU
+inference cost. CrossEncoder should remain optional. These are mock-answer
+evidence-containment results, not live-model answer accuracy or a reason to
+change production defaults.

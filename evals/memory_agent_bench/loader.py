@@ -59,6 +59,7 @@ def normalize_record(
             "adapter_context_chunk_count": sum(
                 len(session.chunks) for session in sessions
             ),
+            "adapter_row_index": example_index,
         }
     )
     return MABenchExample(
@@ -78,6 +79,9 @@ def load_huggingface_examples(
     limit: int | None = None,
     question_limit: int | None = None,
     context_chunk_chars: int = 4000,
+    include_source_datasets: tuple[str, ...] = (),
+    exclude_source_datasets: tuple[str, ...] = (),
+    selection_stats: dict[str, Any] | None = None,
 ) -> list[MABenchExample]:
     """Stream a bounded external subset without a hard dependency."""
     try:
@@ -89,10 +93,26 @@ def load_huggingface_examples(
 
     dataset = load_dataset(dataset_name, split=split, streaming=True)
     examples: list[MABenchExample] = []
+    scanned_rows = 0
+    source_filtered_rows = 0
     for index, row in enumerate(dataset):
+        scanned_rows += 1
+        record = dict(row)
+        metadata = record.get("metadata")
+        source = str(
+            metadata.get("source", "")
+            if isinstance(metadata, dict)
+            else ""
+        )
+        if include_source_datasets and source not in include_source_datasets:
+            source_filtered_rows += 1
+            continue
+        if exclude_source_datasets and source in exclude_source_datasets:
+            source_filtered_rows += 1
+            continue
         examples.append(
             normalize_record(
-                dict(row),
+                record,
                 competency=split,
                 example_index=index,
                 question_limit=question_limit,
@@ -101,6 +121,16 @@ def load_huggingface_examples(
         )
         if limit is not None and len(examples) >= limit:
             break
+    if selection_stats is not None:
+        selection_stats.update(
+            {
+                "scanned_rows": scanned_rows,
+                "source_filtered_rows": source_filtered_rows,
+                "rows_after_source_filter": len(examples),
+                "include_source_datasets": list(include_source_datasets),
+                "exclude_source_datasets": list(exclude_source_datasets),
+            }
+        )
     return examples
 
 
