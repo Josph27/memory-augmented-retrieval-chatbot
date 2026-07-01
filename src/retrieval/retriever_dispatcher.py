@@ -8,6 +8,7 @@ from src.database import Database
 from src.memory.constants import RAW_MESSAGE_LIMIT
 from src.retrieval.current_chat_gist_retriever import CurrentChatGistRetriever
 from src.retrieval.current_chat_span_retriever import CurrentChatSpanRetriever
+from src.retrieval.gist_raw_span_expander import GistRawSpanExpander
 from src.retrieval.langchain_chroma_retriever import LangChainChromaRetriever
 from src.retrieval.previous_chat_gist_retriever import PreviousChatGistRetriever
 from src.retrieval.raw_message_span_retriever import RawMessageSpanRetriever
@@ -31,7 +32,9 @@ class RetrieverDispatcher:
         database: Database,
         raw_message_limit: int = RAW_MESSAGE_LIMIT,
         retrievers: dict[str, SourceRetriever] | None = None,
+        gist_expander: GistRawSpanExpander | None = None,
     ) -> None:
+        self.gist_expander = gist_expander or GistRawSpanExpander(database)
         self.retrievers: dict[str, SourceRetriever] = retrievers or {
             "recent_messages": RecentMessagesRetriever(database, default_limit=raw_message_limit),
             "structured_memory": StructuredMemoryRetriever(database),
@@ -54,7 +57,10 @@ class RetrieverDispatcher:
                 continue
 
             candidates.extend(retriever.retrieve(chat_id=chat_id, source_plan=source_plan))
-        return candidates
+        return candidates + self.gist_expander.expand(
+            candidates,
+            query=route_plan.query,
+        )
 
 
 def langchain_chroma_retriever_for_env(database: Database) -> SourceRetriever:

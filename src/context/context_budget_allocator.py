@@ -119,6 +119,10 @@ class ContextBudgetAllocator:
         profile_name = profile_name_for(route_plan.context_profile)
         profile = self.policy.profiles.get(profile_name, self.policy.profiles["general_chat"])
         enabled_sources = enabled_source_names(route_plan)
+        budgetable_sources = candidate_budget_source_names(
+            ranked_candidates,
+            enabled_sources,
+        )
 
         system_estimate = system_prompt_tokens
         if system_estimate is None:
@@ -135,7 +139,7 @@ class ContextBudgetAllocator:
         source_ratios = enabled_source_ratios(profile, enabled_sources)
         candidate_source_minimum_budgets = candidate_source_minimum_budgets_for(
             ranked_candidates=ranked_candidates,
-            enabled_sources=enabled_sources,
+            enabled_sources=budgetable_sources,
             token_estimator=self.token_estimator,
             minimum_tokens=self.policy.minimum_candidate_source_tokens,
             allocatable_tokens=allocatable,
@@ -175,6 +179,9 @@ class ContextBudgetAllocator:
             metadata={
                 "context_profile": profile_name,
                 "enabled_sources": sorted(enabled_sources),
+                "derived_budget_sources": sorted(
+                    budgetable_sources - enabled_sources
+                ),
                 "safety_margin_tokens": safety_tokens,
                 "allocatable_tokens": allocatable,
                 "candidate_count": len(ranked_candidates),
@@ -204,6 +211,23 @@ def profile_name_for(context_profile: str | None) -> str:
 def enabled_source_names(route_plan: RoutePlan) -> set[str]:
     """Return enabled source names from a route plan."""
     return {source.source for source in route_plan.sources if source.enabled}
+
+
+def candidate_budget_source_names(
+    ranked_candidates: list[MemoryCandidate],
+    enabled_sources: set[str],
+) -> set[str]:
+    """Include evidence derived explicitly from an enabled parent source."""
+    budgetable = set(enabled_sources)
+    for candidate in ranked_candidates:
+        parent_source = candidate.metadata.get("derived_from_source")
+        if (
+            candidate.source == "raw_message_span"
+            and isinstance(parent_source, str)
+            and parent_source in enabled_sources
+        ):
+            budgetable.add(candidate.source)
+    return budgetable
 
 
 def enabled_source_ratios(
