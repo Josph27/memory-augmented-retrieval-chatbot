@@ -109,6 +109,7 @@ data/*.db
 data/*.db-*
 evals/document_qa/outputs/
 reports/longmemeval_pilot_*.json
+reports/*.jsonl
 .env
 
 # poetry
