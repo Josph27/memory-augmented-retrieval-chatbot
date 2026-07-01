@@ -98,6 +98,35 @@ uv run python evals/memory_agent_bench/run_memory_agent_bench.py \
 Model mode permits normal LangMem extraction and reports answer metrics
 separately. It can incur model latency and cost.
 
+## Eval-Only Raw Replay Diagnostic
+
+The adapter can optionally retrieve directly from replayed raw chunks:
+
+```bash
+uv run python evals/memory_agent_bench/run_memory_agent_bench.py \
+  --dataset-id ai-hyz/MemoryAgentBench \
+  --split Accurate_Retrieval \
+  --limit 20 \
+  --question-limit 1 \
+  --answer-mode mock \
+  --enable-raw-replay-chunk-retrieval \
+  --raw-replay-retrieval-mode lexical \
+  --raw-replay-candidate-pool-size 50 \
+  --raw-replay-top-k 8 \
+  --raw-replay-max-chars 4000 \
+  --output reports/memory_agent_bench_accurate_retrieval_raw_replay_diag.jsonl
+```
+
+This mode is disabled by default and exists only under the benchmark adapter.
+Lexical retrieval remains the default. Explicit `embedding` and `hybrid` modes
+use the configured `--raw-replay-embedding-model`; hybrid uses reciprocal-rank
+fusion. The candidate pool is separate from the final candidate top-k. All
+modes label candidates `eval_raw_replay_chunk` and do not modify production
+routing or previous-chat gist retrieval.
+
+Gold answers are used only after retrieval for diagnostics. They never affect
+candidate scoring or selection.
+
 ## Metrics and Limitations
 
 The first adapter reports normalized exact/substring checks, whether gold text

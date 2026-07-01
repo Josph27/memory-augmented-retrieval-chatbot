@@ -24,6 +24,13 @@ from src.retrieval.structured_memory_retriever import StructuredMemoryRetriever
 from src.routing.routing_agent import RoutingAgent
 
 from evals.memory_agent_bench.metrics import normalize_text, score_answer
+from evals.memory_agent_bench.raw_replay import (
+    EVAL_RAW_REPLAY_SOURCE,
+    EvalRawReplayChunkRetriever,
+    EvalRawReplayContextManager,
+    ReplayEmbeddingBackend,
+    raw_replay_diagnostics,
+)
 from evals.memory_agent_bench.schemas import MABenchExample
 
 
@@ -111,6 +118,15 @@ class RecordingNoopUpdater:
 class FixedBenchmarkRoutePlanner:
     """Expose relevant typed sources without altering production route defaults."""
 
+    def __init__(
+        self,
+        *,
+        raw_replay_enabled: bool = False,
+        raw_replay_top_k: int = 8,
+    ) -> None:
+        self.raw_replay_enabled = raw_replay_enabled
+        self.raw_replay_top_k = max(1, raw_replay_top_k)
+
     def plan(self, query: str) -> RoutePlan:
         sources = [
             SourcePlan(
@@ -135,6 +151,16 @@ class FixedBenchmarkRoutePlanner:
                 reason="MemoryAgentBench history is not document memory.",
             )
         )
+        if self.raw_replay_enabled:
+            sources.append(
+                SourcePlan(
+                    source=EVAL_RAW_REPLAY_SOURCE,  # type: ignore[arg-type]
+                    enabled=True,
+                    query=query,
+                    limit=self.raw_replay_top_k,
+                    reason="MemoryAgentBench eval-only raw replay diagnostic.",
+                )
+            )
         return RoutePlan(
             query=query,
             intent="memory_agent_bench_question",
@@ -167,11 +193,32 @@ class ProductionLikeHarness:
 
     execution_classification = "production-like with fixture-assisted routing"
 
-    def __init__(self, model: ChatModel, mock_answer: bool) -> None:
+    def __init__(
+        self,
+        model: ChatModel,
+        mock_answer: bool,
+        *,
+        raw_replay_enabled: bool = False,
+        raw_replay_top_k: int = 8,
+        raw_replay_max_chars: int = 4000,
+        raw_replay_retrieval_mode: str = "lexical",
+        raw_replay_embedding_backend: ReplayEmbeddingBackend | None = None,
+        raw_replay_candidate_pool_size: int = 50,
+    ) -> None:
         self._temp_dir = tempfile.TemporaryDirectory(prefix="memory_agent_bench_")
         self.database = Database(Path(self._temp_dir.name) / "benchmark.db")
         self.model = model
         self.mock_answer = mock_answer
+        self.raw_replay_enabled = raw_replay_enabled
+        self.raw_replay_top_k = max(1, raw_replay_top_k)
+        self.raw_replay_max_chars = max(1, raw_replay_max_chars)
+        self.raw_replay_retrieval_mode = raw_replay_retrieval_mode
+        self.raw_replay_embedding_backend = raw_replay_embedding_backend
+        self.raw_replay_candidate_pool_size = max(
+            self.raw_replay_top_k,
+            raw_replay_candidate_pool_size,
+        )
+        self._raw_replay_retriever: EvalRawReplayChunkRetriever | None = None
         self._noop_updater = RecordingNoopUpdater() if mock_answer else None
         self.memory = ShortTermMemory(
             database=self.database,
@@ -208,6 +255,7 @@ class ProductionLikeHarness:
                     "session_id": session_id,
                     "chunk_index": chunk_index,
                     "user_message_id": user_message_id,
+                    "chat_id": chat_id,
                     "content": chunk,
                 }
             )
@@ -227,6 +275,30 @@ class ProductionLikeHarness:
         self.database.create_chat(question_chat_id, title="MemoryAgentBench question")
         if self.mock_answer and isinstance(self.model, MockAnswerModel):
             self.model.set_answer(gold_answers[0])
+        route_planner = FixedBenchmarkRoutePlanner(
+            raw_replay_enabled=self.raw_replay_enabled,
+            raw_replay_top_k=self.raw_replay_top_k,
+        )
+        retrievers = {
+            "recent_messages": QueryEchoExcludingRecentRetriever(
+                self.database,
+                default_limit=8,
+            ),
+            "structured_memory": StructuredMemoryRetriever(self.database),
+            "previous_chat_gist": PreviousChatGistRetriever(self.database),
+            "raw_message_span": RawMessageSpanRetriever(self.database),
+            "current_chat_span": CurrentChatSpanRetriever(self.database),
+        }
+        if self.raw_replay_enabled:
+            self._raw_replay_retriever = EvalRawReplayChunkRetriever(
+                self.replayed_chunks,
+                top_k=self.raw_replay_top_k,
+                max_chars=self.raw_replay_max_chars,
+                retrieval_mode=self.raw_replay_retrieval_mode,
+                embedding_backend=self.raw_replay_embedding_backend,
+                candidate_pool_size=self.raw_replay_candidate_pool_size,
+            )
+            retrievers[EVAL_RAW_REPLAY_SOURCE] = self._raw_replay_retriever
         coordinator = CoordinatorAgent(
             database=self.database,
             memory_agent=ShortTermMemoryAgent(self.memory),
@@ -234,25 +306,30 @@ class ProductionLikeHarness:
             chat_agent=ChatAgent(cast(Any, self.model)),
             system_prompt=SYSTEM_PROMPT,
             routing_agent=RoutingAgent(
-                route_planner=FixedBenchmarkRoutePlanner(),  # type: ignore[arg-type]
+                route_planner=route_planner,  # type: ignore[arg-type]
                 mode="rule",
             ),
             retriever_dispatcher=RetrieverDispatcher(
                 self.database,
-                retrievers={
-                    "recent_messages": QueryEchoExcludingRecentRetriever(
-                        self.database,
-                        default_limit=8,
-                    ),
-                    "structured_memory": StructuredMemoryRetriever(self.database),
-                    "previous_chat_gist": PreviousChatGistRetriever(self.database),
-                    "raw_message_span": RawMessageSpanRetriever(self.database),
-                    "current_chat_span": CurrentChatSpanRetriever(self.database),
-                },
+                retrievers=retrievers,  # type: ignore[arg-type]
             ),
             memory_reranker=MemoryReranker(mode="deterministic"),
+            context_manager_agent=(
+                EvalRawReplayContextManager()
+                if self.raw_replay_enabled
+                else None
+            ),
         )
         return coordinator.run_turn(question_chat_id, question)
+
+    def raw_replay_rank_diagnostics(
+        self,
+        gold_message_ids: set[int],
+    ) -> dict[str, Any]:
+        """Expose post-hoc ranks without feeding benchmark gold to retrieval."""
+        if self._raw_replay_retriever is None:
+            return {}
+        return self._raw_replay_retriever.gold_rank_diagnostics(gold_message_ids)
 
     def close(self) -> None:
         self._temp_dir.cleanup()
@@ -265,12 +342,24 @@ def run_example(
     model: ChatModel | None = None,
     finalize_sessions: bool = True,
     harness: BenchmarkHarness | None = None,
+    raw_replay_enabled: bool = False,
+    raw_replay_top_k: int = 8,
+    raw_replay_max_chars: int = 4000,
+    raw_replay_retrieval_mode: str = "lexical",
+    raw_replay_embedding_backend: ReplayEmbeddingBackend | None = None,
+    raw_replay_candidate_pool_size: int = 50,
 ) -> list[dict[str, Any]]:
     """Replay one example incrementally, then evaluate its questions."""
     selected_model = model or MockAnswerModel()
     selected_harness = harness or ProductionLikeHarness(
         selected_model,
         mock_answer=mock_answer,
+        raw_replay_enabled=raw_replay_enabled,
+        raw_replay_top_k=raw_replay_top_k,
+        raw_replay_max_chars=raw_replay_max_chars,
+        raw_replay_retrieval_mode=raw_replay_retrieval_mode,
+        raw_replay_embedding_backend=raw_replay_embedding_backend,
+        raw_replay_candidate_pool_size=raw_replay_candidate_pool_size,
     )
     try:
         for session in example.sessions:
@@ -306,6 +395,30 @@ def run_example(
                     else []
                 ),
             )
+            raw_diagnostics = raw_replay_diagnostics(
+                enabled=raw_replay_enabled,
+                gold_answers=gold_answers,
+                retrieved_candidates=turn.trace.retrieved_candidates,
+                context_candidates=candidates,
+                gold_message_ids=set(diagnostics["gold_message_ids"]),
+                rank_diagnostics=(
+                    selected_harness.raw_replay_rank_diagnostics(
+                        set(diagnostics["gold_message_ids"])
+                    )
+                    if hasattr(selected_harness, "raw_replay_rank_diagnostics")
+                    else None
+                ),
+            )
+            gist_gold_found = bool(
+                candidate_ids_containing_gold(
+                    [
+                        candidate
+                        for candidate in turn.trace.retrieved_candidates
+                        if candidate.source == "previous_chat_gist"
+                    ],
+                    diagnostics["normalized_gold_answers"],
+                )
+            )
             rows.append(
                 {
                     "example_id": example.example_id,
@@ -336,6 +449,7 @@ def run_example(
                             "raw_message_span",
                             "document_memory",
                             "current_chat_span",
+                            EVAL_RAW_REPLAY_SOURCE,
                         )
                     },
                     "context_packet_summary": evidence[:1000],
@@ -365,6 +479,13 @@ def run_example(
                     "chat_end_calls": selected_harness.chat_end_calls,
                     "workflow_trace": workflow_trace_summary(turn),
                     "evidence_diagnostics": diagnostics,
+                    "raw_replay_diagnostics": {
+                        **raw_diagnostics,
+                        "previous_chat_gist_found_gold": gist_gold_found,
+                        "eval_raw_replay_chunk_found_gold": raw_diagnostics[
+                            "raw_replay_gold_literal_found"
+                        ],
+                    },
                     "notes": (
                         ["Mock answer mode: generated-answer grounding was not tested."]
                         if mock_answer
@@ -492,10 +613,10 @@ def evidence_diagnostics(
         failure_stage = "dataset_or_metric_gold_not_in_replay"
     elif context_text_ids:
         failure_stage = "none_literal_gold_reached_context"
-    elif raw_provenance_ids:
-        failure_stage = "raw_span_formatting_or_char_truncation"
     elif retrieved_text_ids and not context_text_ids:
         failure_stage = "context_budget_or_context_selection"
+    elif raw_provenance_ids:
+        failure_stage = "raw_span_formatting_or_char_truncation"
     else:
         failure_stage = "gist_retrieval_or_raw_window_selection"
 

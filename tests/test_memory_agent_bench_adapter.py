@@ -13,6 +13,10 @@ from evals.memory_agent_bench.loader import (
     split_context,
 )
 from evals.memory_agent_bench.metrics import score_answer
+from evals.memory_agent_bench.raw_replay import (
+    EVAL_RAW_REPLAY_SOURCE,
+    EvalRawReplayChunkRetriever,
+)
 from evals.memory_agent_bench.runner import run_benchmark, write_jsonl_report
 from src.core.contracts import (
     AgentTurnResult,
@@ -31,6 +35,21 @@ FIXTURE = (
     / "fixtures"
     / "tiny_sample.jsonl"
 )
+
+
+class DeterministicEmbeddingBackend:
+    model_name = "test-deterministic-embedding"
+
+    def embed_query(self, text: str) -> list[float]:
+        if "city" in text.lower():
+            return [1.0, 0.0]
+        return [0.0, 1.0]
+
+    def embed_documents(self, texts: list[str]) -> list[list[float]]:
+        return [
+            [1.0, 0.0] if "relocated to berlin" in text.lower() else [0.0, 1.0]
+            for text in texts
+        ]
 
 
 class RecordingHarness:
@@ -232,3 +251,281 @@ def test_huggingface_support_is_lazy_and_optional(monkeypatch: pytest.MonkeyPatc
 
     with pytest.raises(RuntimeError, match="optional 'datasets' package"):
         load_huggingface_examples("org/not-downloaded")
+
+
+def test_eval_raw_replay_retrieval_finds_old_chunk_with_provenance() -> None:
+    replayed = [
+        {
+            "session_id": "session-1",
+            "chunk_index": 0,
+            "user_message_id": 11,
+            "chat_id": "old-chat",
+            "content": "The distinctive deployment codename is cobalt lantern.",
+        },
+        {
+            "session_id": "session-1",
+            "chunk_index": 1,
+            "user_message_id": 13,
+            "chat_id": "old-chat",
+            "content": "Unrelated later conversation.",
+        },
+    ]
+    retriever = EvalRawReplayChunkRetriever(replayed, top_k=1)
+
+    candidates = retriever.retrieve(
+        "question-chat",
+        SourcePlan(
+            source=EVAL_RAW_REPLAY_SOURCE,  # type: ignore[arg-type]
+            query="What is the distinctive deployment codename?",
+            limit=1,
+        ),
+    )
+
+    assert len(candidates) == 1
+    assert candidates[0].source == EVAL_RAW_REPLAY_SOURCE
+    assert "cobalt lantern" in candidates[0].content
+    assert candidates[0].source_message_ids == [11]
+    assert candidates[0].chat_id == "old-chat"
+    assert candidates[0].metadata["chunk_index"] == 0
+    assert candidates[0].metadata["eval_only"] is True
+
+
+def test_raw_replay_diagnostic_is_disabled_by_default() -> None:
+    report = run_benchmark(load_examples(FIXTURE, limit=1), answer_mode="mock")
+    row = report["results"][0]
+
+    assert report["raw_replay_enabled"] is False
+    assert row["raw_replay_diagnostics"]["raw_replay_enabled"] is False
+    assert row["raw_replay_diagnostics"]["raw_replay_candidate_count"] == 0
+    assert EVAL_RAW_REPLAY_SOURCE not in row["sources"]
+
+
+def test_raw_replay_retrieval_uses_query_not_gold() -> None:
+    replayed = [
+        {
+            "session_id": "session-1",
+            "chunk_index": 0,
+            "user_message_id": 1,
+            "content": "GOLD_ONLY_TOKEN with unrelated material.",
+        },
+        {
+            "session_id": "session-1",
+            "chunk_index": 1,
+            "user_message_id": 3,
+            "content": "Router evidence uses a cobalt deployment codename.",
+        },
+    ]
+    retriever = EvalRawReplayChunkRetriever(replayed, top_k=1)
+
+    candidate = retriever.retrieve(
+        "question-chat",
+        SourcePlan(
+            source=EVAL_RAW_REPLAY_SOURCE,  # type: ignore[arg-type]
+            query="What cobalt deployment evidence did the router use?",
+        ),
+    )[0]
+
+    assert candidate.source_message_ids == [3]
+    assert "GOLD_ONLY_TOKEN" not in candidate.content
+
+
+def test_raw_replay_candidates_are_bounded() -> None:
+    replayed = [
+        {
+            "session_id": "session-1",
+            "chunk_index": index,
+            "user_message_id": index * 2 + 1,
+            "content": f"{'padding ' * 100} marker-{index} {'detail ' * 100}",
+        }
+        for index in range(5)
+    ]
+    retriever = EvalRawReplayChunkRetriever(
+        replayed,
+        top_k=2,
+        max_chars=160,
+    )
+
+    candidates = retriever.retrieve(
+        "question-chat",
+        SourcePlan(
+            source=EVAL_RAW_REPLAY_SOURCE,  # type: ignore[arg-type]
+            query="padding detail marker",
+            limit=2,
+        ),
+    )
+
+    assert len(candidates) == 2
+    assert all(len(candidate.content) <= 160 for candidate in candidates)
+    assert all(candidate.metadata["truncated"] is True for candidate in candidates)
+
+
+def test_enabled_raw_replay_reaches_context_packet() -> None:
+    report = run_benchmark(
+        load_examples(FIXTURE, limit=1),
+        answer_mode="mock",
+        raw_replay_enabled=True,
+        raw_replay_top_k=2,
+        raw_replay_max_chars=400,
+    )
+    row = report["results"][0]
+    diagnostics = row["raw_replay_diagnostics"]
+
+    assert report["raw_replay_enabled"] is True
+    assert diagnostics["raw_replay_enabled"] is True
+    assert diagnostics["raw_replay_candidate_count"] >= 1
+    assert diagnostics["raw_replay_reached_context"] is True
+    assert diagnostics["raw_replay_gold_literal_found"] is True
+    assert diagnostics["raw_replay_gold_message_found"] is True
+    assert diagnostics["raw_replay_gold_literal_reached_context"] is True
+    assert diagnostics["raw_replay_gold_message_reached_context"] is True
+    assert EVAL_RAW_REPLAY_SOURCE in row["sources"]
+    assert len(diagnostics["raw_replay_top_ids"]) <= 10
+
+
+def test_raw_replay_embedding_mode_is_opt_in() -> None:
+    retriever = EvalRawReplayChunkRetriever(
+        [
+            {
+                "session_id": "session-1",
+                "chunk_index": 0,
+                "user_message_id": 1,
+                "content": "Alex relocated to Berlin last spring.",
+            },
+            {
+                "session_id": "session-1",
+                "chunk_index": 1,
+                "user_message_id": 3,
+                "content": "Unrelated city planning notes.",
+            },
+        ],
+        top_k=1,
+    )
+
+    candidate = retriever.retrieve(
+        "question-chat",
+        SourcePlan(
+            source=EVAL_RAW_REPLAY_SOURCE,  # type: ignore[arg-type]
+            query="What city did Alex move to?",
+            limit=1,
+        ),
+    )[0]
+
+    assert candidate.source_message_ids == [3]
+    assert candidate.metadata["retrieval_mode"] == "eval_raw_replay_lexical"
+
+
+def test_raw_replay_embedding_mode_finds_low_overlap_semantic_chunk() -> None:
+    retriever = EvalRawReplayChunkRetriever(
+        [
+            {
+                "session_id": "session-1",
+                "chunk_index": 0,
+                "user_message_id": 1,
+                "content": "Alex relocated to Berlin last spring.",
+            },
+            {
+                "session_id": "session-1",
+                "chunk_index": 1,
+                "user_message_id": 3,
+                "content": "Unrelated city planning notes.",
+            },
+        ],
+        top_k=1,
+        retrieval_mode="embedding",
+        embedding_backend=DeterministicEmbeddingBackend(),
+    )
+
+    candidate = retriever.retrieve(
+        "question-chat",
+        SourcePlan(
+            source=EVAL_RAW_REPLAY_SOURCE,  # type: ignore[arg-type]
+            query="What city did Alex move to?",
+            limit=1,
+        ),
+    )[0]
+
+    assert candidate.source_message_ids == [1]
+    assert "Berlin" in candidate.content
+    assert candidate.metadata["retrieval_mode"] == "eval_raw_replay_embedding"
+
+
+def test_raw_replay_hybrid_fuses_lexical_and_embedding_ranks() -> None:
+    retriever = EvalRawReplayChunkRetriever(
+        [
+            {
+                "session_id": "session-1",
+                "chunk_index": 0,
+                "user_message_id": 1,
+                "content": "Alex relocated to Berlin last spring.",
+            },
+            {
+                "session_id": "session-1",
+                "chunk_index": 1,
+                "user_message_id": 3,
+                "content": "City city city planning notes.",
+            },
+            {
+                "session_id": "session-1",
+                "chunk_index": 2,
+                "user_message_id": 5,
+                "content": "Completely unrelated text.",
+            },
+        ],
+        top_k=2,
+        retrieval_mode="hybrid",
+        embedding_backend=DeterministicEmbeddingBackend(),
+        candidate_pool_size=2,
+    )
+
+    candidates = retriever.retrieve(
+        "question-chat",
+        SourcePlan(
+            source=EVAL_RAW_REPLAY_SOURCE,  # type: ignore[arg-type]
+            query="What city did Alex move to?",
+            limit=2,
+        ),
+    )
+
+    assert {candidate.source_message_ids[0] for candidate in candidates} == {1, 3}
+    assert all(
+        candidate.metadata["retrieval_mode"] == "eval_raw_replay_hybrid"
+        for candidate in candidates
+    )
+
+
+def test_raw_replay_pool_and_rank_diagnostics_are_bounded_and_post_hoc() -> None:
+    replayed = [
+        {
+            "session_id": "session-1",
+            "chunk_index": index,
+            "user_message_id": index * 2 + 1,
+            "content": (
+                "Alex relocated to Berlin last spring."
+                if index == 4
+                else f"Unrelated city note {index}."
+            ),
+        }
+        for index in range(8)
+    ]
+    retriever = EvalRawReplayChunkRetriever(
+        replayed,
+        top_k=2,
+        retrieval_mode="embedding",
+        embedding_backend=DeterministicEmbeddingBackend(),
+        candidate_pool_size=3,
+    )
+
+    candidates = retriever.retrieve(
+        "question-chat",
+        SourcePlan(
+            source=EVAL_RAW_REPLAY_SOURCE,  # type: ignore[arg-type]
+            query="What city did Alex move to?",
+            limit=8,
+        ),
+    )
+    diagnostics = retriever.gold_rank_diagnostics({9})
+
+    assert len(candidates) == 2
+    assert diagnostics["raw_replay_candidate_pool_size"] == 3
+    assert diagnostics["gold_rank_embedding"] == 1
+    assert diagnostics["gold_in_candidate_pool"] is True
