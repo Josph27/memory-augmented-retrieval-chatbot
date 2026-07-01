@@ -9,6 +9,8 @@ from evals.memory_agent_bench.adapter import run_example
 from evals.memory_agent_bench.loader import (
     load_examples,
     load_huggingface_examples,
+    normalize_record,
+    split_context,
 )
 from evals.memory_agent_bench.metrics import score_answer
 from evals.memory_agent_bench.runner import run_benchmark, write_jsonl_report
@@ -101,6 +103,37 @@ def test_fixture_parses_normalized_example() -> None:
     assert examples[0].sessions[0].chunks[0].startswith("My deployment")
     assert examples[0].questions == ("What is my deployment codename?",)
     assert examples[0].answers == (("cobalt lantern",),)
+
+
+def test_official_context_shape_is_chunked_and_question_limited() -> None:
+    example = normalize_record(
+        {
+            "context": "First fact.\n\n" + ("Second fact is long. " * 20),
+            "questions": ["Question one?", "Question two?"],
+            "answers": [["answer one"], ["answer two"]],
+            "metadata": {
+                "source": "factconsolidation_mh_6k",
+                "qa_pair_ids": ["q1", "q2"],
+            },
+        },
+        competency="Conflict_Resolution",
+        example_index=0,
+        question_limit=1,
+        context_chunk_chars=120,
+    )
+
+    assert example.example_id == "factconsolidation_mh_6k-row-1"
+    assert example.competency == "Conflict_Resolution"
+    assert example.questions == ("Question one?",)
+    assert example.answers == (("answer one",),)
+    assert len(example.sessions[0].chunks) > 1
+    assert all(len(chunk) <= 120 for chunk in example.sessions[0].chunks)
+    assert example.metadata["adapter_context_chunk_count"] > 1
+
+
+def test_context_split_rejects_unreasonably_small_bound() -> None:
+    with pytest.raises(ValueError, match="at least 100"):
+        split_context("content", max_chars=50)
 
 
 def test_incremental_replay_calls_memory_update_and_session_lifecycle() -> None:

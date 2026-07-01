@@ -10,7 +10,10 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from evals.memory_agent_bench.loader import load_examples  # noqa: E402
+from evals.memory_agent_bench.loader import (  # noqa: E402
+    load_examples,
+    load_huggingface_examples,
+)
 from evals.memory_agent_bench.runner import (  # noqa: E402
     run_benchmark,
     write_jsonl_report,
@@ -27,7 +30,27 @@ def main() -> None:
         description="Run the optional MemoryAgentBench lifecycle adapter."
     )
     parser.add_argument("--dataset", type=Path, default=DEFAULT_FIXTURE)
+    parser.add_argument(
+        "--dataset-id",
+        help="Optional Hugging Face dataset id; overrides --dataset.",
+    )
+    parser.add_argument(
+        "--split",
+        default="Conflict_Resolution",
+        help="External dataset competency split.",
+    )
     parser.add_argument("--limit", type=int)
+    parser.add_argument(
+        "--question-limit",
+        type=int,
+        help="Maximum questions evaluated from each external row.",
+    )
+    parser.add_argument(
+        "--context-chunk-chars",
+        type=int,
+        default=4000,
+        help="Bound for deterministic incremental context chunks.",
+    )
     parser.add_argument("--answer-mode", choices=("mock", "model"), default="mock")
     parser.add_argument("--output", type=Path)
     parser.add_argument(
@@ -39,8 +62,19 @@ def main() -> None:
     model = (
         ModelWrapper(AppConfig.from_env()) if args.answer_mode == "model" else None
     )
+    examples = (
+        load_huggingface_examples(
+            args.dataset_id,
+            split=args.split,
+            limit=args.limit,
+            question_limit=args.question_limit,
+            context_chunk_chars=args.context_chunk_chars,
+        )
+        if args.dataset_id
+        else load_examples(args.dataset, limit=args.limit)
+    )
     report = run_benchmark(
-        load_examples(args.dataset, limit=args.limit),
+        examples,
         answer_mode=args.answer_mode,
         model=model,
         finalize_sessions=not args.no_finalize_sessions,

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -14,41 +15,71 @@ def load_examples(path: Path, limit: int | None = None) -> list[MABenchExample]:
     return examples[:limit] if limit is not None else examples
 
 
-def normalize_record(record: dict[str, Any]) -> MABenchExample:
+def normalize_record(
+    record: dict[str, Any],
+    *,
+    competency: str | None = None,
+    example_index: int | None = None,
+    question_limit: int | None = None,
+    context_chunk_chars: int = 4000,
+) -> MABenchExample:
     """Normalize a flexible external record into the internal adapter schema."""
+    record_metadata = record.get("metadata")
+    metadata = dict(record_metadata) if isinstance(record_metadata, dict) else {}
+    source = str(metadata.get("source") or "memory-agent-bench")
     example_id = str(
-        record.get("example_id") or record.get("id") or record.get("question_id") or ""
+        record.get("example_id")
+        or record.get("id")
+        or record.get("question_id")
+        or (
+            f"{source}-row-{example_index + 1}"
+            if example_index is not None
+            else ""
+        )
     )
-    competency = str(
-        record.get("competency")
+    selected_competency = str(
+        competency
+        or record.get("competency")
         or record.get("ability")
         or record.get("question_type")
         or "unknown"
     )
-    sessions = _normalize_sessions(record)
+    sessions = _normalize_sessions(record, context_chunk_chars=context_chunk_chars)
     questions = _as_string_tuple(record.get("questions") or record.get("question"))
     raw_answers = record.get("answers")
     if raw_answers is None:
         raw_answers = record.get("answer")
     answers = _normalize_answers(raw_answers, len(questions))
-    metadata = record.get("metadata")
+    if question_limit is not None:
+        questions = questions[:question_limit]
+        answers = answers[:question_limit]
+    metadata.update(
+        {
+            "adapter_context_chunk_chars": context_chunk_chars,
+            "adapter_context_chunk_count": sum(
+                len(session.chunks) for session in sessions
+            ),
+        }
+    )
     return MABenchExample(
         example_id=example_id,
-        competency=competency,
+        competency=selected_competency,
         sessions=sessions,
         questions=questions,
         answers=answers,
-        metadata=dict(metadata) if isinstance(metadata, dict) else {},
+        metadata=metadata,
     )
 
 
 def load_huggingface_examples(
     dataset_name: str,
     *,
-    split: str = "test",
+    split: str = "Conflict_Resolution",
     limit: int | None = None,
+    question_limit: int | None = None,
+    context_chunk_chars: int = 4000,
 ) -> list[MABenchExample]:
-    """Optionally load a Hugging Face dataset without a hard dependency."""
+    """Stream a bounded external subset without a hard dependency."""
     try:
         from datasets import load_dataset
     except ImportError as error:
@@ -56,10 +87,21 @@ def load_huggingface_examples(
             "Hugging Face dataset loading requires the optional 'datasets' package."
         ) from error
 
-    dataset = load_dataset(dataset_name, split=split)
-    records = (dict(row) for row in dataset)
-    examples = [normalize_record(record) for record in records]
-    return examples[:limit] if limit is not None else examples
+    dataset = load_dataset(dataset_name, split=split, streaming=True)
+    examples: list[MABenchExample] = []
+    for index, row in enumerate(dataset):
+        examples.append(
+            normalize_record(
+                dict(row),
+                competency=split,
+                example_index=index,
+                question_limit=question_limit,
+                context_chunk_chars=context_chunk_chars,
+            )
+        )
+        if limit is not None and len(examples) >= limit:
+            break
+    return examples
 
 
 def _load_records(path: Path) -> list[dict[str, Any]]:
@@ -83,10 +125,20 @@ def _load_records(path: Path) -> list[dict[str, Any]]:
     return list(value)
 
 
-def _normalize_sessions(record: dict[str, Any]) -> tuple[MABenchSession, ...]:
+def _normalize_sessions(
+    record: dict[str, Any],
+    *,
+    context_chunk_chars: int,
+) -> tuple[MABenchSession, ...]:
     raw_sessions = record.get("sessions")
     if raw_sessions is None:
-        raw_sessions = [{"session_id": "session-1", "chunks": record.get("chunks", [])}]
+        chunks = record.get("chunks")
+        if chunks is None and isinstance(record.get("context"), str):
+            chunks = split_context(
+                record["context"],
+                max_chars=context_chunk_chars,
+            )
+        raw_sessions = [{"session_id": "session-1", "chunks": chunks or []}]
     if not isinstance(raw_sessions, list):
         raise ValueError("MemoryAgentBench sessions must be a list.")
 
@@ -105,6 +157,40 @@ def _normalize_sessions(record: dict[str, Any]) -> tuple[MABenchSession, ...]:
             )
         )
     return tuple(sessions)
+
+
+def split_context(context: str, max_chars: int = 4000) -> list[str]:
+    """Split official long contexts into bounded incremental replay chunks."""
+    if max_chars < 100:
+        raise ValueError("context_chunk_chars must be at least 100")
+    paragraphs = [
+        paragraph.strip()
+        for paragraph in re.split(r"\n\s*\n", context)
+        if paragraph.strip()
+    ]
+    chunks: list[str] = []
+    current = ""
+    for paragraph in paragraphs:
+        remaining = paragraph
+        while remaining:
+            available = max_chars - len(current) - (2 if current else 0)
+            if available <= 0:
+                chunks.append(current)
+                current = ""
+                continue
+            if len(remaining) <= available:
+                current = f"{current}\n\n{remaining}".strip()
+                remaining = ""
+                continue
+            if current:
+                chunks.append(current)
+                current = ""
+                continue
+            chunks.append(remaining[:max_chars])
+            remaining = remaining[max_chars:].lstrip()
+    if current:
+        chunks.append(current)
+    return chunks
 
 
 def _chunks_to_strings(value: Any) -> tuple[str, ...]:

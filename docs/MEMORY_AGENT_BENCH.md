@@ -56,9 +56,28 @@ Supply a local JSON or JSONL file with normalized fields:
 ```
 
 The loader also accepts common aliases such as `id`, `ability`, `question`,
-`answer`, and top-level `chunks`. Optional Hugging Face support is lazy and
-requires installing `datasets`; the repository does not download or commit the
-external benchmark.
+`answer`, and top-level `chunks`. For the official dataset, it maps the
+competency-named Hugging Face split, parallel `questions`/`answers`, and long
+`context` field. Because the published rows contain a long context rather than
+materialized chunks, the adapter deterministically creates bounded incremental
+chunks and records their size/count in metadata.
+
+Optional Hugging Face support is lazy and requires `datasets`; the repository
+does not commit the external benchmark. A small real-data dry run is:
+
+```bash
+uv run python evals/memory_agent_bench/run_memory_agent_bench.py \
+  --dataset-id ai-hyz/MemoryAgentBench \
+  --split Conflict_Resolution \
+  --limit 3 \
+  --question-limit 1 \
+  --answer-mode mock \
+  --output reports/memory_agent_bench_real_subset_mock.jsonl
+```
+
+The official splits are `Accurate_Retrieval`, `Test_Time_Learning`,
+`Long_Range_Understanding`, and `Conflict_Resolution`. `--limit` bounds dataset
+rows; `--question-limit` independently bounds the many questions in each row.
 
 ## Answer Modes
 

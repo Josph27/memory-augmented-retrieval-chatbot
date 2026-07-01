@@ -288,6 +288,10 @@ def run_example(
                 {
                     "example_id": example.example_id,
                     "competency": example.competency,
+                    "session_count": len(example.sessions),
+                    "replayed_chunk_count": sum(
+                        len(session.chunks) for session in example.sessions
+                    ),
                     "question": question,
                     "gold_answers": list(gold_answers),
                     "prediction": turn.answer,
