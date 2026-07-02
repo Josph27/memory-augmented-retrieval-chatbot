@@ -32,6 +32,10 @@ from evals.memory_agent_bench.selected_suite import (  # noqa: E402
 )
 from src.config import AppConfig  # noqa: E402
 from src.model_wrapper import ModelWrapper  # noqa: E402
+from src.orchestration.demo_orchestration import (  # noqa: E402
+    LANGGRAPH_DEMO,
+    NATIVE,
+)
 from src.retrieval.cross_encoder_reranker import (  # noqa: E402
     SentenceTransformersCrossEncoderBackend,
 )
@@ -89,6 +93,12 @@ def main() -> None:
         help="Bound for deterministic incremental context chunks.",
     )
     parser.add_argument("--answer-mode", choices=("mock", "model"), default="mock")
+    parser.add_argument(
+        "--orchestration-mode",
+        choices=(NATIVE, LANGGRAPH_DEMO),
+        default=NATIVE,
+        help="Selected-suite context orchestration; native remains the baseline.",
+    )
     parser.add_argument("--output", type=Path)
     cross_encoder_group = parser.add_mutually_exclusive_group()
     cross_encoder_group.add_argument(
@@ -170,6 +180,7 @@ def main() -> None:
             cross_encoder_backend=cross_encoder_backend,
             cross_encoder_top_k=args.cross_encoder_top_k,
             cross_encoder_weight=args.cross_encoder_weight,
+            orchestration_mode=args.orchestration_mode,
         )
         if args.output:
             write_selected_jsonl(args.output, report)

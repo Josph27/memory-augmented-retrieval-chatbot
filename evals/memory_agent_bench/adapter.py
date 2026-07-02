@@ -14,6 +14,7 @@ from src.core.contracts import AgentTurnResult, RoutePlan, SourcePlan
 from src.database import Database
 from src.memory.short_term import ShortTermMemory
 from src.memory.structured_state import MemoryUpdateResult
+from src.orchestration.demo_orchestration import NATIVE
 from src.retrieval.current_chat_span_retriever import CurrentChatSpanRetriever
 from src.retrieval.cross_encoder_reranker import CrossEncoderBackend
 from src.retrieval.previous_chat_gist_retriever import PreviousChatGistRetriever
@@ -209,6 +210,7 @@ class ProductionLikeHarness:
         cross_encoder_backend: CrossEncoderBackend | None = None,
         cross_encoder_top_k: int = 10,
         cross_encoder_weight: float = 0.65,
+        orchestration_mode: str = NATIVE,
     ) -> None:
         self._temp_dir = tempfile.TemporaryDirectory(prefix="memory_agent_bench_")
         self.database = Database(Path(self._temp_dir.name) / "benchmark.db")
@@ -227,6 +229,7 @@ class ProductionLikeHarness:
         self.cross_encoder_backend = cross_encoder_backend
         self.cross_encoder_top_k = max(1, cross_encoder_top_k)
         self.cross_encoder_weight = cross_encoder_weight
+        self.orchestration_mode = orchestration_mode
         self._raw_replay_retriever: EvalRawReplayChunkRetriever | None = None
         self._noop_updater = RecordingNoopUpdater() if mock_answer else None
         self.memory = ShortTermMemory(
@@ -334,7 +337,12 @@ class ProductionLikeHarness:
                 else None
             ),
         )
-        return coordinator.run_turn(question_chat_id, question)
+        return coordinator.run_turn(
+            question_chat_id,
+            question,
+            orchestration_mode=self.orchestration_mode,
+            task_context="memory_qa",
+        )
 
     def raw_replay_rank_diagnostics(
         self,
@@ -366,6 +374,7 @@ def run_example(
     cross_encoder_backend: CrossEncoderBackend | None = None,
     cross_encoder_top_k: int = 10,
     cross_encoder_weight: float = 0.65,
+    orchestration_mode: str = NATIVE,
 ) -> list[dict[str, Any]]:
     """Replay one example incrementally, then evaluate its questions."""
     selected_model = model or MockAnswerModel()
@@ -382,6 +391,7 @@ def run_example(
         cross_encoder_backend=cross_encoder_backend,
         cross_encoder_top_k=cross_encoder_top_k,
         cross_encoder_weight=cross_encoder_weight,
+        orchestration_mode=orchestration_mode,
     )
     try:
         for session in example.sessions:
@@ -462,6 +472,7 @@ def run_example(
                     "execution_classification": (
                         selected_harness.execution_classification
                     ),
+                    "orchestration_mode": orchestration_mode,
                     "answer_metric": asdict(metrics),
                     "evidence_metric": {
                         "gold_in_context": metrics.evidence_contains_answer,
@@ -583,6 +594,7 @@ def workflow_trace_summary(turn: AgentTurnResult) -> dict[str, Any]:
         "routing_decision": turn.trace.metadata.get("routing_decision"),
         "reranker": turn.trace.metadata.get("reranker"),
         "context_manager": turn.trace.metadata.get("context_manager"),
+        "orchestration": turn.trace.metadata.get("orchestration"),
     }
 
 

@@ -7,6 +7,7 @@ from typing import Any
 from evals.memory_agent_bench.adapter import ChatModel, run_example
 from evals.memory_agent_bench.raw_replay import ReplayEmbeddingBackend
 from evals.memory_agent_bench.schemas import MABenchExample
+from src.orchestration.demo_orchestration import NATIVE
 from src.retrieval.cross_encoder_reranker import CrossEncoderBackend
 
 
@@ -27,6 +28,7 @@ def run_benchmark(
     cross_encoder_top_k: int = 10,
     cross_encoder_weight: float = 0.65,
     dataset_selection: dict[str, Any] | None = None,
+    orchestration_mode: str = NATIVE,
 ) -> dict[str, Any]:
     """Run examples and return an honest adapter report."""
     if answer_mode not in {"mock", "model"}:
@@ -51,6 +53,7 @@ def run_benchmark(
             cross_encoder_backend=cross_encoder_backend,
             cross_encoder_top_k=cross_encoder_top_k,
             cross_encoder_weight=cross_encoder_weight,
+            orchestration_mode=orchestration_mode,
         )
     ]
     return {
@@ -62,6 +65,7 @@ def run_benchmark(
         "raw_replay_retrieval_mode": raw_replay_retrieval_mode,
         "raw_replay_candidate_pool_size": raw_replay_candidate_pool_size,
         "reranker_mode": reranker_mode,
+        "orchestration_mode": orchestration_mode,
         "dataset_selection": dataset_selection or {},
         "total_examples": len(examples),
         "total_questions": len(rows),

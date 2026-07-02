@@ -10,6 +10,7 @@ from evals.memory_agent_bench.loader import load_huggingface_examples
 from evals.memory_agent_bench.runner import run_benchmark
 from evals.memory_agent_bench.schemas import MABenchExample
 from src.retrieval.cross_encoder_reranker import CrossEncoderBackend
+from src.orchestration.demo_orchestration import NATIVE
 
 
 OFFICIAL_DATASET_ID = "ai-hyz/MemoryAgentBench"
@@ -111,6 +112,7 @@ def run_selected_suite(
     cross_encoder_backend: CrossEncoderBackend | None = None,
     cross_encoder_top_k: int = 10,
     cross_encoder_weight: float = 0.65,
+    orchestration_mode: str = NATIVE,
 ) -> dict[str, Any]:
     started = perf_counter()
     examples, selection = load_selected_suite(
@@ -130,10 +132,12 @@ def run_selected_suite(
         cross_encoder_top_k=cross_encoder_top_k,
         cross_encoder_weight=cross_encoder_weight,
         dataset_selection=selection,
+        orchestration_mode=orchestration_mode,
     )
     report = selected_report(suite, native_report)
     report["reranker_mode"] = reranker_mode
     report["cross_encoder_enabled"] = reranker_mode == "cross_encoder"
+    report["orchestration_mode"] = orchestration_mode
     report["runtime_seconds"] = round(perf_counter() - started, 3)
     return report
 
@@ -149,6 +153,11 @@ def selected_report(suite: str, native_report: dict[str, Any]) -> dict[str, Any]
         if row["failure_reason"] != "none_literal_gold_reached_context"
     )
     sources = sorted({source for row in rows for source in row["sources_observed"]})
+    latencies = sorted(
+        float(row["orchestration_latency_ms"])
+        for row in rows
+        if isinstance(row.get("orchestration_latency_ms"), int | float)
+    )
     return {
         "selected_suite": suite,
         "answer_mode": "mock",
@@ -161,6 +170,14 @@ def selected_report(suite: str, native_report: dict[str, Any]) -> dict[str, Any]
         "gold_context_count": sum(row["gold_in_context"] for row in rows),
         "provenance_count": sum(row["provenance_present"] for row in rows),
         "sources_observed": sources,
+        "mean_orchestration_latency_ms": (
+            round(sum(latencies) / len(latencies), 3) if latencies else None
+        ),
+        "p95_orchestration_latency_ms": (
+            latencies[min(len(latencies) - 1, int(len(latencies) * 0.95))]
+            if latencies
+            else None
+        ),
         "failure_reasons": dict(sorted(failure_reasons.items())),
         "dataset_selection": native_report.get("dataset_selection", {}),
         "results": rows,
@@ -171,6 +188,26 @@ def selected_case_row(suite: str, row: dict[str, Any]) -> dict[str, Any]:
     diagnostics = row.get("evidence_diagnostics", {})
     errors = row.get("workflow_trace", {}).get("errors", [])
     gold_answers = row.get("gold_answers", [])
+    workflow = row.get("workflow_trace", {})
+    timings = workflow.get("timings_ms", {})
+    orchestration_mode = row.get("orchestration_mode", NATIVE)
+    orchestration_latency = (
+        timings.get("langgraph_orchestration")
+        if orchestration_mode != NATIVE
+        else sum(
+            float(timings.get(key, 0.0) or 0.0)
+            for key in (
+                "route_planning",
+                "retrieval",
+                "reranking",
+                "context_packet_building",
+            )
+        )
+    )
+    orchestration = workflow.get("orchestration")
+    orchestration = orchestration if isinstance(orchestration, dict) else {}
+    comparison = orchestration.get("comparison")
+    comparison = comparison if isinstance(comparison, dict) else {}
     return {
         "selected_suite": suite,
         "split": row.get("competency"),
@@ -193,6 +230,12 @@ def selected_case_row(suite: str, row: dict[str, Any]) -> dict[str, Any]:
         "sources_observed": list(row.get("sources", [])),
         "provenance_present": bool(row.get("provenance_present")),
         "context_char_size": int(row.get("context_char_size", 0)),
+        "orchestration_mode": orchestration_mode,
+        "orchestration_latency_ms": orchestration_latency,
+        "native_only_sources": list(comparison.get("native_only_sources", [])),
+        "langgraph_only_sources": list(
+            comparison.get("langgraph_only_sources", [])
+        ),
         "failure_reason": diagnostics.get("failure_stage", "unknown"),
         "notes": list(row.get("notes", []))[:3],
     }
