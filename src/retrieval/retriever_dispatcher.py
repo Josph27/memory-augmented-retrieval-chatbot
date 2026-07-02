@@ -71,4 +71,5 @@ def langchain_chroma_retriever_for_env(database: Database) -> SourceRetriever:
             "unsupported_document_retrieval_mode "
             f"mode={mode!r} falling_back_to='langchain_chroma'"
         )
-    return LangChainChromaRetriever.from_env(database=database)
+    del database
+    return LangChainChromaRetriever.from_env()

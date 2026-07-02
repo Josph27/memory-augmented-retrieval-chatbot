@@ -64,7 +64,6 @@ class EvalResult:
 class EvalResources:
     """Reusable optional resources for one eval run."""
 
-    corpus_database: Any | None = None
     langchain_retriever: Any | None = None
     temp_directory: Any | None = None
     answer_generator: AnswerGenerator | None = None
@@ -342,29 +341,12 @@ def build_corpus_resources(
 ) -> EvalResources:
     """Ingest the full eval dataset into one temporary document corpus."""
     ensure_repo_root_on_path()
-    from src.database import Database
-    from src.documents.ingestion import DocumentIngestionService
     from src.retrieval.langchain_chroma_retriever import (
         LangChainChromaRetriever,
         LangChainChromaUnavailable,
     )
 
     temp_directory = TemporaryDirectory()
-    database = Database(Path(temp_directory.name) / "document_eval_corpus.db")
-    ingestion = DocumentIngestionService(database)
-    seen_texts: set[str] = set()
-    for case in cases:
-        document_text = str(case["document_text"])
-        if document_text in seen_texts:
-            continue
-        seen_texts.add(document_text)
-        ingestion.ingest_text_document(
-            title=str(case["document_id"]),
-            text=document_text,
-            source=str(case.get("source", "document_qa_eval")),
-            metadata={"case_id": case.get("case_id"), "scope": "corpus"},
-        )
-
     langchain_retriever = None
     if context_mode == "langchain_chroma":
         try:
@@ -391,7 +373,6 @@ def build_corpus_resources(
             raise RetrievalModeUnavailable(f"Skipping langchain_chroma: {error}") from error
 
     return EvalResources(
-        corpus_database=database,
         langchain_retriever=langchain_retriever,
         temp_directory=temp_directory,
         answer_generator=answer_generator,
@@ -451,7 +432,7 @@ def corpus_retrieval_contexts(
     ensure_repo_root_on_path()
     from src.core.contracts import SourcePlan
 
-    if resources is None or resources.corpus_database is None:
+    if resources is None:
         raise RetrievalModeUnavailable("Corpus retrieval resources were not initialized.")
 
     if context_mode == "langchain_chroma":

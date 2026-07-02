@@ -4,7 +4,6 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from src.database import Database
 from src.documents.loaders import (
     TextDocumentIndexer,
     index_loaded_document,
@@ -31,10 +30,8 @@ class DocumentIngestionAgent:
 
     def __init__(
         self,
-        database: Database | None = None,
         indexer: TextDocumentIndexer | None = None,
     ) -> None:
-        self.database = database
         self.indexer = indexer
 
     def index_file(
@@ -44,7 +41,7 @@ class DocumentIngestionAgent:
     ) -> DocumentIngestionResult:
         """Load a local file and index it through the configured document backend."""
         loaded = load_document_file(path, display_name=display_name)
-        indexer = self.indexer or LangChainChromaRetriever.from_env(database=self.database)
+        indexer = self.indexer or LangChainChromaRetriever.from_env()
         raw_result = index_loaded_document(loaded, indexer)
 
         document_id = result_value(raw_result, "document_id", "")

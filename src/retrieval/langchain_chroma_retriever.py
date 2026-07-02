@@ -6,7 +6,6 @@ from pathlib import Path
 from uuid import uuid4
 
 from src.core.contracts import MemoryCandidate, SourcePlan
-from src.database import Database, StoredDocumentChunk
 from src.documents.splitters import DEFAULT_CHUNK_OVERLAP, DEFAULT_CHUNK_SIZE
 
 
@@ -32,7 +31,6 @@ class LangChainChromaRetriever:
 
     def __init__(
         self,
-        database: Database | None = None,
         persist_dir: str | Path = DEFAULT_CHROMA_PERSIST_DIR,
         collection_name: str = DEFAULT_COLLECTION_NAME,
         embedding_model_name: str = DEFAULT_EMBEDDING_MODEL,
@@ -41,7 +39,6 @@ class LangChainChromaRetriever:
         default_top_k: int = 4,
         fallback_retriever: object | None = None,
     ) -> None:
-        self.database = database
         self.persist_dir = Path(persist_dir)
         self.collection_name = collection_name
         self.embedding_model_name = embedding_model_name
@@ -50,17 +47,14 @@ class LangChainChromaRetriever:
         self.default_top_k = default_top_k
         self.fallback_retriever = fallback_retriever
         self._vector_store = None
-        self._indexed_sqlite_chunks = False
 
     @classmethod
     def from_env(
         cls,
-        database: Database | None = None,
         fallback_retriever: object | None = None,
     ) -> "LangChainChromaRetriever":
         """Build a LangChain-Chroma retriever from environment variables."""
         return cls(
-            database=database,
             persist_dir=os.getenv("LANGCHAIN_CHROMA_PERSIST_DIR", DEFAULT_CHROMA_PERSIST_DIR),
             embedding_model_name=os.getenv("EMBEDDING_MODEL_NAME", DEFAULT_EMBEDDING_MODEL),
             chunk_size=int(os.getenv("LANGCHAIN_CHUNK_SIZE", str(DEFAULT_CHUNK_SIZE))),
@@ -120,7 +114,6 @@ class LangChainChromaRetriever:
         query = source_plan.query or ""
         limit = source_plan.limit or self.default_top_k
         try:
-            self.index_sqlite_chunks_if_needed()
             documents_with_scores = self._similarity_search(query=query, limit=limit)
             return [
                 langchain_document_to_memory_candidate(document, score)
@@ -131,31 +124,6 @@ class LangChainChromaRetriever:
             if self.fallback_retriever is None:
                 return []
             return self.fallback_retriever.retrieve(chat_id="", source_plan=source_plan)
-
-    def index_sqlite_chunks_if_needed(self) -> None:
-        """Index existing SQLite document_chunks into Chroma once per retriever instance."""
-        if self._indexed_sqlite_chunks or self.database is None:
-            return
-        chunks = self.database.document_chunks()
-        documents = []
-        ids = []
-        document_class = self._document_class()
-        for chunk in chunks:
-            metadata = metadata_for_stored_chunk(chunk)
-            metadata.update(
-                {
-                    "retrieval_backend": "langchain_chroma",
-                    "retrieval_mode": "langchain_chroma",
-                }
-            )
-            documents.append(document_class(page_content=chunk.text, metadata=metadata))
-            ids.append(str(chunk.id))
-        if documents:
-            vectorstore = self._vectorstore()
-            missing_documents, missing_ids = documents_missing_from_store(vectorstore, documents, ids)
-            if missing_documents:
-                vectorstore.add_documents(missing_documents, ids=missing_ids)
-        self._indexed_sqlite_chunks = True
 
     def _similarity_search(self, query: str, limit: int):
         vectorstore = self._vectorstore()
@@ -248,31 +216,6 @@ def langchain_document_to_memory_candidate(document, score: float | None = None)
     )
 
 
-def metadata_for_stored_chunk(chunk: StoredDocumentChunk) -> dict:
-    """Build LangChain metadata from one stored SQLite document chunk."""
-    metadata = parse_metadata_json(chunk.metadata_json)
-    metadata.update(
-        {
-            "document_id": chunk.document_id,
-            "chunk_id": chunk.id,
-            "chunk_index": chunk.chunk_index,
-            "title": chunk.document_title,
-        }
-    )
-    return metadata
-
-
-def parse_metadata_json(metadata_json: str) -> dict:
-    """Parse chunk metadata defensively."""
-    import json
-
-    try:
-        parsed = json.loads(metadata_json)
-    except json.JSONDecodeError:
-        return {}
-    return parsed if isinstance(parsed, dict) else {}
-
-
 def normalize_score(score: float | None) -> float | None:
     """Normalize Chroma/LangChain scores into higher-is-better when possible."""
     if score is None:
@@ -281,19 +224,3 @@ def normalize_score(score: float | None) -> float | None:
     if 0.0 <= numeric <= 1.0:
         return numeric
     return 1.0 / (1.0 + max(0.0, numeric))
-
-
-def documents_missing_from_store(vectorstore, documents: list, ids: list[str]) -> tuple[list, list[str]]:
-    """Filter documents whose ids are not already present in a Chroma collection."""
-    try:
-        existing = set(vectorstore.get(ids=ids).get("ids", []))
-    except Exception:
-        existing = set()
-    missing_documents = []
-    missing_ids = []
-    for document, document_id in zip(documents, ids, strict=True):
-        if document_id in existing:
-            continue
-        missing_documents.append(document)
-        missing_ids.append(document_id)
-    return missing_documents, missing_ids

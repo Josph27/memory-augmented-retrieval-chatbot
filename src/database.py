@@ -39,19 +39,6 @@ class StoredChat:
 
 
 @dataclass(frozen=True)
-class StoredDocumentChunk:
-    """A plain-text document chunk loaded from SQLite."""
-
-    id: int
-    document_id: int
-    document_title: str
-    chunk_index: int
-    text: str
-    created_at: str
-    metadata_json: str
-
-
-@dataclass(frozen=True)
 class StoredChatGist:
     """A compressed chat-memory gist with pointers back to raw messages."""
 
@@ -120,36 +107,6 @@ class Database:
                     FOREIGN KEY (chat_id) REFERENCES chats(id) ON DELETE CASCADE
                 );
 
-                CREATE TABLE IF NOT EXISTS documents (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    title TEXT NOT NULL,
-                    source TEXT NOT NULL,
-                    created_at TEXT NOT NULL,
-                    metadata_json TEXT NOT NULL DEFAULT '{}'
-                );
-
-                CREATE TABLE IF NOT EXISTS document_chunks (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    document_id INTEGER NOT NULL,
-                    chunk_index INTEGER NOT NULL,
-                    text TEXT NOT NULL,
-                    created_at TEXT NOT NULL,
-                    metadata_json TEXT NOT NULL DEFAULT '{}',
-                    FOREIGN KEY (document_id) REFERENCES documents(id) ON DELETE CASCADE
-                );
-
-                CREATE TABLE IF NOT EXISTS document_chunk_embeddings (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    chunk_id INTEGER NOT NULL,
-                    embedding_model TEXT NOT NULL,
-                    dimension INTEGER NOT NULL,
-                    vector_json TEXT NOT NULL,
-                    created_at TEXT NOT NULL,
-                    metadata_json TEXT NOT NULL DEFAULT '{}',
-                    UNIQUE(chunk_id, embedding_model),
-                    FOREIGN KEY (chunk_id) REFERENCES document_chunks(id) ON DELETE CASCADE
-                );
-
                 CREATE TABLE IF NOT EXISTS chat_gists (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     chat_id TEXT NOT NULL,
@@ -168,12 +125,6 @@ class Database:
 
                 CREATE INDEX IF NOT EXISTS idx_messages_chat_created
                 ON messages(chat_id, created_at);
-
-                CREATE INDEX IF NOT EXISTS idx_document_chunks_document
-                ON document_chunks(document_id, chunk_index);
-
-                CREATE INDEX IF NOT EXISTS idx_document_chunk_embeddings_model
-                ON document_chunk_embeddings(embedding_model);
 
                 CREATE INDEX IF NOT EXISTS idx_chat_gists_chat_source
                 ON chat_gists(chat_id, source_type);
@@ -212,6 +163,7 @@ class Database:
             self._ensure_messages_gist_processed_column(connection)
             self._ensure_chats_model_name_column(connection)
             self._ensure_chats_active_column(connection)
+            self._drop_legacy_document_tables(connection)
             connection.execute(
                 """
                 CREATE INDEX IF NOT EXISTS idx_messages_chat_summarized
@@ -224,6 +176,19 @@ class Database:
                 ON messages(chat_id, gist_processed, id)
                 """
             )
+
+    def _drop_legacy_document_tables(self, connection: sqlite3.Connection) -> None:
+        """Remove the abandoned SQLite document store without touching chat memory."""
+        connection.execute("SAVEPOINT drop_legacy_document_store")
+        try:
+            connection.execute("DROP TABLE IF EXISTS document_chunk_embeddings")
+            connection.execute("DROP TABLE IF EXISTS document_chunks")
+            connection.execute("DROP TABLE IF EXISTS documents")
+        except Exception:
+            connection.execute("ROLLBACK TO SAVEPOINT drop_legacy_document_store")
+            connection.execute("RELEASE SAVEPOINT drop_legacy_document_store")
+            raise
+        connection.execute("RELEASE SAVEPOINT drop_legacy_document_store")
 
     def _ensure_messages_summarized_column(self, connection: sqlite3.Connection) -> None:
         """Add `messages.summarized` for databases created before Short-Term Memory v2."""
@@ -815,179 +780,6 @@ class Database:
                 message_ids,
             )
 
-    def insert_document(
-        self,
-        title: str,
-        source: str,
-        metadata: dict | None = None,
-    ) -> int:
-        """Insert a plain-text document record."""
-        timestamp = utc_now()
-        metadata_json = json.dumps(metadata or {}, ensure_ascii=True)
-        with self.connect() as connection:
-            cursor = connection.execute(
-                """
-                INSERT INTO documents (title, source, created_at, metadata_json)
-                VALUES (?, ?, ?, ?)
-                """,
-                (title, source, timestamp, metadata_json),
-            )
-            return int(cursor.lastrowid)
-
-    def insert_document_chunk(
-        self,
-        document_id: int,
-        chunk_index: int,
-        text: str,
-        metadata: dict | None = None,
-    ) -> int:
-        """Insert one plain-text document chunk."""
-        timestamp = utc_now()
-        metadata_json = json.dumps(metadata or {}, ensure_ascii=True)
-        with self.connect() as connection:
-            cursor = connection.execute(
-                """
-                INSERT INTO document_chunks (
-                    document_id, chunk_index, text, created_at, metadata_json
-                )
-                VALUES (?, ?, ?, ?, ?)
-                """,
-                (document_id, chunk_index, text, timestamp, metadata_json),
-            )
-            return int(cursor.lastrowid)
-
-    def document_chunks(self) -> list[StoredDocumentChunk]:
-        """Load all document chunks for simple local keyword retrieval."""
-        with self.connect() as connection:
-            rows = connection.execute(
-                """
-                SELECT
-                    document_chunks.id,
-                    document_chunks.document_id,
-                    documents.title AS document_title,
-                    document_chunks.chunk_index,
-                    document_chunks.text,
-                    document_chunks.created_at,
-                    document_chunks.metadata_json
-                FROM document_chunks
-                JOIN documents ON documents.id = document_chunks.document_id
-                ORDER BY document_chunks.document_id, document_chunks.chunk_index
-                """
-            ).fetchall()
-
-        return [self._document_chunk_from_row(row) for row in rows]
-
-    def document_chunks_for_document(self, document_id: int) -> list[StoredDocumentChunk]:
-        """Load all chunks for one document."""
-        with self.connect() as connection:
-            rows = connection.execute(
-                """
-                SELECT
-                    document_chunks.id,
-                    document_chunks.document_id,
-                    documents.title AS document_title,
-                    document_chunks.chunk_index,
-                    document_chunks.text,
-                    document_chunks.created_at,
-                    document_chunks.metadata_json
-                FROM document_chunks
-                JOIN documents ON documents.id = document_chunks.document_id
-                WHERE document_chunks.document_id = ?
-                ORDER BY document_chunks.chunk_index
-                """,
-                (document_id,),
-            ).fetchall()
-
-        return [self._document_chunk_from_row(row) for row in rows]
-
-    def document_chunks_by_ids(self, chunk_ids: list[int]) -> list[StoredDocumentChunk]:
-        """Load chunks by id, preserving the input order when possible."""
-        if not chunk_ids:
-            return []
-        placeholders = ",".join("?" for _ in chunk_ids)
-        with self.connect() as connection:
-            rows = connection.execute(
-                f"""
-                SELECT
-                    document_chunks.id,
-                    document_chunks.document_id,
-                    documents.title AS document_title,
-                    document_chunks.chunk_index,
-                    document_chunks.text,
-                    document_chunks.created_at,
-                    document_chunks.metadata_json
-                FROM document_chunks
-                JOIN documents ON documents.id = document_chunks.document_id
-                WHERE document_chunks.id IN ({placeholders})
-                """,
-                chunk_ids,
-            ).fetchall()
-
-        chunks_by_id = {
-            row["id"]: self._document_chunk_from_row(row)
-            for row in rows
-        }
-        return [chunks_by_id[chunk_id] for chunk_id in chunk_ids if chunk_id in chunks_by_id]
-
-    def upsert_chunk_embedding(
-        self,
-        chunk_id: int,
-        embedding_model: str,
-        vector: list[float],
-        metadata: dict | None = None,
-    ) -> None:
-        """Store a chunk embedding as JSON for the fallback vector backend."""
-        timestamp = utc_now()
-        metadata_json = json.dumps(metadata or {}, ensure_ascii=True)
-        vector_json = json.dumps(vector, ensure_ascii=True)
-        with self.connect() as connection:
-            connection.execute(
-                """
-                INSERT INTO document_chunk_embeddings (
-                    chunk_id, embedding_model, dimension, vector_json, created_at, metadata_json
-                )
-                VALUES (?, ?, ?, ?, ?, ?)
-                ON CONFLICT(chunk_id, embedding_model) DO UPDATE SET
-                    dimension = excluded.dimension,
-                    vector_json = excluded.vector_json,
-                    created_at = excluded.created_at,
-                    metadata_json = excluded.metadata_json
-                """,
-                (
-                    chunk_id,
-                    embedding_model,
-                    len(vector),
-                    vector_json,
-                    timestamp,
-                    metadata_json,
-                ),
-            )
-
-    def has_chunk_embedding(self, chunk_id: int, embedding_model: str) -> bool:
-        """Return whether an embedding exists for a chunk/model pair."""
-        with self.connect() as connection:
-            row = connection.execute(
-                """
-                SELECT 1
-                FROM document_chunk_embeddings
-                WHERE chunk_id = ? AND embedding_model = ?
-                """,
-                (chunk_id, embedding_model),
-            ).fetchone()
-        return row is not None
-
-    def chunk_embeddings(self, embedding_model: str) -> list[sqlite3.Row]:
-        """Load stored JSON embeddings for one model."""
-        with self.connect() as connection:
-            return connection.execute(
-                """
-                SELECT chunk_id, vector_json, metadata_json
-                FROM document_chunk_embeddings
-                WHERE embedding_model = ?
-                """,
-                (embedding_model,),
-            ).fetchall()
-
     def insert_chat_gist(
         self,
         chat_id: str,
@@ -1149,17 +941,6 @@ class Database:
             created_at=row["created_at"],
             summarized=bool(row["summarized"]),
             gist_processed=bool(row["gist_processed"]),
-        )
-
-    def _document_chunk_from_row(self, row: sqlite3.Row) -> StoredDocumentChunk:
-        return StoredDocumentChunk(
-            id=row["id"],
-            document_id=row["document_id"],
-            document_title=row["document_title"],
-            chunk_index=row["chunk_index"],
-            text=row["text"],
-            created_at=row["created_at"],
-            metadata_json=row["metadata_json"],
         )
 
     def _chat_gist_from_row(self, row: sqlite3.Row) -> StoredChatGist:

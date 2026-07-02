@@ -67,7 +67,6 @@ class ChatService:
         self.previous_chat_gist_generation_enabled = previous_chat_gist_generation_enabled
         self.previous_chat_gist_generator = previous_chat_gist_generator
         self.document_ingestion_agent = DocumentIngestionAgent(
-            database=database,
             indexer=document_indexer,
         )
         self.memory = ShortTermMemory(

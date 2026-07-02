@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 import pytest
@@ -9,12 +8,12 @@ from src.context.context_budget_allocator import ContextBudgetAllocator
 from src.context.context_builder import ContextBuilder
 from src.core.contracts import SourcePlan
 from src.database import Database
-from src.documents.ingestion import DocumentIngestionService, split_text_into_chunks
 from src.documents.splitters import (
     ChunkingConfig,
     LangChainRecursiveSplitter,
     LangChainSplitterUnavailable,
     split_document_text,
+    split_text_into_chunks,
 )
 from src.retrieval.retriever_dispatcher import RetrieverDispatcher
 from src.retrieval.reranker import MemoryReranker
@@ -100,32 +99,6 @@ def test_langchain_splitter_falls_back_to_custom_when_unavailable(monkeypatch) -
     assert chunks[0].metadata["splitter_name"] == "custom_paragraph"
     assert chunks[0].metadata["fallback_used"] is True
     assert chunks[0].metadata["requested_splitter"] == "langchain_recursive"
-
-
-def test_document_ingestion_stores_document_and_chunks(tmp_path: Path) -> None:
-    database = Database(tmp_path / "chatbot.db")
-    service = DocumentIngestionService(database, target_chars=40, max_chars=100)
-
-    result = service.ingest_text_document(
-        title="Project Notes",
-        text="SQLite stores rows.\n\nChainlit handles the UI.",
-        source="test",
-        metadata={"kind": "notes"},
-    )
-
-    chunks = database.document_chunks()
-    assert result.document_id > 0
-    assert result.chunk_count == 2
-    assert len(chunks) == 2
-    assert chunks[0].document_id == result.document_id
-    assert chunks[0].document_title == "Project Notes"
-    assert chunks[0].text == "SQLite stores rows."
-    metadata = json.loads(chunks[0].metadata_json)
-    assert metadata["title"] == "Project Notes"
-    assert metadata["source"] == "test"
-    assert metadata["splitter_name"] == "custom_paragraph"
-    assert metadata["chunk_size"] == 40
-    assert metadata["fallback_used"] is False
 
 
 def test_document_retrieval_flows_through_dispatcher_when_enabled(

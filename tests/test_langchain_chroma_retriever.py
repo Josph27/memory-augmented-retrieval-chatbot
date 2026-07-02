@@ -7,9 +7,7 @@ from src.database import Database
 from src.retrieval.langchain_chroma_retriever import (
     LangChainChromaRetriever,
     LangChainChromaUnavailable,
-    documents_missing_from_store,
     langchain_document_to_memory_candidate,
-    metadata_for_stored_chunk,
 )
 from src.retrieval.retriever_dispatcher import langchain_chroma_retriever_for_env
 
@@ -32,7 +30,8 @@ class FakeFallbackRetriever:
 
 
 class UnavailableLangChainRetriever(LangChainChromaRetriever):
-    def index_sqlite_chunks_if_needed(self) -> None:
+    def _similarity_search(self, query: str, limit: int):
+        del query, limit
         raise LangChainChromaUnavailable("missing optional dependency")
 
 
@@ -61,27 +60,6 @@ def test_langchain_document_to_memory_candidate_preserves_metadata() -> None:
     assert candidate.metadata["similarity_score"] == 0.87
 
 
-def test_metadata_for_stored_chunk_preserves_sqlite_chunk_fields(tmp_path: Path) -> None:
-    database = Database(tmp_path / "chatbot.db")
-    document_id = database.insert_document("Notes", "test", {"kind": "note"})
-    chunk_id = database.insert_document_chunk(
-        document_id=document_id,
-        chunk_index=3,
-        text="Chunk text",
-        metadata={"source": "manual", "splitter_name": "langchain_recursive"},
-    )
-    chunk = database.document_chunks_by_ids([chunk_id])[0]
-
-    metadata = metadata_for_stored_chunk(chunk)
-
-    assert metadata["document_id"] == document_id
-    assert metadata["chunk_id"] == chunk_id
-    assert metadata["chunk_index"] == 3
-    assert metadata["title"] == "Notes"
-    assert metadata["source"] == "manual"
-    assert metadata["splitter_name"] == "langchain_recursive"
-
-
 def test_langchain_chroma_retriever_falls_back_when_unavailable() -> None:
     retriever = UnavailableLangChainRetriever(fallback_retriever=FakeFallbackRetriever())
 
@@ -106,20 +84,3 @@ def test_dispatcher_selects_langchain_chroma_by_default(monkeypatch, tmp_path: P
     retriever = langchain_chroma_retriever_for_env(database)
 
     assert isinstance(retriever, LangChainChromaRetriever)
-
-
-def test_documents_missing_from_store_filters_existing_ids() -> None:
-    class FakeVectorStore:
-        def get(self, ids):
-            return {"ids": [ids[0]]}
-
-    documents = [FakeDocument("one", {}), FakeDocument("two", {})]
-
-    missing_documents, missing_ids = documents_missing_from_store(
-        FakeVectorStore(),
-        documents,
-        ["1", "2"],
-    )
-
-    assert missing_documents == [documents[1]]
-    assert missing_ids == ["2"]
