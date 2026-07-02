@@ -4,8 +4,9 @@ This project is a Chainlit + SQLite chatbot with current-chat short-term memory.
 The new agent classes are production-shaped wrappers around the existing behavior.
 Document memory now uses a LangChain-Chroma retrieval backend while keeping
 the project-specific memory architecture unchanged. SQLite still stores chats,
-raw messages, structured memory, and document metadata/chunks. `MemoryCandidate`,
-`ContextPacket`, and `WorkflowTrace` remain custom.
+raw messages, structured memory, and chat gists. Chroma is the sole persistent
+document store. `MemoryCandidate`, `ContextPacket`, and `WorkflowTrace` remain
+custom.
 
 ## Current Pipeline
 
@@ -30,6 +31,12 @@ Chainlit app.py
 -> ShortTermMemoryAgent / ShortTermMemory.update_memory_if_needed
 -> termination: response_generated_and_messages_saved
 ```
+
+The Chainlit demo has three explicit orchestration modes. `native` retains this
+imperative path. `langgraph_shadow` runs a read-only graph comparison while
+native context remains authoritative. `langgraph_demo` uses Semantic Router v2
+and the graph-built ContextPacket for the existing answer agent. Message
+persistence and memory updates remain outside graph nodes.
 
 `ChatService.handle_user_message` still returns only the assistant text for the
 Chainlit UI. `ChatService.handle_user_turn` exposes the richer
@@ -297,8 +304,6 @@ Document memory uses the LangChain-Chroma path:
 
 - runtime file uploads are loaded through `src/documents/loaders.py` and indexed
   directly into the LangChain-Chroma backend
-- `DocumentIngestionService` remains available for the legacy/compatibility
-  SQLite document chunk path
 - local `.txt` and `.md` files can be loaded through `src/documents/loaders.py`
   and indexed into the LangChain-Chroma backend; `.pdf` loading is optional when
   `pypdf` or PyMuPDF is installed
@@ -309,11 +314,12 @@ Document memory uses the LangChain-Chroma path:
   splitter if unavailable
 - chunk metadata records `splitter_name`, `chunk_size`, `chunk_overlap`,
   `fallback_used`, and character offsets when available
-- SQLite tables `documents`, `document_chunks`, and
-  `document_chunk_embeddings` remain as metadata, compatibility, and legacy
-  paths
+- Chroma `document_memory` is the sole persistent document store
 - `LangChainChromaRetriever` indexes document text/chunks into Chroma and uses
-  LangChain retrieval as the preferred `document_memory` backend
+  LangChain retrieval for `document_memory`
+- document memory is global across chats and is not converted into structured
+  user memory
+- document deletion and suppression are not implemented
 - `scripts/index_document_file.py` is a small development utility for indexing
   local files into the LangChain-Chroma document backend without the Chainlit UI
 - retrieved LangChain `Document` objects are converted into

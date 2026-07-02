@@ -63,7 +63,6 @@ structured-memory vector/hybrid retrieval
 Partially validated:
 
 memory trace UI/terminal display
-SQLite document chunk/embedding compatibility paths
 
 Future / intended:
 

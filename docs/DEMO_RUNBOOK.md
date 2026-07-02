@@ -125,6 +125,11 @@ uv run python scripts/rebuild_long_term_memory_index.py
 uv run python scripts/rebuild_previous_chat_gists.py --mode deterministic
 ```
 
+The document inspector reads the persistent Chroma `document_memory`
+collection. Uploaded documents are globally scoped document memory; they are
+not copied into SQLite structured memory. Document deletion and suppression
+are not implemented.
+
 Index a local document:
 
 ```bash
@@ -138,15 +143,33 @@ The exact optional arguments are available with `--help`.
 ### Safe baseline
 
 ```env
+ORCHESTRATION_MODE=native
 ROUTING_MODE=rule
 STRUCTURED_MEMORY_RETRIEVAL_MODE=sqlite
 RERANKER_MODE=deterministic
 PREVIOUS_CHAT_GIST_GENERATION_ENABLED=0
-PREVIOUS_CHAT_GIST_RETRIEVAL_ENABLED=0
+PREVIOUS_CHAT_GIST_RETRIEVAL_ENABLED=1
 ```
 
+### Orchestration selector
+
+Chainlit settings expose `Native`, `LangGraph Shadow`, and `LangGraph Demo`.
+Native remains authoritative by default. Shadow compares sources, selected
+candidate IDs, token use, provenance, and latency without affecting the answer.
+Demo uses the graph-built ContextPacket and visibly falls back to native if the
+graph fails. Graph nodes do not save messages, update memories, index
+documents, or invoke lifecycle actions.
+
+The expandable LangGraph trace shows intent, enabled sources, evidence
+contract, candidate/selected/dropped counts, source budgets, estimated context
+tokens, provenance validation, node timings, and fallback status. It does not
+show system prompts, raw router prompts, secrets, or full database contents.
+
 Use this to demonstrate predictable routing, existing cross-chat memory, and
-document RAG without optional neural reranking.
+document RAG without optional neural reranking. Previous-chat gist retrieval
+is available by default but remains router-controlled: previous-chat queries
+enable gist orientation, exact-wording requests retain a raw-span evidence
+path, and casual queries do not retrieve gists.
 
 ### CrossEncoder semantic reranking
 
@@ -221,8 +244,9 @@ uv run python scripts/verify_natural_long_term_memory_flow.py \
 
 ### C. Previous-chat gist
 
-Enable gist generation/retrieval only after running the deterministic rebuild
-and inspecting its output:
+End Chat finalizes previous-chat gists. Retrieval is available by default and
+remains intent-aware; set the capability flag to `0` for an emergency disable.
+For pre-existing chats, run the deterministic rebuild and inspect its output:
 
 ```env
 PREVIOUS_CHAT_GIST_GENERATION_ENABLED=1

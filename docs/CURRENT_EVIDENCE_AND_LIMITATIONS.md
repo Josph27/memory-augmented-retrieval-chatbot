@@ -35,7 +35,7 @@ gist tells where to look
 span proves exact content
 ```
 
-## Production Path vs Default-Off Spike Path
+## Native Path vs Selectable Read-Only Graph Path
 
 ### Production path
 
@@ -51,11 +51,10 @@ ChatService
 → ShortTermMemory / LangMem update
 ```
 
-The production router and coordinator remain unchanged by the LangGraph work.
-Current production rule routing is conservative and does not automatically
-activate every span/gist source.
+Native remains the default. Its router is conservative and does not
+automatically activate every span/gist source.
 
-### Default-off spike
+### Explicit Shadow/Demo path
 
 ```text
 Semantic Router v2
@@ -65,12 +64,13 @@ Semantic Router v2
 → reranking
 → ContextPacket
 → evidence-contract validation
-→ mock answer or insufficient evidence
+→ existing answer agent or insufficient evidence
 ```
 
-This path is invoked directly by tests. It is not imported by `ChatService` or
-`CoordinatorAgent`, makes no answer-model call, saves no messages, and performs
-no memory update.
+The graph itself remains read-only. In Shadow mode native context remains
+authoritative. In Demo mode the graph-built ContextPacket is passed to the
+existing answer agent. User/assistant persistence and memory update remain
+outside graph nodes in the Coordinator.
 
 ## What Is Implemented
 
@@ -171,7 +171,7 @@ not validate live-model grounding.
   `MemoryCandidate` to `ContextPacket` path without flattening source semantics.
 - Gists are treated as orientation and can expand to exact transcript spans
   when usable provenance exists.
-- Exact quote/provenance queries work in the default-off LangGraph spike for
+- Exact quote/provenance queries work in the selectable LangGraph demo for
   controlled English paraphrases when raw evidence is available.
 - The spike rejects gist-only evidence for exact quotation.
 - Anchor-preserving raw-span truncation retains the selected evidential message
@@ -183,8 +183,8 @@ not validate live-model grounding.
 
 ## What Cannot Be Claimed Yet
 
-- LangGraph is not production orchestration.
-- Semantic Router v2 is not the production router.
+- LangGraph is not the default orchestration path.
+- Semantic Router v2 is used only in explicitly selected graph modes.
 - Mock answers do not prove final-answer correctness, faithfulness, or
   quotation behavior.
 - Live-model grounding and citation use have not been validated end to end.
@@ -200,28 +200,28 @@ not validate live-model grounding.
 - The graph has no targeted retrieval retry beyond failing closed as
   insufficient evidence.
 - `current_chat_gist` is not production-ready.
-- Production UI behavior is unchanged.
+- Live-model grounding remains unvalidated despite the demo selector.
 
 ## Recommended Next Steps
 
 1. Commit the anchor-preserving raw-span fix as a separate scoped commit.
 2. Run a targeted exact-quote/provenance evaluation and a small
    MemoryAgentBench `Accurate_Retrieval` or `Test_Time_Learning` subset.
-3. Add one bounded missing-evidence retry edge to the default-off graph, with a
+3. Add one bounded missing-evidence retry edge to the graph, with a
    retry counter and no write side effects.
 4. Add an opt-in live-model answer-grounding smoke test that records the exact
    ContextPacket and generated answer separately.
 5. Design idempotency keys, transaction boundaries, and checkpoint/write
    ordering before adding any graph memory-update node.
 6. Compare graph and production Coordinator outputs on identical fixtures.
-7. Consider production `ChatService` integration only after parity,
-   observability, and failure-mode tests pass.
+7. Consider changing the default only after parity, observability, and
+   failure-mode tests pass.
 
 ## Suggested Demo Claims
 
 Safe:
 
-> The default-off LangGraph spike demonstrates evidence-contract-aware routing
+> The selectable read-only LangGraph demo demonstrates evidence-contract-aware routing
 > and context construction for exact quote queries.
 
 > The typed-memory layer preserves provenance from episodic gists to exact raw

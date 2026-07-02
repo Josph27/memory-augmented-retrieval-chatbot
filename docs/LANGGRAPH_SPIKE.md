@@ -5,8 +5,8 @@
 Validate LangGraph as a control-flow wrapper around the existing typed-memory
 read path without replacing production orchestration or memory services.
 
-This spike is not production orchestration. It is invoked only through its
-explicit helper from focused tests or future diagnostic scripts.
+The graph remains read-only, but it can now be selected explicitly from the
+Chainlit demo. Native orchestration remains the default.
 
 ## What This Spike Includes
 
@@ -34,9 +34,6 @@ It preserves:
 
 ## What This Spike Excludes
 
-- production `ChatService` and `CoordinatorAgent` integration;
-- UI and production configuration;
-- real answer-model calls;
 - saving user or assistant messages;
 - ShortTermMemory/LangMem updates;
 - SQLite/Chroma writes and vector synchronization;
@@ -44,6 +41,11 @@ It preserves:
 - retry loops;
 - LangGraph Store;
 - durable checkpointing.
+
+In `langgraph_demo`, the outer Coordinator saves messages, calls the existing
+answer model with the graph-built ContextPacket, and runs the existing memory
+update afterward. Those writes are not graph nodes. In `langgraph_shadow`, the
+native packet remains authoritative and graph failure cannot fail the turn.
 
 The installed LangGraph package is currently available transitively through
 LangChain. The spike does not change dependency declarations.
@@ -105,7 +107,7 @@ Focused tests cover:
 1. exact current-chat quote with raw span present;
 2. exact quote with gist-only evidence and deterministic insufficiency;
 3. previous-chat gist expansion into linked raw transcript evidence;
-4. absence of LangGraph integration in ChatService/CoordinatorAgent;
+4. native default and explicit demo/shadow integration;
 5. bounded trace fields and unchanged SQLite messages, gists, and memory state.
 
 All answer text is explicitly prefixed `MOCK`.
@@ -116,8 +118,8 @@ All answer text is explicitly prefixed `MOCK`.
 uv run pytest -q tests/test_langgraph_memory_pipeline.py
 ```
 
-The graph is built directly by tests with temporary SQLite fixtures. There is
-no production feature flag because no production module imports the spike.
+The graph can be invoked directly in tests or selected per Chainlit session.
+`ORCHESTRATION_MODE=native` is the default.
 
 ## Next Steps
 

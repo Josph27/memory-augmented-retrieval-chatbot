@@ -440,3 +440,39 @@ The gain is measurable but modest and came with substantial model-load and CPU
 inference cost. CrossEncoder should remain optional. These are mock-answer
 evidence-containment results, not live-model answer accuracy or a reason to
 change production defaults.
+
+### Native vs LangGraph/Semantic Router Ablation
+
+The selected suites were rerun with identical replay lifecycle, deterministic
+reranker, context budgets, and ContextBuilder. Raw replay, embedding/hybrid
+diagnostics, and CrossEncoder were disabled.
+
+| Suite | Mode | Completed | Gold candidates | Gold context | Provenance | Errors | Mean / p95 orchestration |
+|---|---|---:|---:|---:|---:|---:|---:|
+| RULER QA1 | native | 20/20 | 17/20 | 9/20 | 20/20 | 0 | 73.81 / 83.36 ms |
+| RULER QA1 | LangGraph v2 | 20/20 | 0/20 | 0/20 | 0/20 | 0 | 13.47 / 31.81 ms |
+| Test-Time Learning | native | 6/6 | 5/6 | 5/6 | 6/6 | 0 | 43.19 / 98.60 ms |
+| Test-Time Learning | LangGraph v2 | 6/6 | 0/6 | 0/6 | 0/6 | 0 | 15.12 / 25.34 ms |
+| Aligned | native | 26/26 | 22/26 | 14/26 | 26/26 | 0 | 66.75 / 75.92 ms |
+| Aligned | LangGraph v2 | 26/26 | 0/26 | 0/26 | 0/26 | 0 | 13.23 / 14.30 ms |
+
+There were no graph pipeline errors and no improved cases. Nine RULER and five
+Test-Time Learning native context hits regressed. Semantic Router v2 classified
+these benchmark-style QA/classification questions as casual because they lack
+explicit same-chat, previous-chat, document, or preference wording, so only the
+empty question chat's recent messages were searched. The lower graph latency
+is not a performance win; it reflects retrieving no historical evidence.
+Native remains the appropriate selected-suite baseline. This ablation is mock
+evidence containment, not generated-answer accuracy.
+
+The zero-recall result motivated a narrow router correction. Semantic Router v2
+now distinguishes retrieval need from memory scope, and the adapter supplies
+the generic task context `memory_qa`. Focused reruns only, not a replacement
+full-suite score, recovered both diagnosed cases:
+
+- RULER QA1 question 3: gold candidate/context `false/false` → `true/true`;
+- Test-Time Learning row 1: gold candidate/context `false/false` → `true/true`.
+
+Both used `recent_messages`, `structured_memory`, and `previous_chat_gist`;
+raw evidence came from normal gist expansion. No gold or expected-source hint
+was provided to routing.

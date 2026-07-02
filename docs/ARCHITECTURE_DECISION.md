@@ -131,7 +131,7 @@ structured-memory vector/hybrid mode
 
 Partially validated:
 
-document metadata/chunk SQLite compatibility path
+live-model document grounding and provenance display
 
 Future / intended:
 

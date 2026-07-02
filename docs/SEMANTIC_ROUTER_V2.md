@@ -3,7 +3,7 @@
 ## Goal
 
 Semantic Router v2 is a deterministic, typed routing baseline for the
-default-off LangGraph read-only pipeline spike. It converts a query into:
+explicitly selected LangGraph read-only pipeline. It converts a query into:
 
 ```text
 intent
@@ -35,6 +35,7 @@ hints only; they are never user evidence or `MemoryCandidate.content`.
 - `STRUCTURED_PREFERENCE_RECALL`
 - `DOCUMENT_QA`
 - `PROJECT_STATE_SUMMARY`
+- `MEMORY_QA`
 - `CASUAL_CHAT`
 
 The baseline uses deterministic English and Chinese example patterns. It makes
@@ -76,16 +77,26 @@ survive context budgeting. Retrieval alone is not enough.
 
 | Intent | Enabled sources |
 |---|---|
-| Exact quote | recent, current span, previous gist, raw span |
+| Exact quote, current chat | recent, current span |
+| Exact quote, previous chat | recent, previous gist, raw span |
+| Exact quote, ambiguous scope | recent, current span, previous gist, raw span |
 | Same-chat recall | recent, current span |
-| Previous-chat recall | recent, previous gist, raw span |
-| Preference recall | recent, structured, optional previous gist |
+| Previous-chat recall | recent, previous gist |
+| Preference recall | recent, structured |
 | Document QA | recent, document |
 | Project state | recent, structured, previous gist |
+| Unknown-scope memory QA | recent, structured, previous gist |
 | Casual chat | recent only |
 
 Gists remain lossy orientation. `current_chat_span` and
 `raw_message_span` provide exact transcript evidence.
+
+Routing separates `retrieval_need` (`none`, `possible`, `required`) from
+`memory_scope` (`current_chat`, `previous_chat`, `durable`, `document`,
+`unknown`). A factual memory question without explicit temporal wording uses
+the bounded unknown-scope policy rather than being treated as casual. The MAB
+adapter supplies only the non-case-specific `task_context="memory_qa"`; it does
+not provide gold answers, expected sources, or candidate IDs.
 
 ## LangGraph Spike Integration
 
@@ -104,13 +115,14 @@ Router v2 adapts its typed result to the existing `RoutePlan`/`SourcePlan`
 contract. Existing retrievers, gist expansion, reranking,
 `ContextManagerAgent`, and `ContextPacket` remain authoritative.
 
-## Default-Off Status
+## Demo Status
 
-- No production module imports Semantic Router v2.
-- `ChatService` and `CoordinatorAgent` are unchanged.
-- No environment or configuration default changed.
-- The graph and router are invoked directly by tests only.
-- No memory writes or model calls are introduced.
+- Native production orchestration remains the default.
+- Semantic Router v2 is used only when LangGraph Shadow or Demo is explicitly
+  selected.
+- The router itself is deterministic and makes no model call.
+- Graph nodes remain read-only; outer turn persistence is unchanged.
+- Generated retrieval variants remain hints and never become evidence.
 
 ## Limitations
 

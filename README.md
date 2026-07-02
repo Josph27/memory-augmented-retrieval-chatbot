@@ -12,7 +12,7 @@ The app uses Chainlit for the browser chat UI, Python for backend logic, SQLite 
 - OpenAI-compatible model wrapper with one `chat(messages)` method
 - Local/free model defaults for Ollama-compatible endpoints
 - SQLite tables for chats, messages, long-term memories, compatibility memory
-  state, document metadata/chunks, and chat gists
+  state, and chat gists
 - Recent-message memory plus LangMem-backed structured long-term memory
 - Typed episodic memory through previous-chat gists, exact raw spans, and an
   opt-in current-chat span retriever
@@ -20,6 +20,7 @@ The app uses Chainlit for the browser chat UI, Python for backend logic, SQLite 
 - Production-shaped prompt assembly through `ContextPacket`, with legacy
   `ShortTermMemory` prompt fallback
 - Demo/debug memory tracing with `DEMO_MEMORY_TRACE=1`
+- Per-session Native, LangGraph Shadow, and LangGraph Demo orchestration modes
 - Dockerfile with persistent `data/` mount support
 
 ## Local Model Defaults
@@ -78,9 +79,30 @@ memory can be reused across chats.
 Final chat prompts are assembled through the production-shaped `ContextPacket`
 path. `recent_messages` and SQLite `structured_memory` are active by default;
 document-like queries also activate `document_memory`. Previous-chat gist
-retrieval is config-controlled. `current_chat_span`, `current_chat_gist`, and
-direct raw-span lookup remain opt-in. If the `ContextPacket` is invalid, the
+retrieval is available by default but remains intent-controlled; exact
+previous-chat wording retains a raw-span evidence path. `current_chat_gist`
+remains default-off. If the `ContextPacket` is invalid, the
 coordinator falls back to the legacy `ShortTermMemory` prompt messages.
+
+## Demo Orchestration Modes
+
+Chainlit exposes a per-session selector:
+
+- **Native** is the default and preserves the imperative Coordinator path.
+- **LangGraph Shadow** runs the read-only graph for comparison while the native
+  ContextPacket remains authoritative.
+- **LangGraph Demo** uses the graph-built ContextPacket for the existing answer
+  agent. User/assistant persistence and structured-memory updates remain in the
+  outer Coordinator turn, not graph nodes.
+
+The graph wraps the existing retrievers, gist expansion, reranker,
+`ContextManagerAgent`, and `ContextBuilder`. Semantic Router v2 emits typed
+intent, temporal scope, source plans, and evidence contracts. Exact quote
+requests fail closed when no raw transcript span survives into ContextPacket.
+Graph failure in demo mode is visible in trace and falls back to native.
+
+Set `ORCHESTRATION_MODE=native|langgraph_shadow|langgraph_demo` to choose the
+initial Chainlit setting. `native` remains the default.
 
 The current schema for `chat_memory_state.memory_json` stores typed memory records:
 
@@ -167,11 +189,11 @@ Document memory currently supports:
 - local file loading for `.txt` and `.md`, with optional `.pdf` support when a
   PDF library is installed
 - LangChain recursive splitting in the primary Chroma indexing path
-- LangChain-Chroma document retrieval as the primary runtime backend
-- legacy/compatibility SQLite `documents`, `document_chunks`, and
-  `document_chunk_embeddings` paths
-- `DocumentIngestionService.ingest_text_document(...)` for the SQLite
-  compatibility path
+- persistent LangChain-Chroma `document_memory` as the sole document store
+
+Uploaded documents remain document memory and do not become structured user
+memory. Document memory is currently global across chats. Document
+delete/suppress/restore operations are not implemented.
 
 Document-like questions enable `document_memory` and retrieved chunks flow
 through:

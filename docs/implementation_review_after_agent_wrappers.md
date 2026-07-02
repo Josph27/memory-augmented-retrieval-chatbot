@@ -159,7 +159,7 @@ Files:
 What changed:
 
 - Added helper rows for document inspection.
-- Added SQLite document chunk inspection.
+- Document inspection now targets the Chroma `document_memory` collection only.
 - Added Chroma metadata inspection.
 - Added CLI:
 
@@ -174,7 +174,7 @@ Safety assessment:
 - The helpers do not retrieve documents.
 - The helpers do not call the LLM.
 - The helpers do not index documents.
-- SQLite inspection uses existing `Database.document_chunks()` read path.
+- The obsolete SQLite document inspection path has been removed.
 - Chroma inspection reads collection metadata.
 
 Risk:
@@ -251,7 +251,7 @@ New/updated test coverage is strong for the scope of these commits:
   - object/dict index result normalization
   - loader error propagation
 - Inspection:
-  - SQLite document chunk grouping
+  - Chroma document metadata grouping
   - Chroma metadata grouping without Chroma dependency
   - CLI formatting
 
@@ -294,8 +294,7 @@ No tests use live LLM calls or cluster/API access.
 
 ```bash
 uv run python scripts/inspect_long_term_memory.py --limit 20
-uv run python scripts/inspect_document_memory.py --backend sqlite --limit 20
-uv run python scripts/inspect_document_memory.py --backend chroma --limit 20
+uv run python scripts/inspect_document_memory.py --limit 20
 ```
 
 5. Continue with demo-facing polish rather than further architecture changes:

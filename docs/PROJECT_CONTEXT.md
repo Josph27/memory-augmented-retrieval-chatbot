@@ -49,13 +49,10 @@ SQLite
 ├── messages
 ├── long_term_memories
 ├── chat_memory_state
-├── documents
-├── document_chunks
-├── document_chunk_embeddings
 └── chat_gists
 
 LangChain-Chroma
-├── document chunk vector retrieval
+├── persistent `document_memory` storage and retrieval
 └── optional derived structured-memory vector index
 
 LangMem
@@ -117,7 +114,6 @@ structured-memory vector/hybrid retrieval
 Partially validated:
 
 memory trace display in UI/terminal for demo mode
-document metadata in SQLite alongside Chroma indexing
 
 Future / intended:
 

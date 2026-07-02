@@ -105,8 +105,8 @@ Current status
 
 Implemented as a thin deterministic DocumentIngestionAgent wrapper over the
 document loaders plus LangChainChromaRetriever indexing. Runtime file upload
-uses this wrapper. SQLite document chunk/embedding tables remain compatibility,
-metadata, or legacy paths rather than the primary runtime vector index.
+uses this wrapper. Persistent document content and metadata live only in the
+Chroma `document_memory` collection.
 
 Input
 file path
@@ -117,7 +117,6 @@ document loader
 deterministic chunker
 embedding model
 Chroma vector store
-SQLite document metadata store if available
 Output
 {
   "document_id": "doc_...",
