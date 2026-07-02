@@ -140,7 +140,7 @@ def test_previous_chat_gist_retrieval_returns_memory_candidate(tmp_path: Path) -
     assert "Previous chat covered" in candidates[0].content
 
 
-def test_route_planner_keeps_previous_chat_gist_disabled_by_default(
+def test_route_planner_enables_previous_chat_gist_by_default_for_previous_intent(
     monkeypatch,
 ) -> None:
     monkeypatch.delenv("PREVIOUS_CHAT_GIST_RETRIEVAL_ENABLED", raising=False)
@@ -148,17 +148,65 @@ def test_route_planner_keeps_previous_chat_gist_disabled_by_default(
     route_plan = RoutePlanner().plan("What did we say in previous chat?")
     source = next(source for source in route_plan.sources if source.source == "previous_chat_gist")
 
-    assert source.enabled is False
+    assert source.enabled is True
+    assert source.query == "what did we say in previous chat?"
 
 
-def test_route_planner_can_enable_previous_chat_gist_with_config(monkeypatch) -> None:
-    monkeypatch.setenv("PREVIOUS_CHAT_GIST_RETRIEVAL_ENABLED", "1")
+def test_route_planner_emergency_gate_can_disable_previous_chat_gist(monkeypatch) -> None:
+    monkeypatch.setenv("PREVIOUS_CHAT_GIST_RETRIEVAL_ENABLED", "0")
 
     route_plan = RoutePlanner().plan("What did we say in previous chat?")
     source = next(source for source in route_plan.sources if source.source == "previous_chat_gist")
 
-    assert source.enabled is True
-    assert source.query == "what did we say in previous chat?"
+    assert source.enabled is False
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "How are you?",
+        "What is the capital of France?",
+    ],
+)
+def test_route_planner_does_not_enable_previous_gist_for_unrelated_queries(
+    monkeypatch,
+    query: str,
+) -> None:
+    monkeypatch.delenv("PREVIOUS_CHAT_GIST_RETRIEVAL_ENABLED", raising=False)
+
+    route_plan = RoutePlanner().plan(query)
+
+    assert not next(
+        source.enabled
+        for source in route_plan.sources
+        if source.source == "previous_chat_gist"
+    )
+
+
+def test_previous_chat_exact_quote_reserves_gist_and_raw_span(monkeypatch) -> None:
+    monkeypatch.delenv("PREVIOUS_CHAT_GIST_RETRIEVAL_ENABLED", raising=False)
+
+    route_plan = RoutePlanner().plan(
+        "What exact phrase did I use in the previous chat about deployment?"
+    )
+    enabled = {source.source for source in route_plan.sources if source.enabled}
+
+    assert {"previous_chat_gist", "raw_message_span"} <= enabled
+    assert route_plan.metadata["requires_raw_span"] is True
+
+
+def test_same_chat_recall_keeps_current_chat_span_without_previous_gist(
+    monkeypatch,
+) -> None:
+    monkeypatch.delenv("PREVIOUS_CHAT_GIST_RETRIEVAL_ENABLED", raising=False)
+
+    route_plan = RoutePlanner().plan(
+        "What did I say earlier in this chat about deployment?"
+    )
+    enabled = {source.source for source in route_plan.sources if source.enabled}
+
+    assert "current_chat_span" in enabled
+    assert "previous_chat_gist" not in enabled
 
 
 def test_chat_service_runs_previous_gist_generation_only_when_enabled(

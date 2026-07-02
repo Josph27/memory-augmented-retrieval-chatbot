@@ -13,6 +13,7 @@ class QuerySignals:
     asks_about_documents: bool = False
     asks_about_decision: bool = False
     asks_about_task: bool = False
+    asks_for_exact_quote: bool = False
     asks_general_question: bool = False
 
 
@@ -76,6 +77,15 @@ class QueryAnalyzerPolicy:
         "open item",
         "what should i do next",
     )
+    exact_quote_terms: tuple[str, ...] = (
+        "quote exactly",
+        "exact phrase",
+        "exact words",
+        "exact wording",
+        "what wording",
+        "how did i phrase",
+        "verbatim",
+    )
 
 
 class QueryAnalyzer:
@@ -100,6 +110,10 @@ class QueryAnalyzer:
             asks_about_documents=contains_any(normalized, self.policy.document_terms),
             asks_about_decision=contains_any(normalized, self.policy.decision_terms),
             asks_about_task=contains_any(normalized, self.policy.task_terms),
+            asks_for_exact_quote=contains_any(
+                normalized,
+                self.policy.exact_quote_terms,
+            ),
         )
         asks_general = not any(
             (
@@ -108,6 +122,7 @@ class QueryAnalyzer:
                 signals.asks_about_documents,
                 signals.asks_about_decision,
                 signals.asks_about_task,
+                signals.asks_for_exact_quote,
             )
         )
         signals = QuerySignals(
@@ -116,6 +131,7 @@ class QueryAnalyzer:
             asks_about_documents=signals.asks_about_documents,
             asks_about_decision=signals.asks_about_decision,
             asks_about_task=signals.asks_about_task,
+            asks_for_exact_quote=signals.asks_for_exact_quote,
             asks_general_question=asks_general,
         )
         intent = detect_intent(signals)

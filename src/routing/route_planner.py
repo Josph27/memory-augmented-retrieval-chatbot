@@ -42,12 +42,12 @@ class RoutePlannerPolicy:
         SourceRoutingPolicy(
             source="current_chat_span",
             enabled=False,
-            reason="Exact current-chat span retrieval is opt-in.",
+            reason="Current-chat span retrieval is enabled only for same-chat recall.",
         ),
         SourceRoutingPolicy(
             source="previous_chat_gist",
             enabled=False,
-            reason="Previous-chat gist retrieval is not implemented yet.",
+            reason="Previous-chat gist retrieval is enabled only for previous-chat recall.",
         ),
         SourceRoutingPolicy(
             source="raw_message_span",
@@ -139,7 +139,10 @@ class RoutePlanner:
             fallback_policy=self.policy.fallback_policy,
             update_policy=self.policy.update_policy,
             termination_policy=self.policy.termination_policy,
-            metadata={"signals": signals_to_csv(analysis)},
+            metadata={
+                "signals": signals_to_csv(analysis),
+                "requires_raw_span": analysis.signals.asks_for_exact_quote,
+            },
         )
 
 
@@ -153,6 +156,7 @@ def signals_to_csv(analysis: QueryAnalysis) -> str:
             ("asks_about_documents", analysis.signals.asks_about_documents),
             ("asks_about_decision", analysis.signals.asks_about_decision),
             ("asks_about_task", analysis.signals.asks_about_task),
+            ("asks_for_exact_quote", analysis.signals.asks_for_exact_quote),
             ("asks_general_question", analysis.signals.asks_general_question),
         )
         if enabled
@@ -167,10 +171,21 @@ def source_enabled(
     """Return whether a source should be enabled for this query."""
     if source_policy.source == "document_memory":
         return analysis.signals.asks_about_documents
+    if source_policy.source == "current_chat_span":
+        return (
+            analysis.signals.asks_about_current_chat
+            and not analysis.signals.asks_about_previous_memory
+        )
     if source_policy.source == "previous_chat_gist":
         return (
             previous_chat_gist_retrieval_enabled()
             and analysis.signals.asks_about_previous_memory
+        )
+    if source_policy.source == "raw_message_span":
+        return (
+            previous_chat_gist_retrieval_enabled()
+            and analysis.signals.asks_about_previous_memory
+            and analysis.signals.asks_for_exact_quote
         )
     return source_policy.enabled
 
@@ -183,17 +198,33 @@ def source_reason(
     if source_policy.source == "document_memory" and analysis.signals.asks_about_documents:
         return "Document-like query detected; enabling LangChain-Chroma document retrieval."
     if (
+        source_policy.source == "current_chat_span"
+        and analysis.signals.asks_about_current_chat
+        and not analysis.signals.asks_about_previous_memory
+    ):
+        return "Same-chat recall detected; enabling exact current-chat span retrieval."
+    if (
         source_policy.source == "previous_chat_gist"
         and previous_chat_gist_retrieval_enabled()
         and analysis.signals.asks_about_previous_memory
     ):
         return "Previous-chat memory query detected; enabling previous-chat gist retrieval."
+    if (
+        source_policy.source == "raw_message_span"
+        and previous_chat_gist_retrieval_enabled()
+        and analysis.signals.asks_about_previous_memory
+        and analysis.signals.asks_for_exact_quote
+    ):
+        return "Exact previous-chat wording requested; reserving raw-span evidence."
     return source_policy.reason
 
 
 def previous_chat_gist_retrieval_enabled() -> bool:
     """Return whether previous-chat gist retrieval is enabled for route planning."""
-    return os.getenv("PREVIOUS_CHAT_GIST_RETRIEVAL_ENABLED", "").strip().lower() in {
+    value = os.getenv("PREVIOUS_CHAT_GIST_RETRIEVAL_ENABLED")
+    if value is None:
+        return True
+    return value.strip().lower() in {
         "1",
         "true",
         "yes",

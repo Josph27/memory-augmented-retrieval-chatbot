@@ -135,7 +135,7 @@ class AppConfig:
             ),
             previous_chat_gist_retrieval_enabled=env_bool(
                 "PREVIOUS_CHAT_GIST_RETRIEVAL_ENABLED",
-                default=False,
+                default=True,
             ),
         )
 

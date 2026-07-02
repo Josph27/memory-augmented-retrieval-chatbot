@@ -322,14 +322,24 @@ def route_plan_from_llm_payload(
     sources = [
         copy_source_enabled(
             source,
-            enabled=source_enabled_from_llm(
-                source.source,
-                use_recent=use_recent,
-                use_structured=use_structured,
-                use_document=use_document,
+            enabled=(
+                source_enabled_from_llm(
+                    source.source,
+                    use_recent=use_recent,
+                    use_structured=use_structured,
+                    use_document=use_document,
+                )
+                if source.source
+                in {"recent_messages", "structured_memory", "document_memory"}
+                else source.enabled
             ),
             query=query.strip().lower(),
-            reason=str(payload.get("reason") or "LLM routing policy selected sources."),
+            reason=(
+                str(payload.get("reason") or "LLM routing policy selected sources.")
+                if source.source
+                in {"recent_messages", "structured_memory", "document_memory"}
+                else source.reason
+            ),
         )
         for source in base_route_plan.sources
     ]

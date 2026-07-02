@@ -86,15 +86,15 @@ def test_routing_agent_representative_query_table() -> None:
             assert "document_memory" in trace["disabled_sources"], case.name
 
 
-def test_routing_agent_keeps_gist_and_raw_span_sources_disabled_by_default() -> None:
-    decision = RoutingAgent().route("What did we discuss in previous chats?")
+def test_routing_agent_enables_only_intended_previous_gist_source() -> None:
+    decision = RoutingAgent().route("What did we discuss in previous chat?")
     trace = decision.to_trace_dict()
 
     assert decision.use_recent_messages is True
     assert decision.use_structured_memory is True
     assert decision.fallback_mode is False
     assert "current_chat_gist" in trace["disabled_sources"]
-    assert "previous_chat_gist" in trace["disabled_sources"]
+    assert "previous_chat_gist" in trace["active_sources"]
     assert "raw_message_span" in trace["disabled_sources"]
     assert "current_chat_chunks" in trace["disabled_sources"]
     assert "previous_chat_memory" in trace["disabled_sources"]

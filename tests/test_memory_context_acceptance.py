@@ -3,13 +3,24 @@ from __future__ import annotations
 from dataclasses import replace
 from pathlib import Path
 
+from src.actions.chat_end import ChatEndAction
 from src.agents.context_manager_agent import ContextManagerAgent, ContextManagerResult
 from src.core.contracts import RoutePlan, SourcePlan
 from src.database import Database
+from src.memory.short_term import ChatEndMemoryProcessingResult
 from src.retrieval.raw_message_span_retriever import RawMessageSpanRetriever
 from src.retrieval.recent_messages_retriever import RecentMessagesRetriever
 from src.retrieval.retriever_dispatcher import RetrieverDispatcher
 from src.routing.route_planner import RoutePlanner
+
+
+class NoopChatEndMemoryProcessor:
+    def process_all_for_chat_end(
+        self,
+        chat_id: str,
+    ) -> ChatEndMemoryProcessingResult:
+        del chat_id
+        return ChatEndMemoryProcessingResult(0, 0)
 
 
 def build_production_context(
@@ -90,6 +101,74 @@ def test_production_previous_chat_gist_survives_to_context_packet(
         for message in result.context_packet.model_messages
     )
     assert_source_budgets_respect_total(result)
+
+
+def test_ended_chat_gist_routes_by_intent_and_expands_exact_evidence(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.delenv("PREVIOUS_CHAT_GIST_RETRIEVAL_ENABLED", raising=False)
+    database = Database(tmp_path / "chatbot.db")
+    database.create_chat("ended-chat")
+    exact_sentence = "My exact deployment phrase is rehearse rollback before release."
+    source_id = database.save_message("ended-chat", "user", exact_sentence)
+    assistant_id = database.save_message("ended-chat", "assistant", "Recorded.")
+    end_result = ChatEndAction(
+        database,
+        NoopChatEndMemoryProcessor(),
+    ).execute("ended-chat")
+    database.create_chat("new-chat")
+
+    orientation_query = "What did we discuss last time about deployment?"
+    orientation_plan = RoutePlanner().plan(orientation_query)
+    orientation_candidates = RetrieverDispatcher(database).retrieve(
+        "new-chat",
+        orientation_plan,
+    )
+
+    exact_query = (
+        "What exact phrase did I use in the previous chat about deployment?"
+    )
+    exact_plan = RoutePlanner().plan(exact_query)
+    exact_candidates = RetrieverDispatcher(database).retrieve(
+        "new-chat",
+        exact_plan,
+    )
+    exact_context = ContextManagerAgent().build_context_packet(
+        system_prompt="Use exact persisted evidence.",
+        latest_user_message={"role": "user", "content": exact_query},
+        ranked_candidates=exact_candidates,
+        route_plan=exact_plan,
+    ).context_packet
+
+    casual_plan = RoutePlanner().plan("How are you?")
+    casual_candidates = RetrieverDispatcher(database).retrieve(
+        "new-chat",
+        casual_plan,
+    )
+
+    assert end_result.gist_count == 1
+    assert any(
+        candidate.source == "previous_chat_gist"
+        for candidate in orientation_candidates
+    )
+    raw = next(
+        candidate
+        for candidate in exact_candidates
+        if candidate.source == "raw_message_span"
+    )
+    assert exact_sentence in raw.content
+    assert raw.source_message_ids == [source_id, assistant_id]
+    assert raw.metadata["parent_source"] == "previous_chat_gist"
+    assert any(
+        candidate.source == "raw_message_span"
+        and exact_sentence in candidate.content
+        for candidate in exact_context.candidates
+    )
+    assert all(
+        candidate.source not in {"previous_chat_gist", "raw_message_span"}
+        for candidate in casual_candidates
+    )
 
 
 def test_production_recent_messages_keep_old_fact_and_current_query_once(
@@ -228,7 +307,7 @@ def test_production_disabled_previous_gist_does_not_retrieve_or_reach_context(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
-    monkeypatch.delenv("PREVIOUS_CHAT_GIST_RETRIEVAL_ENABLED", raising=False)
+    monkeypatch.setenv("PREVIOUS_CHAT_GIST_RETRIEVAL_ENABLED", "0")
     database = Database(tmp_path / "chatbot.db")
     database.create_chat("previous-chat")
     message_id = database.save_message("previous-chat", "user", "Hidden old fact.")
