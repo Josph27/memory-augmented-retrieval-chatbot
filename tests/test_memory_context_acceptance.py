@@ -52,7 +52,7 @@ def assert_source_budgets_respect_total(result: ContextManagerResult) -> None:
     )
 
 
-def test_production_previous_chat_gist_survives_to_context_packet(
+def test_production_previous_chat_raw_child_folds_gist_in_context_packet(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
@@ -90,13 +90,13 @@ def test_production_previous_chat_gist_survives_to_context_packet(
     included = [
         candidate
         for candidate in result.context_packet.candidates
-        if candidate.source == "previous_chat_gist"
+        if candidate.source == "raw_message_span"
     ]
     assert len(included) == 1
-    assert included[0].record_id == gist_id
+    assert included[0].metadata["parent_gist_id"] == gist_id
     assert included[0].source_message_ids == [start_id, end_id]
     assert any(
-        "Previous Chat Gist:" in message["content"]
+        "Raw Message Span:" in message["content"]
         and "rollback rehearsal" in message["content"]
         for message in result.context_packet.model_messages
     )

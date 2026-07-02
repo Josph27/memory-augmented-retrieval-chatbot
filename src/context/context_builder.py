@@ -3,7 +3,13 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from src.context.token_estimator import ApproximateTokenEstimator, TokenEstimator
+from src.context.token_estimator import (
+    ApproximateTokenEstimator,
+    TokenEstimator,
+    count_messages,
+    count_text,
+    tokenizer_trace_metadata,
+)
 from src.core.contracts import ContextBudget, ContextPacket, MemoryCandidate, RoutePlan
 
 
@@ -54,15 +60,42 @@ class ContextBuilder:
         ranked_candidates: list[MemoryCandidate],
         context_budget: ContextBudget,
         route_plan: RoutePlan,
+        *,
+        preselected_candidates: list[MemoryCandidate] | None = None,
+        selection_drops: list[dict[str, Any]] | None = None,
+        selection_metadata: dict[str, object] | None = None,
     ) -> ContextPacket:
         """Build a budget-aware ContextPacket without affecting the model call."""
-        grouped = group_candidates_by_source(ranked_candidates)
+        candidates_to_pack = (
+            preselected_candidates
+            if preselected_candidates is not None
+            else ranked_candidates
+        )
+        grouped = group_candidates_by_source(candidates_to_pack)
         selected_by_source: dict[str, SelectedContext] = {}
         selected_candidates: list[MemoryCandidate] = []
-        dropped_candidates: list[dict[str, Any]] = []
+        dropped_candidates: list[dict[str, Any]] = list(selection_drops or [])
 
         for source in CONTEXT_SOURCE_ORDER:
             source_candidates = grouped.get(source, [])
+            if preselected_candidates is not None:
+                if source == "recent_messages":
+                    source_candidates = sorted(
+                        source_candidates,
+                        key=recent_message_sort_key,
+                    )
+                used_tokens = sum(
+                    count_text(self.token_estimator, candidate.content)
+                    for candidate in source_candidates
+                )
+                selected = SelectedContext(
+                    selected=source_candidates,
+                    dropped=[],
+                    used_tokens=used_tokens,
+                )
+                selected_by_source[source] = selected
+                selected_candidates.extend(selected.selected)
+                continue
             if source == "recent_messages":
                 source_candidates, latest_drops = prepare_recent_candidates(
                     source_candidates,
@@ -79,11 +112,15 @@ class ContextBuilder:
             selected_candidates.extend(selected.selected)
             dropped_candidates.extend(selected.dropped)
 
-        overflow_drops = self.drop_non_recent_candidates_for_overflow(
-            selected_by_source=selected_by_source,
-            context_budget=context_budget,
-            system_prompt=system_prompt,
-            latest_user_message=latest_user_message,
+        overflow_drops = (
+            []
+            if preselected_candidates is not None
+            else self.drop_non_recent_candidates_for_overflow(
+                selected_by_source=selected_by_source,
+                context_budget=context_budget,
+                system_prompt=system_prompt,
+                latest_user_message=latest_user_message,
+            )
         )
         dropped_candidates.extend(overflow_drops)
         selected_candidates = [
@@ -131,7 +168,35 @@ class ContextBuilder:
                 "context_profile": context_budget.metadata.get("context_profile"),
                 "estimated_token_usage": estimated_tokens,
                 "estimated_prompt_tokens": estimated_tokens,
-                "token_estimator": "approximate",
+                "token_estimator": token_accounting["tokenizer_mode"],
+                "model_id": context_budget.metadata.get("model_id"),
+                "tokenizer_id": token_accounting["tokenizer_id"],
+                "tokenizer_mode": token_accounting["tokenizer_mode"],
+                "native_context_window": context_budget.metadata.get(
+                    "native_context_window"
+                ),
+                "sliding_window": context_budget.metadata.get("sliding_window"),
+                "endpoint_context_window": context_budget.metadata.get(
+                    "endpoint_context_window"
+                ),
+                "endpoint_limit_verified": context_budget.metadata.get(
+                    "endpoint_limit_verified",
+                    False,
+                ),
+                "application_context_cap": context_budget.metadata.get(
+                    "application_context_cap"
+                ),
+                "effective_context_window": token_accounting["context_limit"],
+                "output_reserve": token_accounting["answer_reserve"],
+                "system_tokens": token_accounting["system_tokens"],
+                "query_tokens": token_accounting["latest_user_message_tokens"],
+                "memory_tokens": token_accounting["memory_tokens"],
+                "final_prompt_tokens": token_accounting["total_prompt_tokens"],
+                "limit_source": context_budget.metadata.get("limit_source"),
+                "effective_limit_source": context_budget.metadata.get(
+                    "effective_limit_source"
+                ),
+                "fallback_reason": token_accounting["fallback_reason"],
                 "context_limit": token_accounting["context_limit"],
                 "answer_reserve": token_accounting["answer_reserve"],
                 "safety_margin": token_accounting["safety_margin"],
@@ -159,6 +224,7 @@ class ContextBuilder:
                     "recent_messages",
                     "latest_user_message",
                 ],
+                "evidence_selection": dict(selection_metadata or {}),
             },
         )
 
@@ -180,7 +246,7 @@ class ContextBuilder:
         dropped: list[dict[str, Any]] = []
         used_tokens = 0
         for candidate in candidates:
-            candidate_tokens = self.token_estimator.estimate_text(candidate.content)
+            candidate_tokens = count_text(self.token_estimator, candidate.content)
             if candidate_tokens + used_tokens <= budget:
                 selected.append(candidate)
                 used_tokens += candidate_tokens
@@ -285,7 +351,7 @@ class ContextBuilder:
 
             source, candidate = next_drop
             selected = selected_by_source[source]
-            candidate_tokens = self.token_estimator.estimate_text(candidate.content)
+            candidate_tokens = count_text(self.token_estimator, candidate.content)
             selected.selected.remove(candidate)
             selected_by_source[source] = SelectedContext(
                 selected=selected.selected,
@@ -331,14 +397,26 @@ class ContextBuilder:
             format_recent_message(candidate)
             for candidate in selected_by_source["recent_messages"].selected
         ]
-        recent_message_tokens = self.token_estimator.estimate_messages(recent_messages)
-        latest_user_message_tokens = self.token_estimator.estimate_messages([latest_user_message])
+        recent_message_tokens = count_messages(
+            self.token_estimator,
+            recent_messages,
+            add_generation_prompt=False,
+        )
+        latest_user_message_tokens = count_messages(
+            self.token_estimator,
+            [latest_user_message],
+            add_generation_prompt=False,
+        )
         source_memory_tokens = {
-            source: self.token_estimator.estimate_text(section)
+            source: count_text(self.token_estimator, section)
             for source, section in retrieved_sections.items()
         }
         retrieved_memory_tokens = sum(source_memory_tokens.values())
-        total_prompt_tokens = self.token_estimator.estimate_messages(model_messages)
+        total_prompt_tokens = count_messages(
+            self.token_estimator,
+            model_messages,
+            add_generation_prompt=True,
+        )
         answer_reserve = context_budget.reserved_response_tokens or 0
         safety_margin = int(context_budget.metadata.get("safety_margin_tokens", 0) or 0)
         context_limit = context_budget.max_tokens or 0
@@ -349,13 +427,22 @@ class ContextBuilder:
             else 0
         )
         estimator_info = estimator_metadata(self.token_estimator)
+        tokenizer_metadata = tokenizer_trace_metadata(self.token_estimator)
+        structured_memory_tokens = count_text(
+            self.token_estimator,
+            structured_memory,
+        )
         return {
             "token_estimator": estimator_info,
-            "system_tokens": self.token_estimator.estimate_text(system_prompt),
-            "structured_memory_tokens": self.token_estimator.estimate_text(
-                structured_memory
-            ),
+            **tokenizer_metadata,
+            "system_tokens": count_text(self.token_estimator, system_prompt),
+            "structured_memory_tokens": structured_memory_tokens,
             "retrieved_memory_tokens": retrieved_memory_tokens,
+            "memory_tokens": (
+                structured_memory_tokens
+                + retrieved_memory_tokens
+                + recent_message_tokens
+            ),
             "source_memory_tokens": source_memory_tokens,
             "recent_message_tokens": recent_message_tokens,
             "latest_user_message_tokens": latest_user_message_tokens,
@@ -416,7 +503,7 @@ def select_newest_recent_suffix(
 
     for index in range(len(ordered) - 1, -1, -1):
         candidate = ordered[index]
-        candidate_tokens = token_estimator.estimate_text(candidate.content)
+        candidate_tokens = count_text(token_estimator, candidate.content)
         if candidate_tokens + used_tokens > budget:
             first_dropped_index = index
             break
@@ -429,7 +516,7 @@ def select_newest_recent_suffix(
             "record_id": candidate.record_id,
             "source": candidate.source,
             "reason": "source_budget_exceeded",
-            "estimated_tokens": token_estimator.estimate_text(candidate.content),
+            "estimated_tokens": count_text(token_estimator, candidate.content),
             "source_budget": budget,
         }
         for candidate in ordered[: first_dropped_index + 1]

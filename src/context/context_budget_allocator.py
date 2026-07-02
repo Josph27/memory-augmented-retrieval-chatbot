@@ -2,7 +2,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from src.context.token_estimator import ApproximateTokenEstimator, TokenEstimator
+from src.context.token_estimator import (
+    ApproximateTokenEstimator,
+    TokenEstimator,
+    count_text,
+)
 from src.core.contracts import ContextBudget, MemoryCandidate, RoutePlan
 
 
@@ -115,7 +119,11 @@ class ContextBudgetAllocator:
     ) -> ContextBudget:
         """Return a profile-based context budget without affecting prompt construction."""
         context_limit = model_context_limit or self.policy.default_model_context_limit
-        requested_answer_reserve = answer_reserve or self.policy.default_answer_reserve
+        requested_answer_reserve = (
+            answer_reserve
+            if answer_reserve is not None
+            else self.policy.default_answer_reserve
+        )
         profile_name = profile_name_for(route_plan.context_profile)
         profile = self.policy.profiles.get(profile_name, self.policy.profiles["general_chat"])
         enabled_sources = enabled_source_names(route_plan)
@@ -126,14 +134,16 @@ class ContextBudgetAllocator:
 
         system_estimate = system_prompt_tokens
         if system_estimate is None:
-            system_estimate = self.token_estimator.estimate_text(system_prompt or "")
+            system_estimate = count_text(self.token_estimator, system_prompt or "")
 
         safety_tokens = ratio_tokens(context_limit, profile.safety_margin)
         profile_answer_reserve = ratio_tokens(context_limit, profile.answer_reserve)
-        reserved_response_tokens = max(
-            0,
-            min(max(requested_answer_reserve, profile_answer_reserve), context_limit),
+        reserve_target = (
+            requested_answer_reserve
+            if answer_reserve is not None
+            else max(requested_answer_reserve, profile_answer_reserve)
         )
+        reserved_response_tokens = max(0, min(reserve_target, context_limit))
         allocatable = max(0, context_limit - system_estimate - safety_tokens - reserved_response_tokens)
 
         source_ratios = enabled_source_ratios(profile, enabled_sources)
@@ -165,7 +175,7 @@ class ContextBudgetAllocator:
         )
 
         candidate_token_estimate = sum(
-            self.token_estimator.estimate_text(candidate.content)
+            count_text(self.token_estimator, candidate.content)
             for candidate in ranked_candidates
         )
         return ContextBudget(
@@ -279,7 +289,7 @@ def candidate_source_minimum_budgets_for(
         if candidate.source not in enabled_sources:
             continue
         candidate_sizes.setdefault(candidate.source, []).append(
-            token_estimator.estimate_text(candidate.content)
+            count_text(token_estimator, candidate.content)
         )
 
     candidate_sources = sorted(candidate_sizes)

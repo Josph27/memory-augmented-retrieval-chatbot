@@ -6,6 +6,10 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
+from src.context.model_profile import (
+    application_context_cap_from_env,
+    endpoint_context_limit_from_env,
+)
 from src.memory.constants import MEMORY_UPDATE_BATCH_SIZE, RAW_MESSAGE_LIMIT
 
 
@@ -16,6 +20,10 @@ class AppConfig:
     openai_api_key: str
     openai_base_url: str
     model_name: str
+    endpoint_context_window: int | None
+    endpoint_context_limit_source: str | None
+    application_context_cap: int
+    target_memory_budget: int
     database_path: Path
     raw_message_limit: int
     memory_update_batch_size: int
@@ -52,10 +60,17 @@ class AppConfig:
         """Load local `.env` values and fall back to a local Ollama-compatible setup."""
         load_dotenv()
 
+        endpoint_context_window, endpoint_limit_source = (
+            endpoint_context_limit_from_env()
+        )
         return cls(
             openai_api_key=os.getenv("OPENAI_API_KEY", "dummy"),
             openai_base_url=os.getenv("OPENAI_BASE_URL", "http://localhost:11434/v1"),
             model_name=os.getenv("MODEL_NAME", "google/gemma-4-31B-it"),
+            endpoint_context_window=endpoint_context_window,
+            endpoint_context_limit_source=endpoint_limit_source,
+            application_context_cap=application_context_cap_from_env(),
+            target_memory_budget=int(os.getenv("TARGET_MEMORY_BUDGET", "4096")),
             database_path=Path(os.getenv("DATABASE_PATH", "data/chatbot.db")),
             raw_message_limit=int(os.getenv("RAW_MESSAGE_LIMIT", str(RAW_MESSAGE_LIMIT))),
             memory_update_batch_size=int(

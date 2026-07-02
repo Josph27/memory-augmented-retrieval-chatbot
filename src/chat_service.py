@@ -6,10 +6,12 @@ from uuid import uuid4
 
 from src.agents.chat_agent import ChatAgent
 from src.agents.context_builder_agent import ContextBuilderAgent
+from src.agents.context_manager_agent import ContextManagerAgent
 from src.agents.coordinator_agent import CoordinatorAgent
 from src.agents.document_ingestion_agent import DocumentIngestionAgent
 from src.agents.short_term_memory_agent import ShortTermMemoryAgent
 from src.core.contracts import AgentTurnResult
+from src.context.model_profile import DEFAULT_GEMMA_APPLICATION_CONTEXT_CAP
 from src.database import Database
 from src.memory.previous_chat_gist import PreviousChatGistGenerator
 from src.memory.short_term import ShortTermMemory
@@ -58,6 +60,10 @@ class ChatService:
         reranker_llm_provenance_queries: bool = True,
         previous_chat_gist_generation_enabled: bool = False,
         previous_chat_gist_generator: PreviousChatGistGenerator | None = None,
+        endpoint_context_window: int | None = None,
+        endpoint_context_limit_source: str | None = None,
+        application_context_cap: int = DEFAULT_GEMMA_APPLICATION_CONTEXT_CAP,
+        target_memory_budget: int = 4096,
     ) -> None:
         self.database = database
         self.model = model
@@ -100,6 +106,13 @@ class ChatService:
                     reranker_llm_require_cross_source_conflict
                 ),
                 llm_provenance_queries=reranker_llm_provenance_queries,
+            ),
+            context_manager_agent=ContextManagerAgent.for_model(
+                getattr(model, "model_name", "unknown"),
+                endpoint_context_window=endpoint_context_window,
+                application_context_cap=application_context_cap,
+                endpoint_limit_source=endpoint_context_limit_source,
+                target_memory_budget=target_memory_budget,
             ),
         )
 

@@ -28,7 +28,7 @@ def candidate(
     )
 
 
-def test_context_manager_agent_matches_direct_allocator_and_builder_output() -> None:
+def test_context_manager_agent_preserves_direct_candidate_content_and_formatting() -> None:
     route_plan = RoutePlan(
         query="q",
         context_profile="document_question",
@@ -69,7 +69,7 @@ def test_context_manager_agent_matches_direct_allocator_and_builder_output() -> 
         route_plan=route_plan,
     )
 
-    assert result.context_budget == direct_budget
+    assert result.context_budget.max_tokens == direct_budget.max_tokens
     assert result.context_packet.model_messages == direct_packet.model_messages
     assert result.context_packet.candidates == direct_packet.candidates
 
@@ -150,13 +150,13 @@ def test_production_previous_chat_route_reaches_context_packet(
     included = [
         item
         for item in result.context_packet.candidates
-        if item.source == "previous_chat_gist"
+        if item.source == "raw_message_span"
     ]
     assert len(included) == 1
-    assert included[0].record_id == gist_id
+    assert included[0].metadata["parent_gist_id"] == gist_id
     assert included[0].source_message_ids == [first_id, second_id]
     assert any(
-        "Previous Chat Gist:" in message["content"]
+        "Raw Message Span:" in message["content"]
         and "release checklist" in message["content"]
         for message in result.context_packet.model_messages
     )

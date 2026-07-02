@@ -17,6 +17,7 @@ dependencies = [
     "langchain-text-splitters>=1.1.2",
     "langmem>=0.0.30",
     "openai>=1.0.0",
+    "pillow>=12.3.0",
     "python-dotenv>=1.0.0",
     "sentence-transformers>=5.5.1",
 ]
