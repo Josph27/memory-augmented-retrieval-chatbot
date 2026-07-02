@@ -111,6 +111,17 @@ class WorkflowTrace:
 
 
 @dataclass(frozen=True)
+class OrchestrationResult:
+    """Context and trace produced by one orchestration implementation."""
+
+    context_packet: ContextPacket
+    trace: WorkflowTrace
+    mode: str
+    fallback_used: bool = False
+    error: str | None = None
+
+
+@dataclass(frozen=True)
 class AgentTurnResult:
     """Final result for one user turn through the agent pipeline."""
 

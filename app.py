@@ -4,6 +4,7 @@ import os
 from typing import NamedTuple
 
 import chainlit as cl
+from chainlit.input_widget import Select
 from chainlit.types import ChatProfile
 from chainlit.user import User
 
@@ -20,6 +21,12 @@ from src.memory.memory_trace import (
     format_saved_memories_markdown,
 )
 from src.model_wrapper import ModelWrapper
+from src.orchestration.demo_orchestration import (
+    LANGGRAPH_DEMO,
+    LANGGRAPH_SHADOW,
+    NATIVE,
+    normalize_orchestration_mode,
+)
 from src.retrieval.langchain_chroma_retriever import LangChainChromaUnavailable
 
 
@@ -71,6 +78,29 @@ DEFAULT_MODEL_PROFILE_KEY = "gemma"
 MODEL_PROFILES_BY_KEY = {profile.key: profile for profile in MODEL_PROFILES}
 MODEL_PROFILES_BY_MODEL = {profile.model_name: profile for profile in MODEL_PROFILES}
 chat_services: dict[str, ChatService] = {}
+ORCHESTRATION_SETTING_ID = "orchestration_mode"
+ORCHESTRATION_LABELS = {
+    "Native": NATIVE,
+    "LangGraph Shadow": LANGGRAPH_SHADOW,
+    "LangGraph Demo": LANGGRAPH_DEMO,
+}
+
+
+def configured_orchestration_mode() -> str:
+    """Return the configured demo initial mode; native is always the fallback."""
+    return normalize_orchestration_mode(config.orchestration_mode)
+
+
+def orchestration_label(mode: str) -> str:
+    """Return the Chainlit display label for one normalized mode."""
+    return next(
+        (
+            label
+            for label, value in ORCHESTRATION_LABELS.items()
+            if value == mode
+        ),
+        "Native",
+    )
 
 
 @cl.password_auth_callback
@@ -119,6 +149,7 @@ async def on_chat_start() -> None:
     cl.user_session.set("chat_id", chat_id)
     cl.user_session.set("chat_ended", False)
     cl.user_session.set("model_name", model_name)
+    cl.user_session.set(ORCHESTRATION_SETTING_ID, configured_orchestration_mode())
 
     await cl.Message(
         content=(
@@ -130,6 +161,7 @@ async def on_chat_start() -> None:
     ).send()
     if demo_memory_trace_enabled():
         await cl.Message(content="Demo memory trace is enabled.").send()
+    await send_orchestration_settings()
 
 
 @cl.on_chat_resume
@@ -141,6 +173,16 @@ async def on_chat_resume(thread: dict) -> None:
         cl.user_session.set("chat_ended", False)
     model_name = model_name_from_thread(thread)
     cl.user_session.set("model_name", model_name)
+    cl.user_session.set(ORCHESTRATION_SETTING_ID, configured_orchestration_mode())
+    await send_orchestration_settings()
+
+
+@cl.on_settings_update
+async def on_settings_update(settings: dict) -> None:
+    """Store orchestration selection for this browser session only."""
+    value = settings.get(ORCHESTRATION_SETTING_ID)
+    mode = ORCHESTRATION_LABELS.get(str(value), str(value or NATIVE))
+    cl.user_session.set(ORCHESTRATION_SETTING_ID, normalize_orchestration_mode(mode))
 
 
 @cl.on_message
@@ -171,13 +213,20 @@ async def on_message(message: cl.Message) -> None:
     if not content:
         return
 
-    result = chat_service.handle_user_turn(chat_id=chat_id, content=content)
+    orchestration_mode = current_orchestration_mode()
+    result = chat_service.handle_user_turn(
+        chat_id=chat_id,
+        content=content,
+        orchestration_mode=orchestration_mode,
+    )
     if demo_memory_trace_enabled():
         retrieved_trace = format_retrieved_memories_markdown(retrieved_memory_rows(result))
         if retrieved_trace:
             await cl.Message(content=retrieved_trace).send()
 
     await cl.Message(content=result.answer).send()
+    if orchestration_mode != NATIVE:
+        await cl.Message(content=format_orchestration_trace_markdown(result)).send()
 
     if demo_memory_trace_enabled():
         saved_trace = format_saved_memories_markdown(saved_memory_rows(result))
@@ -195,6 +244,21 @@ async def send_chat_actions() -> None:
             cl.Action(name="fork_chat", label="Fork chat", payload={"value": "fork"}),
             cl.Action(name="new_chat", label="New chat", payload={"value": "new"}),
         ],
+    ).send()
+
+
+async def send_orchestration_settings() -> None:
+    """Show the per-session orchestration selector with Native as default."""
+    await cl.ChatSettings(
+        [
+            Select(
+                id=ORCHESTRATION_SETTING_ID,
+                label="Orchestration",
+                values=list(ORCHESTRATION_LABELS),
+                initial=orchestration_label(current_orchestration_mode()),
+                tooltip="Native answers normally; Shadow compares; Demo uses graph context.",
+            )
+        ]
     ).send()
 
 
@@ -290,6 +354,69 @@ def result_metadata_rows(result: object, key: str) -> object:
     if isinstance(trace_metadata, dict):
         return trace_metadata.get(key)
     return None
+
+
+def current_orchestration_mode() -> str:
+    """Return the session mode, defaulting safely to native."""
+    value = cl.user_session.get(ORCHESTRATION_SETTING_ID)
+    return normalize_orchestration_mode(value if isinstance(value, str) else None)
+
+
+def format_orchestration_trace_markdown(result: object) -> str:
+    """Render a compact trace without prompts, secrets, or candidate contents."""
+    trace = getattr(result, "trace", None)
+    metadata = getattr(trace, "metadata", None)
+    orchestration = (
+        metadata.get("orchestration")
+        if isinstance(metadata, dict)
+        else None
+    )
+    if not isinstance(orchestration, dict):
+        return "**Orchestration trace unavailable.**"
+    graph = orchestration.get("langgraph_trace")
+    graph = graph if isinstance(graph, dict) else {}
+    routing = graph.get("routing")
+    routing = routing if isinstance(routing, dict) else {}
+    intents = routing.get("intents")
+    intent = None
+    if isinstance(intents, list) and intents and isinstance(intents[0], dict):
+        intent = intents[0].get("intent")
+    contract = graph.get("evidence_contract")
+    contract = contract if isinstance(contract, dict) else {}
+    lines = [
+        "<details><summary>Orchestration trace</summary>",
+        "",
+        f"- Requested mode: `{orchestration.get('requested_mode')}`",
+        f"- Effective mode: `{orchestration.get('effective_mode')}`",
+        f"- Authoritative context: `{orchestration.get('authoritative_context')}`",
+        f"- Router: `{routing.get('routing_mode', 'native')}`",
+        f"- Intent: `{intent}`",
+        f"- Enabled sources: `{graph.get('route_sources', [])}`",
+        f"- Requires raw span: `{contract.get('requires_raw_span', False)}`",
+        f"- Candidate counts: `{graph.get('candidate_counts_by_source', {})}`",
+        f"- Selected counts: `{graph.get('selected_counts_by_source', {})}`",
+        f"- Dropped counts: `{graph.get('dropped_counts_by_source', {})}`",
+        f"- Drop reasons: `{graph.get('dropped_reasons', [])}`",
+        f"- Source budgets: `{graph.get('source_budgets', {})}`",
+        f"- Actual context tokens: `{graph.get('actual_context_tokens')}`",
+        f"- Provenance valid: `{graph.get('provenance_valid')}`",
+        f"- Node timings ms: `{graph.get('node_timings_ms', {})}`",
+        f"- Fallback used: `{orchestration.get('fallback_used')}`",
+        f"- Error: `{orchestration.get('error')}`",
+    ]
+    comparison = orchestration.get("comparison")
+    if isinstance(comparison, dict):
+        lines.extend(
+            [
+                f"- Native-only sources: `{comparison.get('native_only_sources', [])}`",
+                f"- Graph-only sources: `{comparison.get('langgraph_only_sources', [])}`",
+                "- Selected candidate overlap: "
+                f"`{comparison.get('selected_candidate_overlap')}`",
+                f"- Token difference: `{comparison.get('token_difference')}`",
+            ]
+        )
+    lines.extend(["", "</details>"])
+    return "\n".join(lines)
 
 
 def index_uploaded_files(message: cl.Message, chat_service: ChatService) -> list[str]:

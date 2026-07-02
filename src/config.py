@@ -28,6 +28,7 @@ class AppConfig:
     langchain_chroma_persist_dir: Path
     langchain_chunk_size: int
     langchain_chunk_overlap: int
+    orchestration_mode: str
     routing_mode: str
     reranker_mode: str
     reranker_llm_top_k: int
@@ -77,6 +78,7 @@ class AppConfig:
             ),
             langchain_chunk_size=int(os.getenv("LANGCHAIN_CHUNK_SIZE", "1000")),
             langchain_chunk_overlap=int(os.getenv("LANGCHAIN_CHUNK_OVERLAP", "150")),
+            orchestration_mode=os.getenv("ORCHESTRATION_MODE", "native").strip().lower(),
             routing_mode=os.getenv("ROUTING_MODE", "rule").strip().lower(),
             reranker_mode=os.getenv(
                 "RERANKER_MODE",

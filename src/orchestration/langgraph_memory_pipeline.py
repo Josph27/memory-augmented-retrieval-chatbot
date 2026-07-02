@@ -30,6 +30,7 @@ class MemoryGraphState(TypedDict, total=False):
     chat_id: str
     user_id: str | None
     user_query: str
+    task_context: str | None
     current_message_id: int | None
     route_plan: RoutePlan
     semantic_route_plan: SemanticRoutePlan
@@ -128,6 +129,7 @@ def run_langgraph_memory_pipeline(
     user_query: str,
     evidence_contract: EvidenceContract | None = None,
     user_id: str | None = None,
+    task_context: str | None = None,
     config: dict[str, Any] | None = None,
 ) -> MemoryGraphState:
     """Invoke the explicit spike entry point with no production side effects."""
@@ -136,6 +138,7 @@ def run_langgraph_memory_pipeline(
         "chat_id": chat_id,
         "user_id": user_id,
         "user_query": user_query,
+        "task_context": task_context,
         "current_message_id": None,
         "evidence_contract": evidence_contract or EvidenceContract(),
         "candidates": [],
@@ -159,7 +162,10 @@ def _route_node(services: LangGraphSpikeServices):  # type: ignore[no-untyped-de
         if services.use_semantic_router:
             if services.semantic_router is None:
                 raise RuntimeError("Semantic Router v2 was enabled without a router")
-            semantic_plan = services.semantic_router.route(state["user_query"])
+            semantic_plan = services.semantic_router.route(
+                state["user_query"],
+                task_context=state.get("task_context"),
+            )
             route_plan = services.semantic_router.to_route_plan(semantic_plan)
             return node_update(
                 state,
@@ -345,6 +351,14 @@ def _trace_node():  # type: ignore[no-untyped-def]
     def trace_node(state: MemoryGraphState) -> MemoryGraphState:
         started = perf_counter()
         route_plan = state.get("route_plan")
+        packet = state.get("context_packet")
+        dropped = (
+            packet.metadata.get("dropped_candidates", [])
+            if packet is not None
+            else []
+        )
+        if not isinstance(dropped, list):
+            dropped = []
         trace = {
             "run_id": state.get("run_id"),
             "route_sources": (
@@ -364,7 +378,40 @@ def _trace_node():  # type: ignore[no-untyped-def]
                 ]
             ],
             "context_sources": context_sources(state.get("context_packet")),
+            "candidate_counts_by_source": source_counts(
+                state.get("candidates", [])
+            ),
+            "expanded_candidate_counts_by_source": source_counts(
+                state.get("expanded_candidates", [])
+            ),
+            "selected_counts_by_source": source_counts(
+                packet.candidates if packet is not None else []
+            ),
+            "selected_candidate_ids": candidate_ids(
+                packet.candidates if packet is not None else []
+            ),
+            "dropped_counts_by_source": dropped_source_counts(dropped),
+            "dropped_reasons": sorted(
+                {
+                    str(item.get("reason"))
+                    for item in dropped
+                    if isinstance(item, dict) and item.get("reason")
+                }
+            ),
             "source_budgets": dict(state.get("source_budgets", {})),
+            "source_token_usage": (
+                dict(packet.metadata.get("source_token_usage", {}))
+                if packet is not None
+                else {}
+            ),
+            "actual_context_tokens": (
+                packet.metadata.get("estimated_prompt_tokens")
+                if packet is not None
+                else None
+            ),
+            "provenance_valid": provenance_is_valid(
+                packet.candidates if packet is not None else []
+            ),
             "evidence_contract": asdict(
                 state.get("evidence_contract", EvidenceContract())
             ),
@@ -374,6 +421,7 @@ def _trace_node():  # type: ignore[no-untyped-def]
             ),
             "errors": list(state.get("errors", [])),
             "visited_nodes": [*state.get("visited_nodes", []), "trace"],
+            "node_timings_ms": dict(state.get("node_timings_ms", {})),
         }
         return node_update(
             state,
@@ -452,6 +500,51 @@ def context_sources(packet: ContextPacket | None) -> list[str]:
     return [candidate.source for candidate in packet.candidates]
 
 
+def source_counts(candidates: list[MemoryCandidate]) -> dict[str, int]:
+    """Count bounded candidates by typed source."""
+    counts: dict[str, int] = {}
+    for candidate in candidates:
+        counts[candidate.source] = counts.get(candidate.source, 0) + 1
+    return counts
+
+
+def candidate_ids(candidates: list[MemoryCandidate]) -> list[str]:
+    """Return bounded selected candidate identities without content."""
+    return [
+        f"{candidate.source}:{candidate.record_id}"
+        for candidate in candidates[:MAX_TRACE_CANDIDATES]
+    ]
+
+
+def dropped_source_counts(dropped: list[object]) -> dict[str, int]:
+    """Count dropped candidate records by source."""
+    counts: dict[str, int] = {}
+    for item in dropped:
+        if not isinstance(item, dict):
+            continue
+        source = item.get("source")
+        if isinstance(source, str):
+            counts[source] = counts.get(source, 0) + 1
+    return counts
+
+
+def provenance_is_valid(candidates: list[MemoryCandidate]) -> bool:
+    """Check source-specific provenance without requiring transcript content."""
+    for candidate in candidates:
+        if candidate.source in RAW_EVIDENCE_SOURCES:
+            if not candidate.chat_id or not candidate.source_message_ids:
+                return False
+        if candidate.source == "previous_chat_gist":
+            if candidate.record_id is None or not candidate.chat_id:
+                return False
+        if candidate.source == "document_memory":
+            if candidate.record_id is None and not candidate.metadata.get("document_id"):
+                return False
+        if candidate.source == "structured_memory" and candidate.record_id is None:
+            return False
+    return True
+
+
 def semantic_route_trace(plan: SemanticRoutePlan) -> dict[str, Any]:
     """Return bounded typed routing metadata without generated evidence."""
     return {
@@ -468,6 +561,11 @@ def semantic_route_trace(plan: SemanticRoutePlan) -> dict[str, Any]:
             for item in plan.intents
         ],
         "temporal_scope": plan.temporal_scope,
+        "retrieval_need": plan.retrieval_need,
+        "memory_scope": plan.memory_scope,
+        "primary_scope": plan.primary_scope,
+        "required_scopes": sorted(plan.required_scopes),
+        "task_context": plan.task_context,
         "active_sources": list(plan.enabled_sources),
         "retrieval_queries": [
             {

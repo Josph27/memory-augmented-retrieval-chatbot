@@ -1,12 +1,9 @@
 from __future__ import annotations
 
-import inspect
 from dataclasses import replace
 from pathlib import Path
 
 from src.agents.context_manager_agent import ContextManagerAgent
-from src.agents.coordinator_agent import CoordinatorAgent
-from src.chat_service import ChatService
 from src.core.contracts import RoutePlan, SourcePlan
 from src.database import Database
 from src.orchestration.langgraph_memory_pipeline import (
@@ -194,9 +191,11 @@ def test_previous_gist_expands_to_exact_raw_span(tmp_path: Path) -> None:
     assert "raw_message_span" in state["trace"]["context_sources"]
 
 
-def test_spike_is_isolated_from_production_path() -> None:
-    assert "langgraph" not in inspect.getsource(ChatService).lower()
-    assert "langgraph" not in inspect.getsource(CoordinatorAgent).lower()
+def test_spike_remains_explicit_and_default_off() -> None:
+    from src.orchestration.demo_orchestration import NATIVE, normalize_orchestration_mode
+
+    assert normalize_orchestration_mode(None) == NATIVE
+    assert normalize_orchestration_mode("unknown") == NATIVE
 
 
 def test_trace_is_bounded_and_graph_has_no_write_nodes(tmp_path: Path) -> None:
@@ -326,3 +325,45 @@ def test_semantic_router_exact_quote_fails_closed_with_gist_only(
         candidate.content != query
         for candidate in state["context_packet"].candidates
     )
+
+
+def test_semantic_router_required_scopes_are_visible_in_graph_trace(
+    tmp_path: Path,
+) -> None:
+    database = Database(tmp_path / "chatbot.db")
+    database.create_chat("chat")
+    query = (
+        "According to the uploaded report, compare it with the constraint "
+        "I mentioned earlier in this chat."
+    )
+    graph = build_langgraph_memory_pipeline(
+        routing_agent=None,
+        dispatcher=RetrieverDispatcher(
+            database,
+            retrievers={
+                "current_chat_span": CurrentChatSpanRetriever(database),
+            },
+        ),
+        semantic_router=SemanticRouter(),
+        use_semantic_router=True,
+    )
+    before_messages = database.messages_for_chat("chat")
+
+    state = run_langgraph_memory_pipeline(
+        graph,
+        run_id="semantic-multi-scope-test",
+        chat_id="chat",
+        user_query=query,
+    )
+
+    assert state["trace"]["routing"]["primary_scope"] == "document"
+    assert state["trace"]["routing"]["required_scopes"] == [
+        "current_chat",
+        "document",
+    ]
+    assert state["trace"]["route_sources"] == [
+        "recent_messages",
+        "document_memory",
+        "current_chat_span",
+    ]
+    assert database.messages_for_chat("chat") == before_messages

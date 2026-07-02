@@ -148,7 +148,16 @@ class ChatService:
         """Save a user message, call the model, and save the assistant response."""
         return self.handle_user_turn(chat_id=chat_id, content=content).answer
 
-    def handle_user_turn(self, chat_id: str, content: str) -> AgentTurnResult:
+    def handle_user_turn(
+        self,
+        chat_id: str,
+        content: str,
+        orchestration_mode: str = "native",
+    ) -> AgentTurnResult:
         """Run one user turn and return the agent-shaped result."""
         self.ensure_chat_title_from_message(chat_id=chat_id, content=content)
-        return self.coordinator.run_turn(chat_id=chat_id, content=content)
+        return self.coordinator.run_turn(
+            chat_id=chat_id,
+            content=content,
+            orchestration_mode=orchestration_mode,
+        )

@@ -1,6 +1,16 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Literal
+
+
+MemoryScope = Literal[
+    "current_chat",
+    "previous_chat",
+    "durable",
+    "document",
+    "unknown",
+]
 
 
 @dataclass(frozen=True)
@@ -48,5 +58,9 @@ class SemanticRoutePlan:
     evidence_contract: EvidenceContract
     retrieval_queries: tuple[RetrievalQuery, ...]
     confidence: float
+    retrieval_need: str = "none"
+    memory_scope: str = "none"
+    primary_scope: MemoryScope | None = None
+    required_scopes: frozenset[MemoryScope] = frozenset()
+    task_context: str | None = None
     router_version: str = "semantic_v2"
-

@@ -13,11 +13,18 @@ from src.context.context_budget_allocator import ContextBudgetAllocator
 from src.context.context_builder import ContextBuilder as TraceContextBuilder
 from src.context.context_comparator import ContextComparator
 from src.context.prompt_messages import context_packet_to_model_messages
-from src.core.contracts import AgentTurnResult, WorkflowTrace
+from src.core.contracts import AgentTurnResult, OrchestrationResult, WorkflowTrace
 from src.database import Database
 from src.memory.memory_trace import (
     document_memory_candidate_trace_rows,
     structured_memory_candidate_trace_rows,
+)
+from src.orchestration.demo_orchestration import (
+    LANGGRAPH_DEMO,
+    NATIVE,
+    compare_orchestration,
+    normalize_orchestration_mode,
+    run_read_only_langgraph_orchestration,
 )
 from src.retrieval.reranker import MemoryReranker
 from src.retrieval.retriever_dispatcher import RetrieverDispatcher
@@ -60,8 +67,15 @@ class CoordinatorAgent:
         self.context_manager_agent = context_manager_agent
         self.context_comparator = context_comparator or ContextComparator()
 
-    def run_turn(self, chat_id: str, content: str) -> AgentTurnResult:
+    def run_turn(
+        self,
+        chat_id: str,
+        content: str,
+        orchestration_mode: str = NATIVE,
+        task_context: str | None = None,
+    ) -> AgentTurnResult:
         """Run one user turn while preserving the existing runtime behavior."""
+        requested_orchestration_mode = normalize_orchestration_mode(orchestration_mode)
         total_started = perf_counter()
         timings: dict[str, float] = {}
         trace_id = str(uuid4())
@@ -109,6 +123,71 @@ class CoordinatorAgent:
         elapsed_context_manager = elapsed_ms(stage_started)
         timings["context_budget_allocation"] = elapsed_context_manager
         timings["context_packet_building"] = elapsed_context_manager
+        native_orchestration = OrchestrationResult(
+            context_packet=trace_context_packet,
+            trace=WorkflowTrace(
+                trace_id=trace_id,
+                chat_id=chat_id,
+                route_plan=route_plan,
+                retrieved_candidates=retrieved_candidates,
+                ranked_candidates=ranked_candidates,
+                context_budget=context_budget,
+                context_packet=trace_context_packet,
+                metadata={
+                    "routing_decision": routing_decision.to_trace_dict(),
+                    "reranker": reranker_metadata,
+                    "context_manager": context_manager_metadata,
+                },
+            ),
+            mode=NATIVE,
+        )
+        authoritative_orchestration = native_orchestration
+        langgraph_orchestration: OrchestrationResult | None = None
+        orchestration_error: str | None = None
+        orchestration_comparison: dict[str, object] | None = None
+        orchestration_fallback_used = False
+        if requested_orchestration_mode != NATIVE:
+            stage_started = perf_counter()
+            try:
+                langgraph_orchestration = run_read_only_langgraph_orchestration(
+                    chat_id=chat_id,
+                    query=content,
+                    dispatcher=self.retriever_dispatcher,
+                    reranker=self.memory_reranker,
+                    context_manager=context_manager,
+                    system_prompt=self.system_prompt,
+                    run_id=f"{trace_id}:langgraph",
+                    task_context=task_context,
+                )
+                if langgraph_orchestration.error:
+                    raise RuntimeError(langgraph_orchestration.error)
+            except Exception as error:
+                orchestration_error = bounded_error(error)
+                orchestration_fallback_used = (
+                    requested_orchestration_mode == LANGGRAPH_DEMO
+                )
+            else:
+                orchestration_comparison = compare_orchestration(
+                    native_orchestration,
+                    langgraph_orchestration,
+                ).to_dict()
+                if requested_orchestration_mode == LANGGRAPH_DEMO:
+                    authoritative_orchestration = langgraph_orchestration
+            timings["langgraph_orchestration"] = elapsed_ms(stage_started)
+
+        trace_context_packet = authoritative_orchestration.context_packet
+        authoritative_trace = authoritative_orchestration.trace
+        if authoritative_trace.route_plan is not None:
+            route_plan = authoritative_trace.route_plan
+        retrieved_candidates = list(authoritative_trace.retrieved_candidates)
+        ranked_candidates = list(authoritative_trace.ranked_candidates)
+        context_budget = trace_context_packet.budget or context_budget
+        if authoritative_orchestration.mode == LANGGRAPH_DEMO:
+            graph_metadata = authoritative_trace.metadata
+            reranker_metadata = dict(graph_metadata.get("reranker", {}))
+            context_manager_metadata = dict(
+                graph_metadata.get("context_manager", {})
+            )
 
         stage_started = perf_counter()
         context = self.memory_agent.build_context(
@@ -145,18 +224,30 @@ class CoordinatorAgent:
             final_model_messages = model_messages
 
         errors: list[str] = []
-        try:
-            stage_started = perf_counter()
-            response = self.chat_agent.generate(final_model_messages)
-            timings["main_model_call"] = elapsed_ms(stage_started)
-        except OpenAIError as error:
-            timings["main_model_call"] = elapsed_ms(stage_started)
-            errors.append(str(error))
-            response = (
-                "I could not reach the configured OpenAI-compatible model endpoint. "
-                "Check OPENAI_BASE_URL, MODEL_NAME, and whether the local model server is running.\n\n"
-                f"Model error: {error}"
-            )
+        if orchestration_error:
+            errors.append(orchestration_error)
+        insufficient_evidence = bool(
+            authoritative_trace.metadata.get("insufficient_evidence")
+        )
+        if authoritative_orchestration.mode == LANGGRAPH_DEMO and insufficient_evidence:
+            reason = authoritative_trace.metadata.get(
+                "insufficient_evidence_reason"
+            ) or "required evidence was not available"
+            response = f"I do not have sufficient grounded evidence: {reason}."
+            timings["main_model_call"] = 0.0
+        else:
+            try:
+                stage_started = perf_counter()
+                response = self.chat_agent.generate(final_model_messages)
+                timings["main_model_call"] = elapsed_ms(stage_started)
+            except OpenAIError as error:
+                timings["main_model_call"] = elapsed_ms(stage_started)
+                errors.append(str(error))
+                response = (
+                    "I could not reach the configured OpenAI-compatible model endpoint. "
+                    "Check OPENAI_BASE_URL, MODEL_NAME, and whether the local model server is running.\n\n"
+                    f"Model error: {error}"
+                )
 
         stage_started = perf_counter()
         assistant_message_id = self.database.save_message(
@@ -180,6 +271,27 @@ class CoordinatorAgent:
         )
         retrieved_memory_rows = structured_memory_candidate_trace_rows(retrieved_candidates)
         retrieved_document_rows = document_memory_candidate_trace_rows(retrieved_candidates)
+        effective_orchestration_mode = (
+            authoritative_orchestration.mode
+            if requested_orchestration_mode == LANGGRAPH_DEMO
+            else requested_orchestration_mode
+        )
+        orchestration_metadata = {
+            "requested_mode": requested_orchestration_mode,
+            "effective_mode": effective_orchestration_mode,
+            "authoritative_context": (
+                "langgraph" if authoritative_orchestration.mode == LANGGRAPH_DEMO else "native"
+            ),
+            "fallback_used": orchestration_fallback_used,
+            "error": orchestration_error,
+            "comparison": orchestration_comparison,
+            "langgraph_trace": (
+                langgraph_orchestration.trace.metadata.get("langgraph")
+                if langgraph_orchestration is not None
+                else None
+            ),
+            "task_context": task_context,
+        }
 
         trace = WorkflowTrace(
             trace_id=trace_id,
@@ -216,6 +328,7 @@ class CoordinatorAgent:
                     "dropped_candidate_reasons"
                 ),
                 "timings_ms": timings,
+                "orchestration": orchestration_metadata,
                 "saved_memory_rows": saved_memory_rows,
                 "retrieved_memory_rows": retrieved_memory_rows,
                 "retrieved_document_rows": retrieved_document_rows,
@@ -236,6 +349,7 @@ class CoordinatorAgent:
                 "routing_decision": routing_decision.to_trace_dict(),
                 "reranker": reranker_metadata,
                 "context_manager": context_manager_metadata,
+                "orchestration": orchestration_metadata,
             },
         )
 
@@ -321,3 +435,10 @@ class CoordinatorAgent:
 def elapsed_ms(started: float) -> float:
     """Return elapsed milliseconds rounded for compact timing logs."""
     return round((perf_counter() - started) * 1000, 2)
+
+
+def bounded_error(error: Exception, limit: int = 240) -> str:
+    """Return a trace-safe error without a traceback or unbounded payload."""
+    detail = str(error).strip() or type(error).__name__
+    value = f"{type(error).__name__}: {detail}"
+    return value if len(value) <= limit else f"{value[: limit - 3]}..."

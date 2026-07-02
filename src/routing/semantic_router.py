@@ -6,6 +6,7 @@ from src.core.contracts import RoutePlan, SourcePlan
 from src.routing.semantic_contracts import (
     EvidenceContract,
     IntentScore,
+    MemoryScope,
     RetrievalQuery,
     SemanticRoutePlan,
 )
@@ -18,6 +19,11 @@ STRUCTURED_PREFERENCE_RECALL = "STRUCTURED_PREFERENCE_RECALL"
 DOCUMENT_QA = "DOCUMENT_QA"
 PROJECT_STATE_SUMMARY = "PROJECT_STATE_SUMMARY"
 CASUAL_CHAT = "CASUAL_CHAT"
+MEMORY_QA = "MEMORY_QA"
+
+RETRIEVAL_NONE = "none"
+RETRIEVAL_POSSIBLE = "possible"
+RETRIEVAL_REQUIRED = "required"
 
 CURRENT_CHAT = "CURRENT_CHAT"
 PREVIOUS_CHATS = "PREVIOUS_CHATS"
@@ -25,6 +31,14 @@ ANY_CHAT = "ANY_CHAT"
 DOCUMENTS = "DOCUMENTS"
 GLOBAL_STRUCTURED_MEMORY = "GLOBAL_STRUCTURED_MEMORY"
 NONE = "NONE"
+
+SCOPE_CURRENT_CHAT: MemoryScope = "current_chat"
+SCOPE_PREVIOUS_CHAT: MemoryScope = "previous_chat"
+SCOPE_DURABLE: MemoryScope = "durable"
+SCOPE_DOCUMENT: MemoryScope = "document"
+SCOPE_UNKNOWN: MemoryScope = "unknown"
+
+SEMANTIC_SOURCE_CANDIDATE_LIMIT = 8
 
 ALL_SOURCES = (
     "recent_messages",
@@ -113,18 +127,54 @@ PREVIOUS_RECALL_PATTERNS = (
     r"上次.*(?:说|讨论)",
     r"之前的聊天",
 )
+NON_RETRIEVAL_PATTERNS = (
+    r"^(?:hi|hello|hey|thanks|thank you|good morning|good evening)[!. ]*$",
+    r"^how are you[?.! ]*$",
+    r"\b(?:write|rewrite|draft|compose|brainstorm|invent|create)\b",
+)
+MEMORY_QA_CUES = (
+    r"\b(?:my|our|we|i)\b",
+    r"\bproject\b",
+    r"\b(?:choose|chose|decide|decided|use|used|prefer|preferred)\b",
+)
+QUESTION_PATTERNS = (
+    r"^(?:who|what|when|where|which|why|how|is|are|was|were|do|does|did|can)\b",
+)
 
 
 class SemanticRouter:
     """Deterministic, default-off semantic routing baseline."""
 
-    def route(self, query: str) -> SemanticRoutePlan:
+    def route(
+        self,
+        query: str,
+        task_context: str | None = None,
+    ) -> SemanticRoutePlan:
         """Return typed intent, evidence, source, and retrieval-query contracts."""
         normalized = normalize_query(query)
         language = detect_language(query)
         intent, confidence, reason = classify_intent(normalized)
+        retrieval_need = retrieval_need_for(
+            normalized,
+            intent=intent,
+            task_context=task_context,
+        )
+        if intent == CASUAL_CHAT and retrieval_need == RETRIEVAL_REQUIRED:
+            intent = MEMORY_QA
+            confidence = 0.82
+            reason = "factual memory QA requires bounded persistent retrieval"
         temporal_scope = detect_temporal_scope(normalized, intent)
-        sources = sources_for(intent)
+        required_scopes = required_scopes_for(
+            normalized,
+            intent=intent,
+            temporal_scope=temporal_scope,
+        )
+        primary_scope = primary_scope_for(intent, temporal_scope)
+        sources = sources_for(
+            intent,
+            temporal_scope,
+            required_scopes=required_scopes,
+        )
         contract = evidence_contract_for(intent)
         return SemanticRoutePlan(
             original_query=query,
@@ -147,6 +197,11 @@ class SemanticRouter:
                 enabled_sources=sources,
             ),
             confidence=confidence,
+            retrieval_need=retrieval_need,
+            memory_scope=memory_scope_for(intent, temporal_scope),
+            primary_scope=primary_scope,
+            required_scopes=required_scopes,
+            task_context=task_context,
         )
 
     def to_route_plan(self, semantic_plan: SemanticRoutePlan) -> RoutePlan:
@@ -158,7 +213,9 @@ class SemanticRouter:
                 enabled=source in enabled,
                 reason=source_reason(source, semantic_plan),
                 query=semantic_plan.original_query if source in enabled else None,
-                limit=4 if source in enabled else None,
+                limit=SEMANTIC_SOURCE_CANDIDATE_LIMIT
+                if source in enabled
+                else None,
                 filters={
                     "semantic_router_version": semantic_plan.router_version,
                     "retrieval_query_purposes": [
@@ -186,6 +243,11 @@ class SemanticRouter:
                 "router_version": semantic_plan.router_version,
                 "language": semantic_plan.language,
                 "temporal_scope": semantic_plan.temporal_scope,
+                "retrieval_need": semantic_plan.retrieval_need,
+                "memory_scope": semantic_plan.memory_scope,
+                "primary_scope": semantic_plan.primary_scope,
+                "required_scopes": sorted(semantic_plan.required_scopes),
+                "task_context": semantic_plan.task_context,
             },
         )
 
@@ -256,38 +318,118 @@ def detect_temporal_scope(normalized_query: str, intent: str) -> str:
         return CURRENT_CHAT
     if intent == PREVIOUS_CHAT_RECALL:
         return PREVIOUS_CHATS
+    if intent == MEMORY_QA:
+        return ANY_CHAT
     return NONE
 
 
-def sources_for(intent: str) -> tuple[str, ...]:
+def required_scopes_for(
+    normalized_query: str,
+    *,
+    intent: str,
+    temporal_scope: str,
+) -> frozenset[MemoryScope]:
+    """Collect independently required memory scopes for one primary intent."""
+    scopes: set[MemoryScope] = set()
+    if intent == DOCUMENT_QA or matches_any(normalized_query, DOCUMENT_PATTERNS):
+        scopes.add(SCOPE_DOCUMENT)
+    if intent == SAME_CHAT_RECALL or matches_any(
+        normalized_query, CURRENT_CHAT_PATTERNS
+    ):
+        scopes.add(SCOPE_CURRENT_CHAT)
+    if intent == PREVIOUS_CHAT_RECALL or matches_any(
+        normalized_query, PREVIOUS_CHAT_PATTERNS
+    ):
+        scopes.add(SCOPE_PREVIOUS_CHAT)
+    if intent == STRUCTURED_PREFERENCE_RECALL:
+        scopes.add(SCOPE_DURABLE)
+    if intent == PROJECT_STATE_SUMMARY:
+        scopes.update((SCOPE_DURABLE, SCOPE_PREVIOUS_CHAT))
+    if intent == MEMORY_QA:
+        scopes.add(SCOPE_UNKNOWN)
+    if intent == EXACT_QUOTE and not scopes:
+        if temporal_scope == CURRENT_CHAT:
+            scopes.add(SCOPE_CURRENT_CHAT)
+        elif temporal_scope == PREVIOUS_CHATS:
+            scopes.add(SCOPE_PREVIOUS_CHAT)
+        else:
+            scopes.update((SCOPE_CURRENT_CHAT, SCOPE_PREVIOUS_CHAT))
+    return frozenset(scopes)
+
+
+def primary_scope_for(intent: str, temporal_scope: str) -> MemoryScope | None:
+    """Return the primary scope while retaining independent required scopes."""
+    scope = memory_scope_for(intent, temporal_scope)
+    if scope == "none":
+        return None
+    return scope  # type: ignore[return-value]
+
+
+def sources_for(
+    intent: str,
+    temporal_scope: str = NONE,
+    *,
+    required_scopes: frozenset[MemoryScope] | None = None,
+) -> tuple[str, ...]:
     """Map semantic intent to typed memory sources."""
-    mappings = {
-        EXACT_QUOTE: (
-            "recent_messages",
-            "current_chat_span",
-            "previous_chat_gist",
-            "raw_message_span",
-        ),
-        SAME_CHAT_RECALL: ("recent_messages", "current_chat_span"),
-        PREVIOUS_CHAT_RECALL: (
-            "recent_messages",
-            "previous_chat_gist",
-            "raw_message_span",
-        ),
-        STRUCTURED_PREFERENCE_RECALL: (
-            "recent_messages",
-            "structured_memory",
-            "previous_chat_gist",
-        ),
-        DOCUMENT_QA: ("recent_messages", "document_memory"),
-        PROJECT_STATE_SUMMARY: (
-            "recent_messages",
-            "structured_memory",
-            "previous_chat_gist",
-        ),
-        CASUAL_CHAT: ("recent_messages",),
+    scopes = required_scopes
+    if scopes is None:
+        scopes = required_scopes_for(
+            "",
+            intent=intent,
+            temporal_scope=temporal_scope,
+        )
+    enabled = {"recent_messages"}
+    source_by_scope = {
+        SCOPE_DOCUMENT: {"document_memory"},
+        SCOPE_CURRENT_CHAT: {"current_chat_span"},
+        SCOPE_PREVIOUS_CHAT: {"previous_chat_gist"},
+        SCOPE_DURABLE: {"structured_memory"},
+        SCOPE_UNKNOWN: {"structured_memory", "previous_chat_gist"},
     }
-    return mappings[intent]
+    for scope in scopes:
+        enabled.update(source_by_scope[scope])
+    if intent == EXACT_QUOTE and SCOPE_PREVIOUS_CHAT in scopes:
+        enabled.add("raw_message_span")
+    return tuple(source for source in ALL_SOURCES if source in enabled)
+
+
+def retrieval_need_for(
+    normalized_query: str,
+    *,
+    intent: str,
+    task_context: str | None,
+) -> str:
+    """Separate retrieval necessity from source scope and intent wording."""
+    if intent != CASUAL_CHAT:
+        return RETRIEVAL_REQUIRED
+    if matches_any(normalized_query, NON_RETRIEVAL_PATTERNS):
+        return RETRIEVAL_NONE
+    if task_context == "memory_qa":
+        return RETRIEVAL_REQUIRED
+    if (
+        matches_any(normalized_query, QUESTION_PATTERNS)
+        and matches_any(normalized_query, MEMORY_QA_CUES)
+    ):
+        return RETRIEVAL_REQUIRED
+    if matches_any(normalized_query, QUESTION_PATTERNS):
+        return RETRIEVAL_POSSIBLE
+    return RETRIEVAL_NONE
+
+
+def memory_scope_for(intent: str, temporal_scope: str) -> str:
+    """Map temporal/source understanding to the small public scope contract."""
+    if temporal_scope == CURRENT_CHAT:
+        return "current_chat"
+    if temporal_scope == PREVIOUS_CHATS:
+        return "previous_chat"
+    if intent == STRUCTURED_PREFERENCE_RECALL:
+        return "durable"
+    if intent == DOCUMENT_QA:
+        return "document"
+    if intent == MEMORY_QA or temporal_scope == ANY_CHAT:
+        return "unknown"
+    return "none"
 
 
 def evidence_contract_for(intent: str) -> EvidenceContract:

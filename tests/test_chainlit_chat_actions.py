@@ -124,3 +124,24 @@ def test_action_callback_error_is_bounded_and_keeps_active_chat(monkeypatch) -> 
     assert session.get("chat_id") == "chat-1"
     assert FakeMessage.sent[-1].content.startswith("Could not fork chat:")
     assert len(FakeMessage.sent[-1].content) < 190
+
+
+def test_orchestration_mode_selection_is_per_session_and_keeps_chat(
+    monkeypatch,
+) -> None:
+    first = FakeUserSession({"chat_id": "chat-1"})
+    install_chainlit_fakes(monkeypatch, first)
+
+    asyncio.run(
+        app.on_settings_update(
+            {app.ORCHESTRATION_SETTING_ID: "LangGraph Demo"}
+        )
+    )
+
+    assert first.get("chat_id") == "chat-1"
+    assert first.get(app.ORCHESTRATION_SETTING_ID) == "langgraph_demo"
+
+    second = FakeUserSession({"chat_id": "chat-2"})
+    monkeypatch.setattr(app.cl, "user_session", second)
+    assert app.current_orchestration_mode() == "native"
+    assert second.get("chat_id") == "chat-2"
