@@ -4,6 +4,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from uuid import uuid4
 
+from openai import OpenAIError
+
 from src.agents.chat_agent import ChatAgent
 from src.agents.context_builder_agent import ContextBuilderAgent
 from src.agents.context_manager_agent import ContextManagerAgent
@@ -47,6 +49,14 @@ class ChatService:
         model: ModelWrapper,
         raw_message_limit: int,
         memory_update_batch_size: int,
+        recent_messages_max_count: int | None = None,
+        memory_update_trigger_tokens: int = 1000,
+        memory_update_max_input_tokens: int = 4000,
+        memory_update_max_messages: int | None = None,
+        memory_recent_protection_tokens: int = 1500,
+        memory_replay_trigger_tokens: int = 4000,
+        memory_replay_max_input_tokens: int = 8000,
+        memory_replay_max_messages: int = 128,
         document_indexer: object | None = None,
         routing_mode: str = "rule",
         reranker_mode: str = "deterministic",
@@ -87,6 +97,14 @@ class ChatService:
             model=model,
             raw_message_limit=raw_message_limit,
             memory_update_batch_size=memory_update_batch_size,
+            recent_messages_max_count=recent_messages_max_count,
+            memory_update_trigger_tokens=memory_update_trigger_tokens,
+            memory_update_max_input_tokens=memory_update_max_input_tokens,
+            memory_update_max_messages=memory_update_max_messages,
+            memory_recent_protection_tokens=memory_recent_protection_tokens,
+            memory_replay_trigger_tokens=memory_replay_trigger_tokens,
+            memory_replay_max_input_tokens=memory_replay_max_input_tokens,
+            memory_replay_max_messages=memory_replay_max_messages,
         )
         self.coordinator = CoordinatorAgent(
             database=database,
@@ -96,7 +114,11 @@ class ChatService:
             system_prompt=SYSTEM_PROMPT,
             retriever_dispatcher=RetrieverDispatcher(
                 database=database,
-                raw_message_limit=raw_message_limit,
+                raw_message_limit=(
+                    recent_messages_max_count
+                    if recent_messages_max_count is not None
+                    else raw_message_limit
+                ),
             ),
             routing_agent=RoutingAgent(mode=routing_mode, model=model),
             memory_reranker=MemoryReranker(
@@ -178,18 +200,36 @@ class ChatService:
 
     def handle_user_message(self, chat_id: str, content: str) -> str:
         """Save a user message, call the model, and save the assistant response."""
-        return self.handle_user_turn(chat_id=chat_id, content=content).answer
+        result = self.handle_user_turn(
+            chat_id=chat_id,
+            content=content,
+            defer_post_answer_memory_update=True,
+        )
+        self.finalize_post_answer_memory_update(chat_id)
+        return result.answer
 
     def handle_user_turn(
         self,
         chat_id: str,
         content: str,
         orchestration_mode: str = "native",
+        defer_post_answer_memory_update: bool = False,
     ) -> AgentTurnResult:
         """Run one user turn and return the agent-shaped result."""
         self.ensure_chat_title_from_message(chat_id=chat_id, content=content)
-        return self.coordinator.run_turn(
+        result = self.coordinator.run_turn(
             chat_id=chat_id,
             content=content,
             orchestration_mode=orchestration_mode,
+            perform_memory_update=not defer_post_answer_memory_update,
         )
+        if not defer_post_answer_memory_update:
+            return result
+        return result
+
+    def finalize_post_answer_memory_update(self, chat_id: str) -> bool:
+        """Run the synchronous post-answer memory update after visible answer emission."""
+        try:
+            return self.memory.update_memory_if_needed(chat_id)
+        except OpenAIError:
+            return False

@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+import shutil
+import tempfile
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -35,6 +37,7 @@ from evals.memory_agent_bench.adapter import (
     ProductionLikeHarness,
     run_example,
 )
+from evals.memory_agent_bench.metrics import normalize_text
 from src.agents.context_manager_agent import ContextManagerAgent
 from src.config import AppConfig
 from src.context.dynamic_budget import MemoryBudgetPolicy
@@ -43,7 +46,8 @@ from src.orchestration.demo_orchestration import LANGGRAPH_DEMO, NATIVE
 
 
 ANSWER_PARAMETERS = {"temperature": 0}
-ANSWER_CACHE_VERSION = "mab-answer-v1"
+EVALUATION_VERSION = "lifecycle_v2"
+ANSWER_CACHE_VERSION = f"mab-answer-{EVALUATION_VERSION}"
 
 
 class CaseExecutor(Protocol):
@@ -81,10 +85,14 @@ class MABAnswerExecutor:
         model: ChatModel,
         config: AppConfig,
         execution_mode: str,
+        history_question_counts: dict[tuple[str, str, int], int] | None = None,
     ) -> None:
         self.model = model
         self.config = config
         self.execution_mode = execution_mode
+        self.history_question_counts = history_question_counts or {}
+        self._prepared_root = tempfile.TemporaryDirectory(prefix="mab_answer_prepared_")
+        self._prepared_histories: dict[tuple[str, str, int], PreparedHistorySnapshot] = {}
 
     def execute(self, case: ResolvedCase) -> AnswerExecution:
         return self._execute(case, model=self.model, mock_answer=False)
@@ -124,24 +132,41 @@ class MABAnswerExecutor:
                 self.config.minimum_optional_candidate_utility
             ),
         )
+        prepared = self._prepared_snapshot(case, model=model, mock_answer=mock_answer)
+        case_dir = Path(tempfile.mkdtemp(prefix="mab_answer_case_", dir=self._prepared_root.name))
+        case_db_path = case_dir / "case.db"
+        shutil.copy2(prepared.snapshot_path, case_db_path)
         harness = ProductionLikeHarness(
             model,
-            mock_answer=mock_answer,
-            deterministic_memory_updates=True,
+            mock_answer=False,
             reranker_mode="deterministic",
             orchestration_mode=(
                 LANGGRAPH_DEMO if self.execution_mode == "graph" else NATIVE
             ),
             context_manager_agent=context_manager,
+            raw_message_limit=self.config.raw_message_limit,
+            memory_update_batch_size=self.config.memory_update_batch_size,
+            recent_messages_max_count=self.config.recent_messages_max_count,
+            memory_update_trigger_tokens=self.config.memory_update_trigger_tokens,
+            memory_update_max_input_tokens=self.config.memory_update_max_input_tokens,
+            memory_update_max_messages=self.config.memory_update_max_messages,
+            memory_recent_protection_tokens=self.config.memory_recent_protection_tokens,
+            memory_replay_trigger_tokens=self.config.memory_replay_trigger_tokens,
+            memory_replay_max_input_tokens=self.config.memory_replay_max_input_tokens,
+            memory_replay_max_messages=self.config.memory_replay_max_messages,
+            database_path=case_db_path,
         )
+        harness.replayed_chunks = [dict(chunk) for chunk in prepared.replayed_chunks]
         rows = run_example(
             case.example,
             mock_answer=mock_answer,
             model=model,
             harness=harness,
+            finalize_sessions=False,
             orchestration_mode=(
                 LANGGRAPH_DEMO if self.execution_mode == "graph" else NATIVE
             ),
+            skip_replay=True,
         )
         if len(rows) != 1:
             raise RuntimeError(f"expected one answer row, received {len(rows)}")
@@ -152,6 +177,15 @@ class MABAnswerExecutor:
         token_accounting = context_manager_metadata.get("token_accounting") or {}
         diagnostics = row["evidence_diagnostics"]
         timings = workflow.get("timings_ms") or {}
+        route_plan = row.get("route_plan") or {}
+        required_scopes = list(
+            ((route_plan.get("metadata") or {}).get("required_scopes") or [])
+        )
+        evidence_selection = context_manager_metadata.get("evidence_selection") or {}
+        ranked_gold_rank = gold_rank(
+            row.get("ranked_candidates", []),
+            diagnostics.get("normalized_gold_answers", []),
+        )
         return AnswerExecution(
             generated_answer=str(row["prediction"]),
             context_diagnostics={
@@ -172,6 +206,29 @@ class MABAnswerExecutor:
                 "final_prompt_tokens": int(
                     token_accounting.get("final_prompt_tokens", 0) or 0
                 ),
+                "enabled_sources": list(route_plan.get("active_sources", [])),
+                "required_scopes": required_scopes,
+                "gold_candidate_rank": ranked_gold_rank,
+                "gold_context_drop_reason": first_gold_drop_reason(
+                    diagnostics.get("retrieved_candidate_ids_with_gold_text", []),
+                    evidence_selection.get("dropped_candidates")
+                    or row.get("workflow_trace", {})
+                    .get("context_manager", {})
+                    .get("evidence_selection", {})
+                    .get("dropped_candidates", []),
+                ),
+                "working_memory_budget": int(
+                    context_manager_metadata.get("working_memory_budget", 0) or 0
+                ),
+                "hard_input_budget": int(
+                    context_manager_metadata.get("hard_input_budget", 0) or 0
+                ),
+                "prompt_source": workflow.get("prompt_source"),
+                "fallback_reason": workflow.get("fallback_reason"),
+                "route_intent": route_plan.get("intent"),
+                "route_context_profile": route_plan.get("context_profile"),
+                "mab_failure_stage": diagnostics.get("failure_stage"),
+                "dropped_candidates": list(diagnostics.get("dropped_candidates", [])),
             },
             selected_evidence_for_judge=str(row.get("context_packet_summary", "")),
             latency_ms={
@@ -179,10 +236,87 @@ class MABAnswerExecutor:
                 "generation": float(timings.get("main_model_call", 0.0) or 0.0),
             },
             raw_metadata={
+                "evaluation_version": EVALUATION_VERSION,
+                "memory_ingestion_semantics": "production",
+                "memory_scheduling_profile": "offline_replay",
+                "token_batching_enabled": True,
+                "direct_derived_memory_injection": False,
+                "history_reused_for_multiple_questions": prepared.shared_question_count > 1,
+                "prepared_state_reused": prepared.shared_question_count > 1,
+                "prepared_history_key": list(prepared.history_key),
+                "prepared_history_ingestion_count": 1,
+                "prepared_history_question_count": prepared.shared_question_count,
+                "prepared_history_reuse_count": max(0, prepared.shared_question_count - 1),
+                "structured_updater_call_count": prepared.structured_updater_call_count,
+                "timestamp_preservation_status": (
+                    "not_available_for_roleless_context_replay"
+                ),
                 "prompt_source": workflow.get("prompt_source"),
                 "tokenizer_mode": token_accounting.get("tokenizer_mode"),
             },
         )
+
+    def _prepared_snapshot(
+        self,
+        case: ResolvedCase,
+        *,
+        model: ChatModel,
+        mock_answer: bool,
+    ) -> "PreparedHistorySnapshot":
+        history_key = (
+            case.spec.split,
+            case.spec.source_dataset,
+            case.spec.row_index,
+        )
+        existing = self._prepared_histories.get(history_key)
+        if existing is not None:
+            return existing
+
+        prepare_dir = Path(self._prepared_root.name) / f"prepare-{stable_hash(history_key)[:12]}"
+        prepare_dir.mkdir(parents=True, exist_ok=True)
+        snapshot_path = prepare_dir / "prepared.db"
+        harness = ProductionLikeHarness(
+            model,
+            mock_answer=mock_answer,
+            reranker_mode="deterministic",
+            orchestration_mode=(
+                LANGGRAPH_DEMO if self.execution_mode == "graph" else NATIVE
+            ),
+            raw_message_limit=self.config.raw_message_limit,
+            memory_update_batch_size=self.config.memory_update_batch_size,
+            recent_messages_max_count=self.config.recent_messages_max_count,
+            memory_update_trigger_tokens=self.config.memory_update_trigger_tokens,
+            memory_update_max_input_tokens=self.config.memory_update_max_input_tokens,
+            memory_update_max_messages=self.config.memory_update_max_messages,
+            memory_recent_protection_tokens=self.config.memory_recent_protection_tokens,
+            memory_replay_trigger_tokens=self.config.memory_replay_trigger_tokens,
+            memory_replay_max_input_tokens=self.config.memory_replay_max_input_tokens,
+            memory_replay_max_messages=self.config.memory_replay_max_messages,
+            database_path=prepare_dir / "working.db",
+        )
+        harness.prepare_history(case.example)
+        harness.copy_database_to(snapshot_path)
+        snapshot = PreparedHistorySnapshot(
+            history_key=history_key,
+            snapshot_path=snapshot_path,
+            replayed_chunks=[dict(chunk) for chunk in harness.replayed_chunks],
+            history_ingestion_count=1,
+            structured_updater_call_count=harness.memory_update_calls,
+            shared_question_count=self.history_question_counts.get(history_key, 1),
+        )
+        harness.close()
+        self._prepared_histories[history_key] = snapshot
+        return snapshot
+
+
+@dataclass(frozen=True)
+class PreparedHistorySnapshot:
+    history_key: tuple[str, str, int]
+    snapshot_path: Path
+    replayed_chunks: list[dict[str, Any]]
+    history_ingestion_count: int
+    structured_updater_call_count: int
+    shared_question_count: int
 
 
 @dataclass(frozen=True)
@@ -214,10 +348,15 @@ def run_evaluation(
     application_hash = application_configuration_hash(config)
     dry_plan = {
         "evaluation_level": "answer",
+        "evaluation_version": EVALUATION_VERSION,
         "manifest_name": manifest.name,
         "manifest_hash": manifest.manifest_hash,
         "cases": len(resolved),
         "execution_mode": options.execution_mode,
+        "production_lifecycle_equivalent": True,
+        "structured_memory_enabled": True,
+        "production_gist_finalization": True,
+        "direct_derived_memory_injection": False,
         "answer_model": models.answer_model,
         "judge_model": models.judge_model,
         "judge_endpoint": models.judge_endpoint,
@@ -459,6 +598,7 @@ def base_record(
 ) -> dict[str, Any]:
     return {
         "evaluation_level": "answer",
+        "evaluation_version": EVALUATION_VERSION,
         "run_id": run_id,
         "manifest_name": manifest.name,
         "manifest_hash": manifest.manifest_hash,
@@ -512,6 +652,7 @@ def judge_cache_key(
             "references": case.example.answers[0],
             "rubric": case.spec.question_type,
             "generated_answer": generated_answer,
+            "evaluation_version": EVALUATION_VERSION,
             "judge_endpoint": judge_endpoint,
             "judge_model": judge_model,
             "judge_parameters": judge_parameters(),
@@ -529,6 +670,7 @@ def result_identity(
         {
             "manifest_hash": manifest.manifest_hash,
             "case_id": case_id,
+            "evaluation_version": EVALUATION_VERSION,
             "execution_mode": execution_mode,
             "answer_model": answer_model,
         }
@@ -593,6 +735,14 @@ def application_configuration_hash(config: AppConfig) -> str:
             "memory_limits": {
                 "raw_message_limit": config.raw_message_limit,
                 "memory_update_batch_size": config.memory_update_batch_size,
+                "recent_messages_max_count": config.recent_messages_max_count,
+                "memory_update_trigger_tokens": config.memory_update_trigger_tokens,
+                "memory_update_max_input_tokens": config.memory_update_max_input_tokens,
+                "memory_update_max_messages": config.memory_update_max_messages,
+                "memory_recent_protection_tokens": config.memory_recent_protection_tokens,
+                "memory_replay_trigger_tokens": config.memory_replay_trigger_tokens,
+                "memory_replay_max_input_tokens": config.memory_replay_max_input_tokens,
+                "memory_replay_max_messages": config.memory_replay_max_messages,
             },
             "routing_mode": "fixture-assisted-rule",
             "reranker_mode": "deterministic",
@@ -613,3 +763,33 @@ def artifact_paths(output_dir: Path) -> dict[str, str]:
             "run_metadata.json",
         )
     }
+
+
+def gold_rank(
+    candidates: list[dict[str, Any]],
+    normalized_gold_answers: list[str],
+) -> int | None:
+    for index, candidate in enumerate(candidates, start=1):
+        content = normalize_text(str(candidate.get("content", "")))
+        if any(gold and gold in content for gold in normalized_gold_answers):
+            return index
+    return None
+
+
+def first_gold_drop_reason(
+    retrieved_gold_ids: list[str],
+    dropped_candidates: list[dict[str, Any]],
+) -> str | None:
+    if not retrieved_gold_ids:
+        return None
+    gold_records = {
+        candidate_id.split(":", 1)[1]
+        for candidate_id in retrieved_gold_ids
+        if ":" in candidate_id
+    }
+    for candidate in dropped_candidates:
+        record_id = str(candidate.get("record_id") or "")
+        if record_id and record_id in gold_records:
+            reason = str(candidate.get("reason") or "").strip()
+            return reason or "unknown"
+    return None

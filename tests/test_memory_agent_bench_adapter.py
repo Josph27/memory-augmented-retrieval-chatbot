@@ -402,7 +402,7 @@ def test_mock_answer_mode_is_labeled_honestly() -> None:
     assert row["generated_answer_grounding_tested"] is False
     assert report["summary"]["generated_answer_grounding_tested"] is False
     assert "not tested" in row["notes"][0]
-    assert row["memory_update_calls"] == 2
+    assert row["memory_update_calls"] == 0
     assert row["structured_update_backend_calls"] >= 1
 
 

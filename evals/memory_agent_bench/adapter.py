@@ -3,6 +3,7 @@ from __future__ import annotations
 import tempfile
 from dataclasses import asdict
 from pathlib import Path
+import shutil
 from typing import Any, Protocol, cast
 
 from src.actions.chat_end import ChatEndAction
@@ -13,7 +14,7 @@ from src.agents.coordinator_agent import CoordinatorAgent
 from src.agents.short_term_memory_agent import ShortTermMemoryAgent
 from src.core.contracts import AgentTurnResult, RoutePlan, SourcePlan
 from src.database import Database
-from src.memory.short_term import ShortTermMemory
+from src.memory.short_term import ShortTermMemory, StructuredMemoryUpdater
 from src.memory.structured_state import MemoryUpdateResult
 from src.orchestration.demo_orchestration import NATIVE
 from src.retrieval.current_chat_span_retriever import CurrentChatSpanRetriever
@@ -214,9 +215,24 @@ class ProductionLikeHarness:
         orchestration_mode: str = NATIVE,
         deterministic_memory_updates: bool = False,
         context_manager_agent: ContextManagerAgent | None = None,
+        structured_memory_updater: StructuredMemoryUpdater | None = None,
+        raw_message_limit: int = 8,
+        memory_update_batch_size: int = 2,
+        recent_messages_max_count: int | None = None,
+        memory_update_trigger_tokens: int = 1000,
+        memory_update_max_input_tokens: int = 4000,
+        memory_update_max_messages: int | None = None,
+        memory_recent_protection_tokens: int = 1500,
+        memory_replay_trigger_tokens: int = 4000,
+        memory_replay_max_input_tokens: int = 8000,
+        memory_replay_max_messages: int = 128,
+        database_path: Path | None = None,
     ) -> None:
-        self._temp_dir = tempfile.TemporaryDirectory(prefix="memory_agent_bench_")
-        self.database = Database(Path(self._temp_dir.name) / "benchmark.db")
+        self._temp_dir = None
+        if database_path is None:
+            self._temp_dir = tempfile.TemporaryDirectory(prefix="memory_agent_bench_")
+            database_path = Path(self._temp_dir.name) / "benchmark.db"
+        self.database = Database(database_path)
         self.model = model
         self.mock_answer = mock_answer
         self.raw_replay_enabled = raw_replay_enabled
@@ -234,18 +250,44 @@ class ProductionLikeHarness:
         self.cross_encoder_weight = cross_encoder_weight
         self.orchestration_mode = orchestration_mode
         self.context_manager_agent = context_manager_agent
-        self._raw_replay_retriever: EvalRawReplayChunkRetriever | None = None
-        self._noop_updater = (
-            RecordingNoopUpdater()
-            if mock_answer or deterministic_memory_updates
-            else None
+        self.raw_message_limit = raw_message_limit
+        self.memory_update_batch_size = memory_update_batch_size
+        self.recent_messages_max_count = (
+            recent_messages_max_count
+            if recent_messages_max_count is not None
+            else raw_message_limit
         )
+        self.memory_update_trigger_tokens = memory_update_trigger_tokens
+        self.memory_update_max_input_tokens = memory_update_max_input_tokens
+        self.memory_update_max_messages = (
+            memory_update_max_messages
+            if memory_update_max_messages is not None
+            else memory_update_batch_size
+        )
+        self.memory_recent_protection_tokens = memory_recent_protection_tokens
+        self.memory_replay_trigger_tokens = memory_replay_trigger_tokens
+        self.memory_replay_max_input_tokens = memory_replay_max_input_tokens
+        self.memory_replay_max_messages = memory_replay_max_messages
+        self._raw_replay_retriever: EvalRawReplayChunkRetriever | None = None
+        self._structured_memory_updater = structured_memory_updater
+        if self._structured_memory_updater is None and (
+            mock_answer or deterministic_memory_updates
+        ):
+            self._structured_memory_updater = RecordingNoopUpdater()
         self.memory = ShortTermMemory(
             database=self.database,
             model=cast(Any, model),
-            raw_message_limit=8,
-            memory_update_batch_size=2,
-            structured_memory_updater=self._noop_updater,
+            raw_message_limit=self.raw_message_limit,
+            memory_update_batch_size=self.memory_update_batch_size,
+            structured_memory_updater=self._structured_memory_updater,
+            recent_messages_max_count=self.recent_messages_max_count,
+            memory_update_trigger_tokens=self.memory_update_trigger_tokens,
+            memory_update_max_input_tokens=self.memory_update_max_input_tokens,
+            memory_update_max_messages=self.memory_update_max_messages,
+            memory_recent_protection_tokens=self.memory_recent_protection_tokens,
+            memory_replay_trigger_tokens=self.memory_replay_trigger_tokens,
+            memory_replay_max_input_tokens=self.memory_replay_max_input_tokens,
+            memory_replay_max_messages=self.memory_replay_max_messages,
         )
         self.current_chat_id: str | None = None
         self.memory_update_calls = 0
@@ -256,7 +298,8 @@ class ProductionLikeHarness:
     @property
     def structured_update_backend_calls(self) -> int | None:
         """Expose deterministic backend calls in mock mode."""
-        return self._noop_updater.calls if self._noop_updater is not None else None
+        updater = self._structured_memory_updater
+        return updater.calls if isinstance(updater, RecordingNoopUpdater) else None
 
     def replay_session(
         self,
@@ -279,8 +322,21 @@ class ProductionLikeHarness:
                     "content": chunk,
                 }
             )
-            self.memory_update_calls += 1
-            self.memory.update_memory_if_needed(chat_id)
+        replay_result = self.memory.process_replay_batches(chat_id)
+        self.memory_update_calls += replay_result.batch_count
+
+    def prepare_history(self, example: MABenchExample) -> None:
+        for session in example.sessions:
+            self.replay_session(
+                example.example_id,
+                session.session_id,
+                session.chunks,
+            )
+            self.end_current_session()
+
+    def copy_database_to(self, target_path: Path) -> None:
+        target_path.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(self.database.path, target_path)
 
     def end_current_session(self) -> None:
         if self.current_chat_id is None:
@@ -302,7 +358,7 @@ class ProductionLikeHarness:
         retrievers = {
             "recent_messages": QueryEchoExcludingRecentRetriever(
                 self.database,
-                default_limit=8,
+                default_limit=self.recent_messages_max_count,
             ),
             "structured_memory": StructuredMemoryRetriever(self.database),
             "previous_chat_gist": PreviousChatGistRetriever(self.database),
@@ -362,7 +418,8 @@ class ProductionLikeHarness:
         return self._raw_replay_retriever.gold_rank_diagnostics(gold_message_ids)
 
     def close(self) -> None:
-        self._temp_dir.cleanup()
+        if self._temp_dir is not None:
+            self._temp_dir.cleanup()
 
 
 def run_example(
@@ -371,6 +428,7 @@ def run_example(
     mock_answer: bool,
     model: ChatModel | None = None,
     finalize_sessions: bool = True,
+    skip_replay: bool = False,
     harness: BenchmarkHarness | None = None,
     raw_replay_enabled: bool = False,
     raw_replay_top_k: int = 8,
@@ -402,14 +460,15 @@ def run_example(
         orchestration_mode=orchestration_mode,
     )
     try:
-        for session in example.sessions:
-            selected_harness.replay_session(
-                example.example_id,
-                session.session_id,
-                session.chunks,
-            )
-            if finalize_sessions:
-                selected_harness.end_current_session()
+        if not skip_replay:
+            for session in example.sessions:
+                selected_harness.replay_session(
+                    example.example_id,
+                    session.session_id,
+                    session.chunks,
+                )
+                if finalize_sessions:
+                    selected_harness.end_current_session()
 
         rows = []
         for question_index, (question, gold_answers) in enumerate(
@@ -515,6 +574,10 @@ def run_example(
                     "retrieved_candidates": [
                         candidate_summary(candidate)
                         for candidate in turn.trace.retrieved_candidates
+                    ],
+                    "ranked_candidates": [
+                        candidate_summary(candidate)
+                        for candidate in turn.trace.ranked_candidates
                     ],
                     "post_expansion_candidates": [
                         candidate_summary(candidate)

@@ -218,6 +218,7 @@ async def on_message(message: cl.Message) -> None:
         chat_id=chat_id,
         content=content,
         orchestration_mode=orchestration_mode,
+        defer_post_answer_memory_update=True,
     )
     if demo_memory_trace_enabled():
         retrieved_trace = format_retrieved_memories_markdown(retrieved_memory_rows(result))
@@ -225,11 +226,14 @@ async def on_message(message: cl.Message) -> None:
             await cl.Message(content=retrieved_trace).send()
 
     await cl.Message(content=result.answer).send()
+    chat_service.finalize_post_answer_memory_update(chat_id)
     if orchestration_mode != NATIVE:
         await cl.Message(content=format_orchestration_trace_markdown(result)).send()
 
     if demo_memory_trace_enabled():
-        saved_trace = format_saved_memories_markdown(saved_memory_rows(result))
+        saved_trace = format_saved_memories_markdown(
+            list(getattr(chat_service.memory, "last_saved_memory_rows", []))
+        )
         if saved_trace:
             await cl.Message(content=saved_trace).send()
     await send_chat_actions()
@@ -515,6 +519,14 @@ def chat_service_for_model(model_name: str) -> ChatService:
             model=ModelWrapper(config, model_name=model_name),
             raw_message_limit=config.raw_message_limit,
             memory_update_batch_size=config.memory_update_batch_size,
+            recent_messages_max_count=config.recent_messages_max_count,
+            memory_update_trigger_tokens=config.memory_update_trigger_tokens,
+            memory_update_max_input_tokens=config.memory_update_max_input_tokens,
+            memory_update_max_messages=config.memory_update_max_messages,
+            memory_recent_protection_tokens=config.memory_recent_protection_tokens,
+            memory_replay_trigger_tokens=config.memory_replay_trigger_tokens,
+            memory_replay_max_input_tokens=config.memory_replay_max_input_tokens,
+            memory_replay_max_messages=config.memory_replay_max_messages,
             endpoint_context_window=config.endpoint_context_window,
             endpoint_context_limit_source=config.endpoint_context_limit_source,
             application_context_cap=config.application_context_cap,

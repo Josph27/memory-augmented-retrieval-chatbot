@@ -2,13 +2,17 @@ from __future__ import annotations
 
 from src.core.contracts import MemoryCandidate, SourcePlan
 from src.database import Database
-from src.memory.constants import RAW_MESSAGE_LIMIT
+from src.memory.constants import RECENT_MESSAGES_MAX_COUNT
 
 
 class RecentMessagesRetriever:
     """Retrieve recent raw messages from the current chat."""
 
-    def __init__(self, database: Database, default_limit: int = RAW_MESSAGE_LIMIT) -> None:
+    def __init__(
+        self,
+        database: Database,
+        default_limit: int = RECENT_MESSAGES_MAX_COUNT,
+    ) -> None:
         self.database = database
         self.default_limit = default_limit
 

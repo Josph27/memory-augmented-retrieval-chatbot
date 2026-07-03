@@ -109,6 +109,10 @@ def main() -> None:
     executor = None
     judge_client = None
     if not args.dry_run:
+        history_question_counts: dict[tuple[str, str, int], int] = {}
+        for case in manifest.cases:
+            key = (case.split, case.source_dataset, case.row_index)
+            history_question_counts[key] = history_question_counts.get(key, 0) + 1
         answer_wrapper = EvaluationAnswerModel(
             ModelWrapper(config, model_name=answer_model)
         )
@@ -116,6 +120,7 @@ def main() -> None:
             model=answer_wrapper,
             config=config,
             execution_mode=execution_mode,
+            history_question_counts=history_question_counts,
         )
         judge_client = OpenAIJudgeClient(
             config,

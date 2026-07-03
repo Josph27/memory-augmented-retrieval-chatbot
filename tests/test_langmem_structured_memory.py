@@ -148,6 +148,7 @@ def test_short_term_memory_uses_langmem_backend_and_stores_memory(
         model=FakeModel(),
         raw_message_limit=1,
         memory_update_batch_size=3,
+        memory_update_max_messages=4,
         structured_memory_updater=LangMemStructuredMemoryState(manager=manager),
     )
 

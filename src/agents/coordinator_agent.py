@@ -73,6 +73,7 @@ class CoordinatorAgent:
         content: str,
         orchestration_mode: str = NATIVE,
         task_context: str | None = None,
+        perform_memory_update: bool = True,
     ) -> AgentTurnResult:
         """Run one user turn while preserving the existing runtime behavior."""
         requested_orchestration_mode = normalize_orchestration_mode(orchestration_mode)
@@ -256,15 +257,16 @@ class CoordinatorAgent:
             content=response,
         )
         timings["save_assistant_message"] = elapsed_ms(stage_started)
-        try:
-            stage_started = perf_counter()
-            self.memory_agent.update_memory_if_needed(chat_id)
-            timings["update_memory_if_needed"] = elapsed_ms(stage_started)
-        except OpenAIError as error:
-            timings["update_memory_if_needed"] = elapsed_ms(stage_started)
-            errors.append(str(error))
-            # Memory updates should not break the visible chat response. The next
-            # successful turn can retry because messages remain unprocessed.
+        if perform_memory_update:
+            try:
+                stage_started = perf_counter()
+                self.memory_agent.update_memory_if_needed(chat_id)
+                timings["update_memory_if_needed"] = elapsed_ms(stage_started)
+            except OpenAIError as error:
+                timings["update_memory_if_needed"] = elapsed_ms(stage_started)
+                errors.append(str(error))
+                # Memory updates should not break the visible chat response. The next
+                # successful turn can retry because messages remain unprocessed.
         timings["total_turn"] = elapsed_ms(total_started)
         saved_memory_rows = list(
             getattr(self.memory_agent.memory, "last_saved_memory_rows", [])

@@ -5,7 +5,7 @@ from typing import Protocol
 
 from src.core.contracts import MemoryCandidate, RoutePlan, SourcePlan
 from src.database import Database
-from src.memory.constants import RAW_MESSAGE_LIMIT
+from src.memory.constants import RECENT_MESSAGES_MAX_COUNT
 from src.retrieval.current_chat_gist_retriever import CurrentChatGistRetriever
 from src.retrieval.current_chat_span_retriever import CurrentChatSpanRetriever
 from src.retrieval.gist_raw_span_expander import GistRawSpanExpander
@@ -30,7 +30,7 @@ class RetrieverDispatcher:
     def __init__(
         self,
         database: Database,
-        raw_message_limit: int = RAW_MESSAGE_LIMIT,
+        raw_message_limit: int = RECENT_MESSAGES_MAX_COUNT,
         retrievers: dict[str, SourceRetriever] | None = None,
         gist_expander: GistRawSpanExpander | None = None,
     ) -> None:

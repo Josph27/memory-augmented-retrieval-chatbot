@@ -103,11 +103,21 @@ def seed_message_spans(
     spans: list[MessageSpan] = []
     for session_index, session in enumerate(case.sessions):
         chat_id = f"{case.case_id}-history-{session_index + 1}"
-        database.create_chat(chat_id, title=f"Benchmark history {session.session_id}")
+        replay_timestamp = str(session.metadata.get("date") or "").strip() or None
+        database.create_chat(
+            chat_id,
+            title=f"Benchmark history {session.session_id}",
+            created_at=replay_timestamp,
+        )
         stored_messages = database.messages_for_chat(chat_id)
         if not stored_messages:
             for message in session.messages:
-                database.save_message(chat_id, message.role, message.content)
+                database.save_message(
+                    chat_id,
+                    message.role,
+                    message.content,
+                    created_at=message.created_at or replay_timestamp,
+                )
             stored_messages = database.messages_for_chat(chat_id)
         spans.extend(
             split_session_messages(

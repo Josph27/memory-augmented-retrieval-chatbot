@@ -139,7 +139,15 @@ def normalize_sessions(
             metadata.update(dict(raw_session.get("metadata") or {}))
         if not isinstance(messages_raw, list):
             raise ValueError(f"Session {session_id!r} must contain a message list.")
-        messages = tuple(normalize_message(message) for message in messages_raw)
+        messages = tuple(
+            message
+            for message in (
+                normalize_message(raw_message) for raw_message in messages_raw
+            )
+            if message is not None
+        )
+        if not messages:
+            raise ValueError(f"Session {session_id!r} has no non-empty messages.")
         sessions.append(
             HistorySession(
                 session_id=session_id,
@@ -150,7 +158,7 @@ def normalize_sessions(
     return sessions
 
 
-def normalize_message(raw_message: Any) -> HistoryMessage:
+def normalize_message(raw_message: Any) -> HistoryMessage | None:
     """Normalize role/content aliases used by conversation datasets."""
     if isinstance(raw_message, str):
         return HistoryMessage(role="user", content=raw_message)
@@ -176,7 +184,19 @@ def normalize_message(raw_message: Any) -> HistoryMessage:
         or raw_message.get("message")
         or ""
     )
-    return HistoryMessage(role=role, content=content)
+    if not content.strip():
+        return None
+    created_at = ""
+    for key in ("created_at", "timestamp", "time", "datetime", "date"):
+        value = raw_message.get(key)
+        if value is not None and str(value).strip():
+            created_at = str(value)
+            break
+    return HistoryMessage(
+        role=role,
+        content=content,
+        created_at=created_at or None,
+    )
 
 
 def normalize_answer(value: Any) -> str:

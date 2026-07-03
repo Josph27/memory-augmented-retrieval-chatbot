@@ -262,9 +262,10 @@ class Database:
         chat_id: str,
         title: str | None = None,
         model_name: str | None = None,
+        created_at: str | None = None,
     ) -> None:
         """Insert a chat row if Chainlit starts a new session."""
-        timestamp = utc_now()
+        timestamp = created_at or utc_now()
         with self.connect() as connection:
             connection.execute(
                 """
@@ -585,9 +586,15 @@ class Database:
             )
             connection.execute("DELETE FROM chats WHERE id = ?", (chat_id,))
 
-    def save_message(self, chat_id: str, role: str, content: str) -> int:
+    def save_message(
+        self,
+        chat_id: str,
+        role: str,
+        content: str,
+        created_at: str | None = None,
+    ) -> int:
         """Persist one chat message."""
-        timestamp = utc_now()
+        timestamp = created_at or utc_now()
         with self.connect() as connection:
             cursor = connection.execute(
                 """

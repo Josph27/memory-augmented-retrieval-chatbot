@@ -10,7 +10,18 @@ from src.context.model_profile import (
     application_context_cap_from_env,
     endpoint_context_limit_from_env,
 )
-from src.memory.constants import MEMORY_UPDATE_BATCH_SIZE, RAW_MESSAGE_LIMIT
+from src.memory.constants import (
+    MEMORY_REPLAY_MAX_INPUT_TOKENS,
+    MEMORY_REPLAY_MAX_MESSAGES,
+    MEMORY_REPLAY_TRIGGER_TOKENS,
+    MEMORY_RECENT_PROTECTION_TOKENS,
+    MEMORY_UPDATE_BATCH_SIZE,
+    MEMORY_UPDATE_MAX_INPUT_TOKENS,
+    MEMORY_UPDATE_MAX_MESSAGES,
+    MEMORY_UPDATE_TRIGGER_TOKENS,
+    RAW_MESSAGE_LIMIT,
+    RECENT_MESSAGES_MAX_COUNT,
+)
 
 
 @dataclass(frozen=True)
@@ -33,6 +44,14 @@ class AppConfig:
     database_path: Path
     raw_message_limit: int
     memory_update_batch_size: int
+    recent_messages_max_count: int
+    memory_update_trigger_tokens: int
+    memory_update_max_input_tokens: int
+    memory_update_max_messages: int
+    memory_recent_protection_tokens: int
+    memory_replay_trigger_tokens: int
+    memory_replay_max_input_tokens: int
+    memory_replay_max_messages: int
     document_retrieval_mode: str
     embedding_model_name: str
     document_top_k: int
@@ -97,6 +116,60 @@ class AppConfig:
                 os.getenv(
                     "MEMORY_UPDATE_BATCH_SIZE",
                     os.getenv("SUMMARY_BATCH_SIZE", str(MEMORY_UPDATE_BATCH_SIZE)),
+                )
+            ),
+            recent_messages_max_count=int(
+                os.getenv(
+                    "RECENT_MESSAGES_MAX_COUNT",
+                    str(RECENT_MESSAGES_MAX_COUNT),
+                )
+            ),
+            memory_update_trigger_tokens=int(
+                os.getenv(
+                    "MEMORY_UPDATE_TRIGGER_TOKENS",
+                    str(MEMORY_UPDATE_TRIGGER_TOKENS),
+                )
+            ),
+            memory_update_max_input_tokens=int(
+                os.getenv(
+                    "MEMORY_UPDATE_MAX_INPUT_TOKENS",
+                    str(MEMORY_UPDATE_MAX_INPUT_TOKENS),
+                )
+            ),
+            memory_update_max_messages=int(
+                os.getenv(
+                    "MEMORY_UPDATE_MAX_MESSAGES",
+                    os.getenv(
+                        "MEMORY_UPDATE_BATCH_SIZE",
+                        os.getenv(
+                            "SUMMARY_BATCH_SIZE",
+                            str(MEMORY_UPDATE_MAX_MESSAGES),
+                        ),
+                    ),
+                )
+            ),
+            memory_recent_protection_tokens=int(
+                os.getenv(
+                    "MEMORY_RECENT_PROTECTION_TOKENS",
+                    str(MEMORY_RECENT_PROTECTION_TOKENS),
+                )
+            ),
+            memory_replay_trigger_tokens=int(
+                os.getenv(
+                    "MEMORY_REPLAY_TRIGGER_TOKENS",
+                    str(MEMORY_REPLAY_TRIGGER_TOKENS),
+                )
+            ),
+            memory_replay_max_input_tokens=int(
+                os.getenv(
+                    "MEMORY_REPLAY_MAX_INPUT_TOKENS",
+                    str(MEMORY_REPLAY_MAX_INPUT_TOKENS),
+                )
+            ),
+            memory_replay_max_messages=int(
+                os.getenv(
+                    "MEMORY_REPLAY_MAX_MESSAGES",
+                    str(MEMORY_REPLAY_MAX_MESSAGES),
                 )
             ),
             document_retrieval_mode=os.getenv("DOCUMENT_RETRIEVAL_MODE", "langchain_chroma"),

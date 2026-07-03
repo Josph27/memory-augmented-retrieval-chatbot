@@ -14,9 +14,12 @@ from evals.mab_answer_eval.judge import (
     evaluate_with_judge,
     parse_judge_result,
 )
+from evals.mab_answer_eval.metrics import score_official
 from evals.mab_answer_eval.manifest import load_manifest, resolve_cases
 from evals.mab_answer_eval.runner import (
+    EVALUATION_VERSION,
     MABAnswerExecutor,
+    PreparedHistorySnapshot,
     RunOptions,
     judge_cache_key,
     run_evaluation,
@@ -25,7 +28,10 @@ from evals.mab_answer_eval.schemas import (
     AnswerExecution,
     EvaluationModels,
 )
+from evals.memory_agent_bench.adapter import MockAnswerModel, ProductionLikeHarness
+from evals.memory_agent_bench.schemas import MABenchExample, MABenchSession
 from src.config import AppConfig
+from src.memory.structured_state import MemoryUpdateResult
 
 
 VALID_JUDGE = json.dumps(
@@ -98,6 +104,29 @@ class CountingAnswerModel:
         del temperature
         self.calls.append(messages)
         return "cobalt"
+
+
+class AcceptedMemoryUpdater:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def update(self, existing_memory, messages):  # type: ignore[no-untyped-def]
+        self.calls += 1
+        user_ids = [message.id for message in messages if message.role == "user"]
+        memory_state = {
+            "memories": [
+                {
+                    "id": "user_fact:name",
+                    "category": "user_facts",
+                    "key": "name",
+                    "value": "Alex",
+                    "source_message_ids": user_ids,
+                    "confidence": 0.9,
+                    "status": "active",
+                }
+            ]
+        }
+        return MemoryUpdateResult(memory_state=memory_state, accepted=True)
 
 
 class FakeOpenAIClient:
@@ -224,6 +253,18 @@ def test_dry_run_makes_no_calls_or_artifact_writes(tmp_path: Path) -> None:
     assert not output.exists()
 
 
+def test_normalized_token_f1_metric_scores_partial_overlap() -> None:
+    metric = score_official(
+        "normalized_token_f1",
+        "alpha beta gamma",
+        ("alpha beta delta",),
+    )
+
+    assert metric.name == "normalized_token_f1"
+    assert 0.0 < metric.score < 1.0
+    assert metric.passed is True
+
+
 def test_answer_and_judge_endpoint_configuration_are_independent(
     monkeypatch,
 ) -> None:
@@ -272,12 +313,24 @@ def test_judge_client_error_does_not_expose_credentials(monkeypatch) -> None:
 
 def test_answer_execution_uses_existing_answer_agent_and_graph_path(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     manifest = load_manifest(
         write_manifest(tmp_path / "manifest.yaml", manifest_value(1))
     )
     case = resolve_cases(manifest, catalog_loader=catalog)[0]
     answer_model = CountingAnswerModel()
+
+    class TestHarness(ProductionLikeHarness):
+        def __init__(self, model, mock_answer, **kwargs):  # type: ignore[no-untyped-def]
+            super().__init__(
+                model,
+                mock_answer,
+                structured_memory_updater=AcceptedMemoryUpdater(),
+                **kwargs,
+            )
+
+    monkeypatch.setattr("evals.mab_answer_eval.runner.ProductionLikeHarness", TestHarness)
     executor = MABAnswerExecutor(
         model=answer_model,
         config=config(),
@@ -290,6 +343,230 @@ def test_answer_execution_uses_existing_answer_agent_and_graph_path(
     assert answer_model.calls
     assert result.raw_metadata["prompt_source"] == "context_packet"
     assert result.context_diagnostics["selected_memory_tokens"] <= 4096
+
+
+def test_formal_mab_execution_uses_production_updater_not_noop(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    manifest = load_manifest(
+        write_manifest(tmp_path / "manifest.yaml", manifest_value(1))
+    )
+    case = resolve_cases(manifest, catalog_loader=catalog)[0]
+    constructed: dict[str, Any] = {}
+
+    class CapturingHarness:
+        def __init__(self, model, mock_answer, **kwargs):  # type: ignore[no-untyped-def]
+            constructed["mock_answer"] = mock_answer
+            constructed.update(kwargs)
+            self.replayed_chunks = []
+
+        def close(self) -> None:
+            return None
+
+    def fake_run_example(*args, **kwargs):  # type: ignore[no-untyped-def]
+        return [
+            {
+                "prediction": "answer-0",
+                "workflow_trace": {
+                    "context_manager": {
+                        "evidence_selection": {"token_usage": 10},
+                        "token_accounting": {"final_prompt_tokens": 20},
+                    },
+                    "timings_ms": {"main_model_call": 1.0},
+                    "prompt_source": "context_packet",
+                },
+                "evidence_diagnostics": {
+                    "retrieved_candidate_ids_with_gold_text": ["raw:1"],
+                    "context_candidate_ids_with_gold_text": ["raw:1"],
+                    "normalized_gold_answers": ["answer-0"],
+                    "failure_stage": None,
+                    "dropped_candidates": [],
+                },
+                "sources": ["raw_message_span"],
+                "selected_evidence_ids": ["raw:1"],
+                "route_plan": {"metadata": {"required_scopes": []}},
+                "ranked_candidates": [],
+            }
+        ]
+
+    monkeypatch.setattr("evals.mab_answer_eval.runner.ProductionLikeHarness", CapturingHarness)
+    monkeypatch.setattr("evals.mab_answer_eval.runner.run_example", fake_run_example)
+
+    executor = MABAnswerExecutor(
+        model=CountingAnswerModel(),
+        config=config(),
+        execution_mode="graph",
+    )
+    snapshot = tmp_path / "prepared.db"
+    snapshot.write_text("prepared", encoding="utf-8")
+    monkeypatch.setattr(
+        executor,
+        "_prepared_snapshot",
+        lambda *args, **kwargs: PreparedHistorySnapshot(
+            history_key=("split", "source-0", 0),
+            snapshot_path=snapshot,
+            replayed_chunks=[],
+            history_ingestion_count=1,
+            structured_updater_call_count=0,
+            shared_question_count=1,
+        ),
+    )
+    result = executor.execute(case)
+
+    assert constructed["mock_answer"] is False
+    assert constructed.get("deterministic_memory_updates") is not True
+    assert result.raw_metadata["evaluation_version"] == EVALUATION_VERSION
+
+
+def test_same_history_is_prepared_once_for_multiple_questions(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    manifest = load_manifest(
+        write_manifest(
+            tmp_path / "manifest.yaml",
+            {
+                **manifest_value(1),
+                "cases": [
+                    {
+                        "dataset": "dataset-0",
+                        "split": "split",
+                        "source_dataset": "source-0",
+                        "row_index": 0,
+                        "question_index": 0,
+                        "case_id": "case-0a",
+                        "question_type": "short_answer",
+                        "official_metric": "normalized_substring",
+                    },
+                    {
+                        "dataset": "dataset-0",
+                        "split": "split",
+                        "source_dataset": "source-0",
+                        "row_index": 0,
+                        "question_index": 1,
+                        "case_id": "case-0b",
+                        "question_type": "short_answer",
+                        "official_metric": "normalized_substring",
+                    },
+                ],
+            },
+        )
+    )
+
+    def multi_question_catalog(_: str, __: str):  # type: ignore[no-untyped-def]
+        yield {
+            "context": "The answer is answer-0.",
+            "questions": ["What is answer 0?", "Repeat answer 0?"],
+            "answers": [["answer-0"], ["answer-0"]],
+            "metadata": {"source": "source-0"},
+        }
+
+    resolved = resolve_cases(manifest, catalog_loader=multi_question_catalog)
+    prepare_calls: list[str] = []
+    case_db_paths: list[Path] = []
+
+    class CountingHarness:
+        def __init__(self, model, mock_answer, **kwargs):  # type: ignore[no-untyped-def]
+            del model, mock_answer
+            self.database_path = Path(kwargs["database_path"])
+            self.database_path.parent.mkdir(parents=True, exist_ok=True)
+            self.database_path.write_text("prepared", encoding="utf-8")
+            self.replayed_chunks = []
+            self.memory_update_calls = 0
+            case_db_paths.append(self.database_path)
+
+        def prepare_history(self, example):  # type: ignore[no-untyped-def]
+            prepare_calls.append(example.example_id)
+
+        def copy_database_to(self, target: Path) -> None:
+            target.write_text(self.database_path.read_text(encoding="utf-8"), encoding="utf-8")
+
+        def close(self) -> None:
+            return None
+
+    def fake_run_example(*args, **kwargs):  # type: ignore[no-untyped-def]
+        case = args[0]
+        return [
+            {
+                "prediction": case.answers[0][0],
+                "workflow_trace": {
+                    "context_manager": {
+                        "evidence_selection": {"token_usage": 10},
+                        "token_accounting": {"final_prompt_tokens": 20},
+                    },
+                    "timings_ms": {"main_model_call": 1.0},
+                    "prompt_source": "context_packet",
+                },
+                "evidence_diagnostics": {
+                    "retrieved_candidate_ids_with_gold_text": ["raw:1"],
+                    "context_candidate_ids_with_gold_text": ["raw:1"],
+                    "normalized_gold_answers": [case.answers[0][0]],
+                    "failure_stage": None,
+                    "dropped_candidates": [],
+                },
+                "sources": ["raw_message_span"],
+                "selected_evidence_ids": ["raw:1"],
+                "route_plan": {"metadata": {"required_scopes": []}},
+                "ranked_candidates": [],
+            }
+        ]
+
+    monkeypatch.setattr("evals.mab_answer_eval.runner.ProductionLikeHarness", CountingHarness)
+    monkeypatch.setattr("evals.mab_answer_eval.runner.run_example", fake_run_example)
+    executor = MABAnswerExecutor(
+        model=CountingAnswerModel(),
+        config=config(),
+        execution_mode="graph",
+        history_question_counts={("split", "source-0", 0): 2},
+    )
+
+    executor.execute(resolved[0])
+    executor.execute(resolved[1])
+
+    assert prepare_calls == [resolved[0].example.example_id]
+    assert len({path for path in case_db_paths if path.name == "case.db"}) == 2
+
+
+def test_mab_history_finalization_persists_memory_gist_and_inactive_chat() -> None:
+    updater = AcceptedMemoryUpdater()
+    example = MABenchExample(
+        example_id="tiny-example",
+        competency="Accurate_Retrieval",
+        sessions=(MABenchSession(session_id="session-1", chunks=("My name is Alex.",)),),
+        questions=("What is my name?",),
+        answers=(("Alex",),),
+    )
+    harness = ProductionLikeHarness(
+        MockAnswerModel(),
+        mock_answer=True,
+        structured_memory_updater=updater,
+    )
+    try:
+        session = example.sessions[0]
+        harness.replay_session(example.example_id, session.session_id, session.chunks)
+        harness.end_current_session()
+        history_chat_id = f"{example.example_id}-{session.session_id}"
+        memory_json = harness.database.chat_memory_state(history_chat_id)
+        messages = harness.database.messages_for_chat(history_chat_id)
+        gists = harness.database.chat_gists_by_source_type("previous_chat_gist")
+        inactive_chat_ids = {row["id"] for row in harness.database.list_inactive_chats()}
+        active_chat_ids = {row["id"] for row in harness.database.list_active_chats()}
+
+        question_turn = harness.ask(example.questions[0], example.answers[0])
+
+        assert updater.calls >= 1
+        assert history_chat_id in inactive_chat_ids
+        assert memory_json is not None and "Alex" in memory_json
+        assert gists and gists[0].chat_id == history_chat_id
+        assert all(message.summarized for message in messages)
+        assert all(message.gist_processed for message in messages)
+        assert "benchmark-question-1" in active_chat_ids | {
+            row["id"] for row in harness.database.list_active_chats()
+        }
+        assert question_turn.trace.chat_id == "benchmark-question-1"
+    finally:
+        harness.close()
 
 
 def test_result_is_persisted_and_failure_keeps_prior_case(tmp_path: Path) -> None:

@@ -195,9 +195,9 @@ def test_process_all_for_chat_end_uses_bounded_batches(tmp_path: Path) -> None:
     result = memory.process_all_for_chat_end("chat")
 
     assert updater.batch_message_ids == [
-        message_ids[:3],
-        message_ids[3:6],
-        message_ids[6:],
+        message_ids[:2],
+        message_ids[2:4],
+        message_ids[4:],
     ]
     assert result.processed_message_count == 7
     assert result.batch_count == 3
@@ -229,7 +229,7 @@ def test_rejected_chat_end_batch_remains_pending_and_chat_stays_active(
     summarized = [
         message.summarized for message in database.messages_for_chat("chat")
     ]
-    assert summarized == [True, True, True, False, False]
+    assert summarized == [True, True, False, False, False]
     assert [chat["id"] for chat in database.list_active_chats()] == ["chat"]
 
 
