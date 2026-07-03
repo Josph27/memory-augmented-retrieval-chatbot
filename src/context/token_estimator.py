@@ -135,6 +135,7 @@ class GemmaTokenEstimator:
         self._tokenizer_load_attempted = False
         self._processor_failure: str | None = None
         self._tokenizer_failure: str | None = None
+        self._last_call_fallback_events: list[str] = []
 
     @property
     def tokenizer_mode(self) -> str:
@@ -156,6 +157,7 @@ class GemmaTokenEstimator:
         return "; ".join(reasons)[:600] or None
 
     def count_text(self, text: str) -> int:
+        self._last_call_fallback_events = []
         if not text:
             return 0
         processor = self._resolve_processor()
@@ -164,16 +166,14 @@ class GemmaTokenEstimator:
                 tokenizer = getattr(processor, "tokenizer", processor)
                 return count_tokenizer_text(tokenizer, text)
             except Exception as error:
-                self._processor_failure = bounded_failure("processor_count", error)
-                self._processor = None
+                self._record_call_fallback("processor_text", error)
 
         tokenizer = self._resolve_tokenizer()
         if tokenizer is not None:
             try:
                 return count_tokenizer_text(tokenizer, text)
             except Exception as error:
-                self._tokenizer_failure = bounded_failure("tokenizer_count", error)
-                self._tokenizer = None
+                self._record_call_fallback("tokenizer_text", error)
         return self._fallback.count_text(text)
 
     def count_messages(
@@ -182,6 +182,9 @@ class GemmaTokenEstimator:
         *,
         add_generation_prompt: bool,
     ) -> int:
+        self._last_call_fallback_events = []
+        if not messages:
+            return 0
         processor = self._resolve_processor()
         if processor is not None:
             try:
@@ -191,8 +194,7 @@ class GemmaTokenEstimator:
                     add_generation_prompt=add_generation_prompt,
                 )
             except Exception as error:
-                self._processor_failure = bounded_failure("processor_template", error)
-                self._processor = None
+                self._record_call_fallback("processor_template", error)
 
         tokenizer = self._resolve_tokenizer()
         if tokenizer is not None:
@@ -203,8 +205,20 @@ class GemmaTokenEstimator:
                     add_generation_prompt=add_generation_prompt,
                 )
             except Exception as error:
-                self._tokenizer_failure = bounded_failure("tokenizer_template", error)
-                self._tokenizer = None
+                self._record_call_fallback("tokenizer_template", error)
+                try:
+                    return count_tokenizer_text(
+                        tokenizer,
+                        serialize_messages(
+                            messages,
+                            add_generation_prompt=add_generation_prompt,
+                        ),
+                    )
+                except Exception as serialization_error:
+                    self._record_call_fallback(
+                        "tokenizer_serialization",
+                        serialization_error,
+                    )
         return self._fallback.count_messages(
             messages,
             add_generation_prompt=add_generation_prompt,
@@ -236,6 +250,7 @@ class GemmaTokenEstimator:
             "tokenizer_id": self.tokenizer_id,
             "tokenizer_mode": self.tokenizer_mode,
             "fallback_reason": self.fallback_reason,
+            "last_call_fallback_events": list(self._last_call_fallback_events),
         }
 
     def _resolve_processor(self) -> Any | None:
@@ -269,6 +284,9 @@ class GemmaTokenEstimator:
         except Exception as error:
             self._tokenizer_failure = bounded_failure("tokenizer_load", error)
             return None
+
+    def _record_call_fallback(self, stage: str, error: Exception) -> None:
+        self._last_call_fallback_events.append(bounded_failure(stage, error))
 
 
 def cached_auto_processor(tokenizer_id: str) -> Any:
@@ -345,6 +363,21 @@ def count_chat_template(
         add_generation_prompt=add_generation_prompt,
     )
     return token_length(encoded)
+
+
+def serialize_messages(
+    messages: Sequence[dict[str, str]],
+    *,
+    add_generation_prompt: bool,
+) -> str:
+    """Serialize messages only for a per-call tokenizer fallback."""
+    parts = [
+        f"{message.get('role', '')}: {message.get('content', '')}"
+        for message in messages
+    ]
+    if add_generation_prompt:
+        parts.append("assistant:")
+    return "\n".join(parts)
 
 
 def bounded_failure(stage: str, error: Exception) -> str:

@@ -7,6 +7,7 @@ from typing import Any, Protocol, cast
 
 from src.actions.chat_end import ChatEndAction
 from src.agents.chat_agent import ChatAgent
+from src.agents.context_manager_agent import ContextManagerAgent
 from src.agents.context_builder_agent import ContextBuilderAgent
 from src.agents.coordinator_agent import CoordinatorAgent
 from src.agents.short_term_memory_agent import ShortTermMemoryAgent
@@ -211,6 +212,8 @@ class ProductionLikeHarness:
         cross_encoder_top_k: int = 10,
         cross_encoder_weight: float = 0.65,
         orchestration_mode: str = NATIVE,
+        deterministic_memory_updates: bool = False,
+        context_manager_agent: ContextManagerAgent | None = None,
     ) -> None:
         self._temp_dir = tempfile.TemporaryDirectory(prefix="memory_agent_bench_")
         self.database = Database(Path(self._temp_dir.name) / "benchmark.db")
@@ -230,8 +233,13 @@ class ProductionLikeHarness:
         self.cross_encoder_top_k = max(1, cross_encoder_top_k)
         self.cross_encoder_weight = cross_encoder_weight
         self.orchestration_mode = orchestration_mode
+        self.context_manager_agent = context_manager_agent
         self._raw_replay_retriever: EvalRawReplayChunkRetriever | None = None
-        self._noop_updater = RecordingNoopUpdater() if mock_answer else None
+        self._noop_updater = (
+            RecordingNoopUpdater()
+            if mock_answer or deterministic_memory_updates
+            else None
+        )
         self.memory = ShortTermMemory(
             database=self.database,
             model=cast(Any, model),
@@ -334,7 +342,7 @@ class ProductionLikeHarness:
             context_manager_agent=(
                 EvalRawReplayContextManager()
                 if self.raw_replay_enabled
-                else None
+                else self.context_manager_agent
             ),
         )
         return coordinator.run_turn(
@@ -478,6 +486,9 @@ def run_example(
                         "gold_in_context": metrics.evidence_contains_answer,
                     },
                     "sources": sorted(candidate_sources),
+                    "selected_evidence_ids": [
+                        candidate_identity(candidate) for candidate in candidates
+                    ],
                     "source_coverage": {
                         source: source in candidate_sources
                         for source in (
@@ -545,6 +556,14 @@ def candidate_has_provenance(candidate: Any) -> bool:
         or candidate.metadata.get("source_message_ids")
         or candidate.metadata.get("start_message_id")
     )
+
+
+def candidate_identity(candidate: Any) -> str:
+    """Return a compact stable identity without serializing evidence text."""
+    record_id = candidate.record_id
+    if record_id is None:
+        record_id = candidate.metadata.get("candidate_id") or "unidentified"
+    return f"{candidate.source}:{record_id}"
 
 
 def candidate_summary(candidate: Any) -> dict[str, Any]:

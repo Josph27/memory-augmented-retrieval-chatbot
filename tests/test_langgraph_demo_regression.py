@@ -131,9 +131,19 @@ def test_compact_cross_chat_document_and_casual_demo_regression(
     )
     casual = run_demo_query(database, dispatcher, "How are you?")
 
-    assert "previous_chat_gist" in orientation.trace.metadata["langgraph"][
-        "context_sources"
-    ]
+    orientation_raw = next(
+        candidate
+        for candidate in orientation.context_packet.candidates
+        if candidate.source == "raw_message_span"
+    )
+    assert "gist orients, span proves" in orientation_raw.content
+    orientation_parent_id = orientation_raw.metadata["parent_gist_id"]
+    assert orientation_parent_id is not None
+    assert any(
+        item["record_id"] == orientation_parent_id
+        and item["reason"] == "folded_into_raw_child"
+        for item in orientation.context_packet.metadata["dropped_candidates"]
+    )
     raw = next(
         candidate
         for candidate in exact.context_packet.candidates

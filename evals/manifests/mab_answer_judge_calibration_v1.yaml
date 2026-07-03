@@ -1,0 +1,129 @@
+{
+  "name": "mab_answer_judge_calibration_v1",
+  "version": 1,
+  "seed": 20260703,
+  "execution_mode": "graph",
+  "dataset_id": "ai-hyz/MemoryAgentBench",
+  "cases": [
+    {
+      "dataset": "ruler_qa2",
+      "split": "Accurate_Retrieval",
+      "source_dataset": "ruler_qa2_421K",
+      "row_index": 1,
+      "question_index": 1,
+      "case_id": "Accurate_Retrieval:ruler_qa2_421K:row-1:q1",
+      "question_type": "short_answer_retrieval",
+      "official_metric": "normalized_substring"
+    },
+    {
+      "dataset": "ruler_qa2",
+      "split": "Accurate_Retrieval",
+      "source_dataset": "ruler_qa2_421K",
+      "row_index": 1,
+      "question_index": 2,
+      "case_id": "Accurate_Retrieval:ruler_qa2_421K:row-1:q2",
+      "question_type": "short_answer_retrieval",
+      "official_metric": "normalized_substring"
+    },
+    {
+      "dataset": "ruler_qa2",
+      "split": "Accurate_Retrieval",
+      "source_dataset": "ruler_qa2_421K",
+      "row_index": 1,
+      "question_index": 3,
+      "case_id": "Accurate_Retrieval:ruler_qa2_421K:row-1:q3",
+      "question_type": "short_answer_retrieval",
+      "official_metric": "normalized_substring"
+    },
+    {
+      "dataset": "fact_consolidation_sh",
+      "split": "Conflict_Resolution",
+      "source_dataset": "factconsolidation_sh_6k",
+      "row_index": 4,
+      "question_index": 0,
+      "case_id": "Conflict_Resolution:factconsolidation_sh_6k:row-4:q0",
+      "question_type": "knowledge_update",
+      "official_metric": "normalized_substring"
+    },
+    {
+      "dataset": "fact_consolidation_sh",
+      "split": "Conflict_Resolution",
+      "source_dataset": "factconsolidation_sh_6k",
+      "row_index": 4,
+      "question_index": 1,
+      "case_id": "Conflict_Resolution:factconsolidation_sh_6k:row-4:q1",
+      "question_type": "knowledge_update",
+      "official_metric": "normalized_substring"
+    },
+    {
+      "dataset": "fact_consolidation_mh",
+      "split": "Conflict_Resolution",
+      "source_dataset": "factconsolidation_mh_6k",
+      "row_index": 0,
+      "question_index": 1,
+      "case_id": "Conflict_Resolution:factconsolidation_mh_6k:row-0:q1",
+      "question_type": "knowledge_update",
+      "official_metric": "normalized_substring"
+    },
+    {
+      "dataset": "fact_consolidation_mh",
+      "split": "Conflict_Resolution",
+      "source_dataset": "factconsolidation_mh_6k",
+      "row_index": 0,
+      "question_index": 2,
+      "case_id": "Conflict_Resolution:factconsolidation_mh_6k:row-0:q2",
+      "question_type": "knowledge_update",
+      "official_metric": "normalized_substring"
+    },
+    {
+      "dataset": "detective_qa",
+      "split": "Long_Range_Understanding",
+      "source_dataset": "detective_qa",
+      "row_index": 100,
+      "question_index": 1,
+      "case_id": "Long_Range_Understanding:detective_qa:row-100:q1",
+      "question_type": "natural_language_reasoning",
+      "official_metric": "normalized_exact_match"
+    },
+    {
+      "dataset": "detective_qa",
+      "split": "Long_Range_Understanding",
+      "source_dataset": "detective_qa",
+      "row_index": 100,
+      "question_index": 2,
+      "case_id": "Long_Range_Understanding:detective_qa:row-100:q2",
+      "question_type": "natural_language_reasoning",
+      "official_metric": "normalized_exact_match"
+    },
+    {
+      "dataset": "detective_qa",
+      "split": "Long_Range_Understanding",
+      "source_dataset": "detective_qa",
+      "row_index": 100,
+      "question_index": 3,
+      "case_id": "Long_Range_Understanding:detective_qa:row-100:q3",
+      "question_type": "natural_language_reasoning",
+      "official_metric": "normalized_exact_match"
+    },
+    {
+      "dataset": "event_qa",
+      "split": "Accurate_Retrieval",
+      "source_dataset": "eventqa_full",
+      "row_index": 2,
+      "question_index": 0,
+      "case_id": "Accurate_Retrieval:eventqa_full:row-2:q0",
+      "question_type": "event_retrieval",
+      "official_metric": "normalized_substring"
+    },
+    {
+      "dataset": "event_qa",
+      "split": "Accurate_Retrieval",
+      "source_dataset": "eventqa_full",
+      "row_index": 2,
+      "question_index": 1,
+      "case_id": "Accurate_Retrieval:eventqa_full:row-2:q1",
+      "question_type": "event_retrieval",
+      "official_metric": "normalized_substring"
+    }
+  ]
+}

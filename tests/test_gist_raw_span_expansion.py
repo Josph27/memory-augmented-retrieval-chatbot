@@ -74,26 +74,26 @@ def test_finalized_previous_gist_expands_to_exact_raw_context(
         route_plan=route_plan,
     )
 
-    gist = next(
-        candidate
-        for candidate in result.context_packet.candidates
-        if candidate.source == "previous_chat_gist"
-    )
     raw = next(
         candidate
         for candidate in result.context_packet.candidates
         if candidate.source == "raw_message_span"
     )
-    assert "Earlier user request:" in gist.content
     assert (
         "user: The release phrase is preserve every rollback path."
         in raw.content
     )
     assert raw.source_message_ids == [first_id, second_id]
-    assert raw.metadata["parent_gist_id"] == gist.record_id
+    parent_gist_id = raw.metadata["parent_gist_id"]
+    assert parent_gist_id is not None
     assert raw.metadata["parent_source"] == "previous_chat_gist"
     assert raw.metadata["start_message_id"] == first_id
     assert raw.metadata["end_message_id"] == second_id
+    assert any(
+        item["record_id"] == parent_gist_id
+        and item["reason"] == "folded_into_raw_child"
+        for item in result.context_packet.metadata["dropped_candidates"]
+    )
     assert result.context_budget.source_token_budgets["previous_chat_gist"] > 0
     assert result.context_budget.source_token_budgets["raw_message_span"] > 0
     assert any(

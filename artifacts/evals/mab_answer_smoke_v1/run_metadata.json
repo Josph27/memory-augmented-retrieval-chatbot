@@ -1,0 +1,39 @@
+{
+  "answer_model": "google/gemma-4-31B-it",
+  "answer_parameters": {
+    "temperature": 0
+  },
+  "application_configuration_hash": "919bc86f6b4d1fb3c3f9028eee09ecccad99afde1996c504d6c1301c2bc7448e",
+  "cases": 3,
+  "dry_run": false,
+  "estimated_generation_calls": 3,
+  "estimated_judge_calls": 3,
+  "evaluation_level": "answer",
+  "execution_mode": "graph",
+  "generation_calls_this_invocation": 0,
+  "judge_calls_this_invocation": 0,
+  "judge_endpoint": "https://api.deepseek.com",
+  "judge_model": "deepseek-v4-pro",
+  "judge_parameters": {
+    "evaluation": "correctness_only",
+    "max_tokens": 300,
+    "prompt_version": "mab-correctness-judge-v2-deepseek",
+    "response_format": {
+      "type": "json_object"
+    },
+    "temperature": 0
+  },
+  "manifest_hash": "6098ef07283f410e040b9f6709614928fa78a1cfbc4c8f5322470b2e09d2cecd",
+  "manifest_name": "mab_answer_smoke_v1",
+  "output_paths": {
+    "disagreements.jsonl": "artifacts/evals/mab_answer_smoke_v1/disagreements.jsonl",
+    "failures.jsonl": "artifacts/evals/mab_answer_smoke_v1/failures.jsonl",
+    "judge_comparison.json": "artifacts/evals/mab_answer_smoke_v1/judge_comparison.json",
+    "results.jsonl": "artifacts/evals/mab_answer_smoke_v1/results.jsonl",
+    "run_metadata.json": "artifacts/evals/mab_answer_smoke_v1/run_metadata.json",
+    "summary.json": "artifacts/evals/mab_answer_smoke_v1/summary.json"
+  },
+  "run_id": "1a90839b-2b77-444f-9a15-5cc4e8927300",
+  "secondary_judge_model": null,
+  "skipped_completed": 3
+}

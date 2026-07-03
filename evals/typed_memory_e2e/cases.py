@@ -195,7 +195,7 @@ def provenance_case(index: int) -> TypedMemoryCase:
             BenchmarkSession("current"),
         ),
         query=f"Quote exactly my previous chat statement about {topic}.",
-        expected_sources=("previous_chat_gist", "raw_message_span"),
+        expected_sources=("raw_message_span",),
         required_text_in_context=(target,),
         requires_raw_span=True,
     )

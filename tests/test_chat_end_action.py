@@ -478,16 +478,23 @@ def test_finalized_previous_chat_gist_reaches_context_packet(
         route_plan=route_plan,
     ).context_packet
 
-    gists = [
+    raw_spans = [
         candidate
         for candidate in context.candidates
-        if candidate.source == "previous_chat_gist"
+        if candidate.source == "raw_message_span"
     ]
-    assert len(gists) == 1
-    assert "cobalt" in gists[0].content
-    assert gists[0].source_message_ids == [first_id, second_id]
+    assert len(raw_spans) == 1
+    assert "cobalt" in raw_spans[0].content
+    assert raw_spans[0].source_message_ids == [first_id, second_id]
+    parent_gist_id = raw_spans[0].metadata["parent_gist_id"]
+    assert parent_gist_id is not None
     assert any(
-        "Previous Chat Gist:" in message["content"]
+        item["record_id"] == parent_gist_id
+        and item["reason"] == "folded_into_raw_child"
+        for item in context.metadata["dropped_candidates"]
+    )
+    assert any(
+        "Raw Message Span:" in message["content"]
         and "cobalt" in message["content"]
         for message in context.model_messages
     )

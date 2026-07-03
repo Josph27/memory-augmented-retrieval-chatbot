@@ -1,0 +1,44 @@
+{
+  "abstention_accuracy": null,
+  "completed": 12,
+  "counts_by_dataset": {
+    "detective_qa": 3,
+    "event_qa": 2,
+    "fact_consolidation_mh": 2,
+    "fact_consolidation_sh": 2,
+    "ruler_qa2": 3
+  },
+  "counts_by_question_type": {
+    "event_retrieval": 2,
+    "knowledge_update": 4,
+    "natural_language_reasoning": 3,
+    "short_answer_retrieval": 3
+  },
+  "faithfulness_rate": null,
+  "final_prompt_tokens": {
+    "mean": 3109.083,
+    "p95": 4366.0
+  },
+  "generation_failures": 0,
+  "generation_latency_ms": {
+    "mean": 4897.812,
+    "p95": 6204.69
+  },
+  "judge_correctness_rate": 0.25,
+  "judge_failures": 0,
+  "judge_latency_ms": {
+    "mean": 3528.871,
+    "p95": 8209.778
+  },
+  "latency_ms": {
+    "mean": 9350.146,
+    "p95": 16303.525
+  },
+  "official_judge_agreement_rate": 0.8333333333333334,
+  "official_pass_rate": 0.25,
+  "selected_memory_tokens": {
+    "mean": 2863.167,
+    "p95": 4094.0
+  },
+  "total_cases": 12
+}

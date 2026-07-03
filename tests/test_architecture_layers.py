@@ -343,7 +343,10 @@ def test_coordinator_falls_back_when_context_packet_is_invalid(tmp_path: Path) -
         raw_message_limit=8,
         memory_update_batch_size=6,
     )
-    service.coordinator.trace_context_builder = MissingLatestContextBuilder()
+    assert service.coordinator.context_manager_agent is not None
+    service.coordinator.context_manager_agent.context_builder = (
+        MissingLatestContextBuilder()
+    )
     chat_id = service.start_chat()
 
     result = service.handle_user_turn(chat_id, "Remember this.")

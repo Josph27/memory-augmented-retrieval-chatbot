@@ -309,8 +309,14 @@ def test_oversized_span_is_dropped_without_exceeding_context_budget(
     )
     assert any(
         item["source"] == "current_chat_span"
-        and item["reason"] == "source_budget_exceeded"
+        and item["reason"] == "global_budget_exceeded"
         for item in result.context_packet.metadata["dropped_candidates"]
+    )
+    assert result.context_packet.metadata["selected_memory_tokens"] <= (
+        result.context_packet.metadata["working_memory_budget"]
+    )
+    assert result.context_packet.metadata["final_prompt_tokens"] <= (
+        result.context_packet.metadata["hard_input_budget"]
     )
     assert sum(result.context_budget.source_token_budgets.values()) <= int(
         result.context_budget.metadata["allocatable_tokens"]
