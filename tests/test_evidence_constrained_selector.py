@@ -5,6 +5,10 @@ import pytest
 from src.agents.context_manager_agent import ContextManagerAgent
 from src.context.context_budget_allocator import ContextBudgetAllocator
 from src.context.context_builder import ContextBuilder
+from src.context.dynamic_budget import (
+    DynamicWorkingMemoryBudgetPlanner,
+    MemoryBudgetPolicy,
+)
 from src.context.evidence_selector import EvidenceConstrainedContextSelector
 from src.context.model_profile import ResolvedContextWindow
 from src.context.token_estimator import ApproximateTokenEstimator
@@ -358,7 +362,15 @@ def test_context_manager_respects_working_and_hard_budgets() -> None:
             limit_source="endpoint_metadata",
         ),
         output_reserve=10,
-        target_memory_budget=20,
+        budget_planner=DynamicWorkingMemoryBudgetPlanner(
+            MemoryBudgetPolicy(
+                base_memory_budget=20,
+                chat_memory_cap=20,
+                document_memory_cap=20,
+                multi_scope_memory_cap=20,
+                long_document_memory_cap=20,
+            )
+        ),
     )
     candidates = [
         candidate("document_memory", 10, "one", score=0.9),
@@ -390,15 +402,27 @@ class SpySelector(EvidenceConstrainedContextSelector):
         return super().select(**kwargs)
 
 
-def test_native_and_langgraph_use_same_selector_and_graph_is_read_only(
+class SpyBudgetPlanner(DynamicWorkingMemoryBudgetPlanner):
+    def __init__(self) -> None:
+        super().__init__()
+        self.calls = 0
+
+    def plan(self, **kwargs):
+        self.calls += 1
+        return super().plan(**kwargs)
+
+
+def test_native_and_langgraph_use_same_budget_policy_selector_and_read_only_graph(
     tmp_path,
 ) -> None:
     selector = SpySelector()
+    budget_planner = SpyBudgetPlanner()
     counter = WordCounter()
     manager = ContextManagerAgent(
         budget_allocator=ContextBudgetAllocator(token_estimator=counter),
         context_builder=ContextBuilder(token_estimator=counter),
         selector=selector,
+        budget_planner=budget_planner,
     )
     manager.build_context_packet(
         **{
@@ -423,5 +447,6 @@ def test_native_and_langgraph_use_same_selector_and_graph_is_read_only(
         system_prompt="system",
     )
 
-    assert selector.calls == 2
+    assert selector.calls == 4
+    assert budget_planner.calls == 2
     assert database.messages_for_chat("chat") == before

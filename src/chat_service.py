@@ -12,6 +12,7 @@ from src.agents.document_ingestion_agent import DocumentIngestionAgent
 from src.agents.short_term_memory_agent import ShortTermMemoryAgent
 from src.core.contracts import AgentTurnResult
 from src.context.model_profile import DEFAULT_GEMMA_APPLICATION_CONTEXT_CAP
+from src.context.dynamic_budget import MemoryBudgetPolicy
 from src.database import Database
 from src.memory.previous_chat_gist import PreviousChatGistGenerator
 from src.memory.short_term import ShortTermMemory
@@ -63,7 +64,13 @@ class ChatService:
         endpoint_context_window: int | None = None,
         endpoint_context_limit_source: str | None = None,
         application_context_cap: int = DEFAULT_GEMMA_APPLICATION_CONTEXT_CAP,
-        target_memory_budget: int = 4096,
+        base_memory_budget: int = 4096,
+        chat_memory_cap: int = 8192,
+        document_memory_cap: int = 16_384,
+        multi_scope_memory_cap: int = 16_384,
+        long_document_memory_cap: int = 32_768,
+        required_evidence_headroom_ratio: float = 0.25,
+        minimum_optional_candidate_utility: float = 0.15,
     ) -> None:
         self.database = database
         self.model = model
@@ -112,7 +119,19 @@ class ChatService:
                 endpoint_context_window=endpoint_context_window,
                 application_context_cap=application_context_cap,
                 endpoint_limit_source=endpoint_context_limit_source,
-                target_memory_budget=target_memory_budget,
+                memory_budget_policy=MemoryBudgetPolicy(
+                    base_memory_budget=base_memory_budget,
+                    chat_memory_cap=chat_memory_cap,
+                    document_memory_cap=document_memory_cap,
+                    multi_scope_memory_cap=multi_scope_memory_cap,
+                    long_document_memory_cap=long_document_memory_cap,
+                    required_evidence_headroom_ratio=(
+                        required_evidence_headroom_ratio
+                    ),
+                ),
+                minimum_optional_candidate_utility=(
+                    minimum_optional_candidate_utility
+                ),
             ),
         )
 

@@ -1,13 +1,20 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from time import perf_counter
 from typing import Any
 
 from src.context.context_budget_allocator import ContextBudgetAllocator
 from src.context.context_builder import ContextBuilder
+from src.context.dynamic_budget import (
+    LONG_DOCUMENT_TASK_CONTEXTS,
+    DynamicWorkingMemoryBudgetPlanner,
+    MemoryBudgetPolicy,
+)
 from src.context.evidence_selector import (
     EvidenceConstrainedContextSelector,
     SelectionResult,
+    SelectorPolicy,
 )
 from src.context.model_profile import (
     DEFAULT_GEMMA_APPLICATION_CONTEXT_CAP,
@@ -43,14 +50,14 @@ class ContextManagerAgent:
         context_window: ResolvedContextWindow | None = None,
         output_reserve: int | None = None,
         selector: EvidenceConstrainedContextSelector | None = None,
-        target_memory_budget: int = 4096,
+        budget_planner: DynamicWorkingMemoryBudgetPlanner | None = None,
     ) -> None:
         self.budget_allocator = budget_allocator or ContextBudgetAllocator()
         self.context_builder = context_builder or ContextBuilder()
         self.context_window = context_window
         self.output_reserve = output_reserve
         self.selector = selector or EvidenceConstrainedContextSelector()
-        self.target_memory_budget = max(0, target_memory_budget)
+        self.budget_planner = budget_planner or DynamicWorkingMemoryBudgetPlanner()
 
     @classmethod
     def for_model(
@@ -62,7 +69,8 @@ class ContextManagerAgent:
         endpoint_limit_source: str | None = None,
         processor_loader: ProcessorLoader | None = None,
         tokenizer_loader: ProcessorLoader | None = None,
-        target_memory_budget: int = 4096,
+        memory_budget_policy: MemoryBudgetPolicy | None = None,
+        minimum_optional_candidate_utility: float = 0.15,
     ) -> "ContextManagerAgent":
         """Construct one shared model-aware allocator/builder pair."""
         profile = model_profile_for(model_id)
@@ -83,7 +91,12 @@ class ContextManagerAgent:
             context_builder=ContextBuilder(token_estimator=estimator),
             context_window=resolved,
             output_reserve=profile.default_output_reserve,
-            target_memory_budget=target_memory_budget,
+            selector=EvidenceConstrainedContextSelector(
+                SelectorPolicy(
+                    minimum_optional_utility=minimum_optional_candidate_utility
+                )
+            ),
+            budget_planner=DynamicWorkingMemoryBudgetPlanner(memory_budget_policy),
         )
 
     def build_context_packet(
@@ -143,20 +156,50 @@ class ContextManagerAgent:
             - query_tokens
             - fixed_formatting_overhead,
         )
-        working_memory_budget = min(
-            available_memory_budget,
-            self.target_memory_budget,
+        budget_started = perf_counter()
+        required_preflight = self.selector.select(
+            candidates=ranked_candidates,
+            route_plan=route_plan,
+            token_budget=2**62,
+            token_counter=self.context_builder.token_estimator,
+            latest_user_message=latest_user_message,
         )
+        floor_candidates = required_floor_candidates(
+            required_preflight,
+            route_plan=route_plan,
+        )
+        required_floor = required_floor_token_cost(
+            context_builder=self.context_builder,
+            candidates=floor_candidates,
+            system_prompt=system_prompt,
+            latest_user_message=latest_user_message,
+            ranked_candidates=ranked_candidates,
+            context_budget=context_budget,
+            route_plan=route_plan,
+            fixed_prompt_tokens=fixed_prompt_tokens,
+        )
+        budget_plan = self.budget_planner.plan(
+            route_plan=route_plan,
+            available_memory_budget=available_memory_budget,
+            required_evidence_floor=required_floor,
+        )
+        working_memory_budget = budget_plan.working_memory_budget
+        budget_planning_ms = (perf_counter() - budget_started) * 1000
         context_budget.metadata.update(
             {
-                "target_memory_budget": self.target_memory_budget,
+                **budget_plan.to_metadata(),
                 "hard_input_budget": hard_input_budget,
-                "available_memory_budget": available_memory_budget,
-                "working_memory_budget": working_memory_budget,
-                "fixed_formatting_overhead": fixed_formatting_overhead,
+                "fixed_input_tokens": fixed_prompt_tokens,
+                "system_prompt_tokens": system_tokens,
+                "current_query_tokens": query_tokens,
+                "chat_template_and_fixed_formatting_overhead": (
+                    fixed_formatting_overhead
+                ),
                 "source_budgets_advisory_only": True,
+                "budget_planning_ms": round(budget_planning_ms, 3),
             }
         )
+        selection_started = perf_counter()
         selection = self.selector.select(
             candidates=ranked_candidates,
             route_plan=route_plan,
@@ -164,6 +207,8 @@ class ContextManagerAgent:
             token_counter=self.context_builder.token_estimator,
             latest_user_message=latest_user_message,
         )
+        selection_ms = (perf_counter() - selection_started) * 1000
+        context_budget.metadata["selection_ms"] = round(selection_ms, 3)
         context_packet = self._build_selected_packet(
             system_prompt=system_prompt,
             latest_user_message=latest_user_message,
@@ -174,6 +219,11 @@ class ContextManagerAgent:
             hard_input_budget=hard_input_budget,
             working_memory_budget=working_memory_budget,
         )
+        context_packet.metadata["budget_planning_ms"] = round(
+            budget_planning_ms,
+            3,
+        )
+        context_packet.metadata["selection_ms"] = round(selection_ms, 3)
         return ContextManagerResult(
             context_budget=context_budget,
             context_packet=context_packet,
@@ -192,9 +242,24 @@ class ContextManagerAgent:
         hard_input_budget: int,
         working_memory_budget: int,
     ) -> ContextPacket:
+        budget_trace = {
+            key: context_budget.metadata.get(key)
+            for key in (
+                "base_memory_budget",
+                "route_specific_cap",
+                "route_cap_reason",
+                "required_evidence_floor",
+                "required_headroom",
+                "required_target",
+                "available_memory_budget",
+                "budget_expanded_for_required_evidence",
+                "fixed_input_tokens",
+            )
+        }
         while True:
             selection_metadata = {
                 **selection.metadata(),
+                **budget_trace,
                 "working_memory_budget": working_memory_budget,
                 "hard_input_budget": hard_input_budget,
             }
@@ -245,6 +310,7 @@ class ContextManagerAgent:
 
         packet.metadata["evidence_selection"] = {
             **selection.metadata(),
+            **budget_trace,
             "working_memory_budget": working_memory_budget,
             "hard_input_budget": hard_input_budget,
             "final_prompt_tokens": packet.metadata.get("final_prompt_tokens"),
@@ -257,7 +323,72 @@ class ContextManagerAgent:
         packet.metadata["missing_requirements"] = list(
             selection.missing_requirements
         )
+        packet.metadata.update(budget_trace)
+        packet.metadata["selected_memory_tokens"] = selection.token_usage
+        packet.metadata["unused_working_budget"] = max(
+            0,
+            working_memory_budget - selection.token_usage,
+        )
+        packet.metadata["optional_selection_stopped_by"] = (
+            selection.optional_selection_stopped_by
+        )
         return packet
+
+
+def required_floor_candidates(
+    preflight: SelectionResult,
+    *,
+    route_plan: RoutePlan,
+) -> list[MemoryCandidate]:
+    candidates = [
+        candidate
+        for candidate in preflight.selected_candidates
+        if preflight.selection_reasons.get(
+            preflight.trace_id_by_object[id(candidate)]
+        )
+        in {
+            "required_raw_evidence",
+            "required_scope_evidence",
+            "protected_recent_suffix",
+        }
+    ]
+    task_context = str(route_plan.metadata.get("task_context") or "")
+    if task_context in LONG_DOCUMENT_TASK_CONTEXTS:
+        candidates.extend(
+            candidate
+            for candidate in preflight.selected_candidates
+            if candidate.source == "document_memory"
+            and candidate not in candidates
+        )
+    return candidates
+
+
+def required_floor_token_cost(
+    *,
+    context_builder: ContextBuilder,
+    candidates: list[MemoryCandidate],
+    system_prompt: str,
+    latest_user_message: dict[str, str],
+    ranked_candidates: list[MemoryCandidate],
+    context_budget: ContextBudget,
+    route_plan: RoutePlan,
+    fixed_prompt_tokens: int,
+) -> int:
+    if not candidates:
+        return 0
+    preview = context_builder.build(
+        system_prompt=system_prompt,
+        latest_user_message=latest_user_message,
+        ranked_candidates=ranked_candidates,
+        context_budget=context_budget,
+        route_plan=route_plan,
+        preselected_candidates=candidates,
+    )
+    return max(
+        0,
+        int(preview.metadata.get("final_prompt_tokens", 0) or 0)
+        - fixed_prompt_tokens,
+    )
 
 
 def removable_overflow_candidate(

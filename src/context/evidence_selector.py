@@ -90,6 +90,7 @@ class SelectionResult:
     source_prior_by_trace_id: dict[str, float]
     required_trace_ids: set[str]
     trace_id_by_object: dict[int, str]
+    optional_selection_stopped_by: str
 
     def metadata(self) -> dict[str, object]:
         return {
@@ -103,6 +104,7 @@ class SelectionResult:
                 annotation.to_metadata() for annotation in self.candidate_annotations
             ],
             "global_utility": dict(self.utility_by_trace_id),
+            "optional_selection_stopped_by": self.optional_selection_stopped_by,
             "selection_decisions": [
                 {
                     **annotation.to_metadata(),
@@ -297,6 +299,11 @@ class EvidenceConstrainedContextSelector:
         dropped.extend(initially_folded)
         duplicate_decisions.extend(initially_folded)
         selected_sources = {candidate.source for candidate in selected}
+        optional_stop_reason = (
+            "required_evidence_only" if selected else "no_candidates"
+        )
+        had_optional_candidates = bool(remaining)
+        had_non_fitting_candidate = False
         while remaining:
             scored = [
                 (
@@ -317,16 +324,26 @@ class EvidenceConstrainedContextSelector:
             annotation = annotation_by_object[id(candidate)]
             remaining.remove(candidate)
             if utility < self.policy.minimum_optional_utility:
-                dropped.append(
+                dropped.extend(
                     drop_record(
-                        candidate,
-                        annotation,
+                        remaining_candidate,
+                        annotation_by_object[id(remaining_candidate)],
                         reason="lower_marginal_utility",
-                        utility=utility,
+                        utility=marginal_utility(
+                            remaining_candidate,
+                            annotation_by_object[id(remaining_candidate)],
+                            selected_sources=selected_sources,
+                            token_budget=token_budget,
+                            policy=self.policy,
+                        ),
                     )
+                    for remaining_candidate in [candidate, *remaining]
                 )
-                continue
+                optional_stop_reason = "below_minimum_utility"
+                remaining.clear()
+                break
             if used_tokens + annotation.token_cost > token_budget:
+                had_non_fitting_candidate = True
                 dropped.append(
                     drop_record(
                         candidate,
@@ -361,6 +378,17 @@ class EvidenceConstrainedContextSelector:
             )
             dropped.extend(newly_folded)
             duplicate_decisions.extend(newly_folded)
+            optional_stop_reason = "no_candidates"
+
+        if optional_stop_reason != "below_minimum_utility":
+            if used_tokens >= token_budget and had_optional_candidates:
+                optional_stop_reason = "working_budget_reached"
+            elif had_non_fitting_candidate:
+                optional_stop_reason = "no_fitting_candidate"
+            elif not had_optional_candidates:
+                optional_stop_reason = (
+                    "required_evidence_only" if selected else "no_candidates"
+                )
 
         selected.sort(key=lambda item: annotation_by_object[id(item)].rank)
         dropped.extend(
@@ -395,6 +423,7 @@ class EvidenceConstrainedContextSelector:
             },
             required_trace_ids=required_trace_ids,
             trace_id_by_object=trace_ids,
+            optional_selection_stopped_by=optional_stop_reason,
         )
 
 

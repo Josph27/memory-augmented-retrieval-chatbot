@@ -23,7 +23,13 @@ class AppConfig:
     endpoint_context_window: int | None
     endpoint_context_limit_source: str | None
     application_context_cap: int
-    target_memory_budget: int
+    base_memory_budget: int
+    chat_memory_cap: int
+    document_memory_cap: int
+    multi_scope_memory_cap: int
+    long_document_memory_cap: int
+    required_evidence_headroom_ratio: float
+    minimum_optional_candidate_utility: float
     database_path: Path
     raw_message_limit: int
     memory_update_batch_size: int
@@ -70,7 +76,21 @@ class AppConfig:
             endpoint_context_window=endpoint_context_window,
             endpoint_context_limit_source=endpoint_limit_source,
             application_context_cap=application_context_cap_from_env(),
-            target_memory_budget=int(os.getenv("TARGET_MEMORY_BUDGET", "4096")),
+            base_memory_budget=int(os.getenv("BASE_MEMORY_BUDGET", "4096")),
+            chat_memory_cap=int(os.getenv("CHAT_MEMORY_CAP", "8192")),
+            document_memory_cap=int(os.getenv("DOCUMENT_MEMORY_CAP", "16384")),
+            multi_scope_memory_cap=int(
+                os.getenv("MULTI_SCOPE_MEMORY_CAP", "16384")
+            ),
+            long_document_memory_cap=int(
+                os.getenv("LONG_DOCUMENT_MEMORY_CAP", "32768")
+            ),
+            required_evidence_headroom_ratio=float(
+                os.getenv("REQUIRED_EVIDENCE_HEADROOM_RATIO", "0.25")
+            ),
+            minimum_optional_candidate_utility=float(
+                os.getenv("MIN_OPTIONAL_CANDIDATE_UTILITY", "0.15")
+            ),
             database_path=Path(os.getenv("DATABASE_PATH", "data/chatbot.db")),
             raw_message_limit=int(os.getenv("RAW_MESSAGE_LIMIT", str(RAW_MESSAGE_LIMIT))),
             memory_update_batch_size=int(

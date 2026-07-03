@@ -518,7 +518,17 @@ def chat_service_for_model(model_name: str) -> ChatService:
             endpoint_context_window=config.endpoint_context_window,
             endpoint_context_limit_source=config.endpoint_context_limit_source,
             application_context_cap=config.application_context_cap,
-            target_memory_budget=config.target_memory_budget,
+            base_memory_budget=config.base_memory_budget,
+            chat_memory_cap=config.chat_memory_cap,
+            document_memory_cap=config.document_memory_cap,
+            multi_scope_memory_cap=config.multi_scope_memory_cap,
+            long_document_memory_cap=config.long_document_memory_cap,
+            required_evidence_headroom_ratio=(
+                config.required_evidence_headroom_ratio
+            ),
+            minimum_optional_candidate_utility=(
+                config.minimum_optional_candidate_utility
+            ),
             routing_mode=config.routing_mode,
             reranker_mode=config.reranker_mode,
             reranker_llm_top_k=config.reranker_llm_top_k,
