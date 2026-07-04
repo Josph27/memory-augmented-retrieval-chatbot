@@ -192,6 +192,71 @@ def test_overlong_anchor_keeps_query_relevant_window(tmp_path: Path) -> None:
     assert len(content) <= 180
 
 
+def test_overlong_anchor_prefers_dense_relation_and_preserves_answer_phrase(
+    tmp_path: Path,
+) -> None:
+    database = Database(tmp_path / "chatbot.db")
+    database.create_chat("chat")
+    answer_id = database.save_message(
+        "chat",
+        "user",
+        (
+            f"{'unrelated background ' * 80}"
+            "The univeristy where Ada Lovelace was educated is Analytical Academy."
+        ),
+    )
+    distractor_id = database.save_message(
+        "chat",
+        "user",
+        (
+            "Ada Lovelace attended a public event. "
+            f"{'separated filler ' * 60}"
+            "A university appeared in another record. "
+            f"{'more filler ' * 60}"
+            "Someone else was educated abroad."
+        ),
+    )
+
+    content = format_raw_span_with_anchor(
+        database.messages_for_chat("chat"),
+        anchor_message_ids={answer_id, distractor_id},
+        max_chars=420,
+        query="Which university was Ada Lovelace educated at?",
+    )
+
+    assert (
+        "The univeristy where Ada Lovelace was educated is "
+        "Analytical Academy."
+    ) in content
+    assert len(content) <= 420
+
+
+def test_conflicting_updates_remain_chronological_when_both_fit(
+    tmp_path: Path,
+) -> None:
+    database = Database(tmp_path / "chatbot.db")
+    database.create_chat("chat")
+    old_id = database.save_message(
+        "chat",
+        "user",
+        "The launch location was initially England.",
+    )
+    new_id = database.save_message(
+        "chat",
+        "user",
+        "Correction: the launch location is now India.",
+    )
+
+    content = format_raw_span_with_anchor(
+        database.messages_for_chat("chat"),
+        anchor_message_ids={old_id, new_id},
+        max_chars=500,
+        query="Which country is the launch location?",
+    )
+
+    assert content.index("initially England") < content.index("now India")
+
+
 def test_non_raw_candidate_content_is_unchanged() -> None:
     candidate = MemoryCandidate(
         source="structured_memory",
@@ -200,3 +265,60 @@ def test_non_raw_candidate_content_is_unchanged() -> None:
     )
 
     assert candidate.content == "Keep structured memory formatting unchanged."
+
+
+def test_gist_expansion_preserves_multiple_tied_anchor_messages(
+    tmp_path: Path,
+) -> None:
+    database = Database(tmp_path / "chatbot.db")
+    database.create_chat("old-chat")
+    ids = [
+        database.save_message(
+            "old-chat",
+            "user" if index % 2 == 0 else "assistant",
+            content,
+        )
+        for index, content in enumerate(
+            [
+                "Preface padding. " * 8,
+                "Acknowledged. " * 6,
+                "Alice was first reported in Paris.",
+                "Noted. " * 6,
+                "Correction: Alice actually moved to Lyon.",
+                "Confirmed. " * 6,
+                "Trailing padding. " * 8,
+            ]
+        )
+    ]
+    gist = MemoryCandidate(
+        source="previous_chat_gist",
+        content="A prior chat tracked Alice's city and later corrected it.",
+        record_id="gist-anchor",
+        chat_id="old-chat",
+        source_message_ids=ids,
+        metadata={
+            "start_message_id": ids[0],
+            "end_message_id": ids[-1],
+        },
+    )
+
+    expanded = GistRawSpanExpander(
+        database,
+        max_messages=7,
+        max_chars=220,
+    ).expand([gist], "Where did Alice actually move after Paris?")
+    repeated = GistRawSpanExpander(
+        database,
+        max_messages=7,
+        max_chars=220,
+    ).expand([gist], "Where did Alice actually move after Paris?")
+
+    assert len(expanded) == 1
+    raw = expanded[0]
+    assert "Alice was first reported in Paris." in raw.content
+    assert "Correction: Alice actually moved to Lyon." in raw.content
+    assert raw.metadata["anchor_message_ids"] == [ids[2], ids[4]]
+    assert raw.metadata["truncated"] is True
+    assert len(raw.content) <= 220
+    assert repeated[0].content == raw.content
+    assert repeated[0].metadata["anchor_message_ids"] == [ids[2], ids[4]]

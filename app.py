@@ -531,16 +531,26 @@ def chat_service_for_model(model_name: str) -> ChatService:
             endpoint_context_limit_source=config.endpoint_context_limit_source,
             application_context_cap=config.application_context_cap,
             base_memory_budget=config.base_memory_budget,
+            memory_recall_budget_tokens=config.memory_recall_budget_tokens,
             chat_memory_cap=config.chat_memory_cap,
             document_memory_cap=config.document_memory_cap,
             multi_scope_memory_cap=config.multi_scope_memory_cap,
             long_document_memory_cap=config.long_document_memory_cap,
+            global_summary_budget_tokens=config.global_summary_budget_tokens,
+            global_summary_max_budget_tokens=(
+                config.global_summary_max_budget_tokens
+            ),
+            global_summary_reserved_tokens=config.global_summary_reserved_tokens,
             required_evidence_headroom_ratio=(
                 config.required_evidence_headroom_ratio
             ),
             minimum_optional_candidate_utility=(
                 config.minimum_optional_candidate_utility
             ),
+            direct_raw_retrieval_candidates=(
+                config.direct_raw_retrieval_candidates
+            ),
+            raw_span_overlap_threshold=config.raw_span_overlap_threshold,
             routing_mode=config.routing_mode,
             reranker_mode=config.reranker_mode,
             reranker_llm_top_k=config.reranker_llm_top_k,

@@ -156,10 +156,16 @@ def test_ended_chat_gist_routes_by_intent_and_expands_exact_evidence(
         candidate
         for candidate in exact_candidates
         if candidate.source == "raw_message_span"
+        and candidate.metadata.get("retrieval_path") == "gist_expansion"
     )
     assert exact_sentence in raw.content
     assert raw.source_message_ids == [source_id, assistant_id]
     assert raw.metadata["parent_source"] == "previous_chat_gist"
+    assert any(
+        "direct_raw" in candidate.metadata.get("retrieval_paths", [])
+        for candidate in exact_candidates
+        if candidate.source == "raw_message_span"
+    )
     assert any(
         candidate.source == "raw_message_span"
         and exact_sentence in candidate.content

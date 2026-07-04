@@ -25,7 +25,7 @@ from evals.mab_answer_eval.judge import (
     judge_parameters,
 )
 from evals.mab_answer_eval.manifest import CatalogLoader, resolve_cases
-from evals.mab_answer_eval.metrics import score_official
+from evals.mab_answer_eval.metrics import score_official_for_case
 from evals.mab_answer_eval.schemas import (
     AnswerExecution,
     AnswerManifest,
@@ -35,6 +35,8 @@ from evals.mab_answer_eval.schemas import (
 from evals.memory_agent_bench.adapter import (
     ChatModel,
     ProductionLikeHarness,
+    ROLELESS_HISTORY_INPUT_MODALITY,
+    ROLELESS_HISTORY_STRUCTURED_MEMORY_POLICY,
     run_example,
 )
 from evals.memory_agent_bench.metrics import normalize_text
@@ -120,10 +122,22 @@ class MABAnswerExecutor:
             endpoint_limit_source=self.config.endpoint_context_limit_source,
             memory_budget_policy=MemoryBudgetPolicy(
                 base_memory_budget=self.config.base_memory_budget,
+                memory_recall_budget_tokens=(
+                    self.config.memory_recall_budget_tokens
+                ),
                 chat_memory_cap=self.config.chat_memory_cap,
                 document_memory_cap=self.config.document_memory_cap,
                 multi_scope_memory_cap=self.config.multi_scope_memory_cap,
                 long_document_memory_cap=self.config.long_document_memory_cap,
+                global_summary_budget_tokens=(
+                    self.config.global_summary_budget_tokens
+                ),
+                global_summary_max_budget_tokens=(
+                    self.config.global_summary_max_budget_tokens
+                ),
+                global_summary_reserved_tokens=(
+                    self.config.global_summary_reserved_tokens
+                ),
                 required_evidence_headroom_ratio=(
                     self.config.required_evidence_headroom_ratio
                 ),
@@ -131,6 +145,7 @@ class MABAnswerExecutor:
             minimum_optional_candidate_utility=(
                 self.config.minimum_optional_candidate_utility
             ),
+            raw_span_overlap_threshold=self.config.raw_span_overlap_threshold,
         )
         prepared = self._prepared_snapshot(case, model=model, mock_answer=mock_answer)
         case_dir = Path(tempfile.mkdtemp(prefix="mab_answer_case_", dir=self._prepared_root.name))
@@ -154,6 +169,9 @@ class MABAnswerExecutor:
             memory_replay_trigger_tokens=self.config.memory_replay_trigger_tokens,
             memory_replay_max_input_tokens=self.config.memory_replay_max_input_tokens,
             memory_replay_max_messages=self.config.memory_replay_max_messages,
+            direct_raw_retrieval_candidates=(
+                self.config.direct_raw_retrieval_candidates
+            ),
             database_path=case_db_path,
         )
         harness.replayed_chunks = [dict(chunk) for chunk in prepared.replayed_chunks]
@@ -190,9 +208,15 @@ class MABAnswerExecutor:
             generated_answer=str(row["prediction"]),
             context_diagnostics={
                 "gold_candidate_present": bool(
-                    diagnostics.get("retrieved_candidate_ids_with_gold_text")
+                    diagnostics.get("retrieved_evidence_complete")
                 ),
                 "gold_context_present": bool(
+                    diagnostics.get("context_evidence_complete")
+                ),
+                "gold_candidate_literal_present": bool(
+                    diagnostics.get("retrieved_candidate_ids_with_gold_text")
+                ),
+                "gold_context_literal_present": bool(
                     diagnostics.get("context_candidate_ids_with_gold_text")
                 ),
                 "selected_source_types": list(row.get("sources", [])),
@@ -237,10 +261,15 @@ class MABAnswerExecutor:
             },
             raw_metadata={
                 "evaluation_version": EVALUATION_VERSION,
-                "memory_ingestion_semantics": "production",
+                "memory_ingestion_semantics": (
+                    "production_persistence_finalization_with_modality_aware_memory_formation"
+                ),
                 "memory_scheduling_profile": "offline_replay",
                 "token_batching_enabled": True,
                 "direct_derived_memory_injection": False,
+                "history_input_modality": prepared.history_input_modality,
+                "structured_memory_policy": prepared.structured_memory_policy,
+                "production_gist_generated": prepared.gist_count > 0,
                 "history_reused_for_multiple_questions": prepared.shared_question_count > 1,
                 "prepared_state_reused": prepared.shared_question_count > 1,
                 "prepared_history_key": list(prepared.history_key),
@@ -302,6 +331,9 @@ class MABAnswerExecutor:
             replayed_chunks=[dict(chunk) for chunk in harness.replayed_chunks],
             history_ingestion_count=1,
             structured_updater_call_count=harness.memory_update_calls,
+            history_input_modality=harness.history_input_modality,
+            structured_memory_policy=harness.structured_memory_policy,
+            gist_count=harness.prepared_history_gist_count,
             shared_question_count=self.history_question_counts.get(history_key, 1),
         )
         harness.close()
@@ -316,6 +348,9 @@ class PreparedHistorySnapshot:
     replayed_chunks: list[dict[str, Any]]
     history_ingestion_count: int
     structured_updater_call_count: int
+    history_input_modality: str
+    structured_memory_policy: str
+    gist_count: int
     shared_question_count: int
 
 
@@ -353,8 +388,11 @@ def run_evaluation(
         "manifest_hash": manifest.manifest_hash,
         "cases": len(resolved),
         "execution_mode": options.execution_mode,
-        "production_lifecycle_equivalent": True,
-        "structured_memory_enabled": True,
+        "memory_ingestion_semantics": (
+            "production_persistence_finalization_with_modality_aware_memory_formation"
+        ),
+        "history_input_modality": ROLELESS_HISTORY_INPUT_MODALITY,
+        "structured_memory_policy": ROLELESS_HISTORY_STRUCTURED_MEMORY_POLICY,
         "production_gist_finalization": True,
         "direct_derived_memory_injection": False,
         "answer_model": models.answer_model,
@@ -465,8 +503,8 @@ def run_evaluation(
 
             generated_answer = str(answer_record["generated_answer"])
             references = resolved_case.example.answers[0]
-            official = score_official(
-                spec.official_metric,
+            official, normalization = score_official_for_case(
+                spec,
                 generated_answer,
                 references,
             )
@@ -501,6 +539,8 @@ def run_evaluation(
                     "judge_endpoint": models.judge_endpoint,
                     "secondary_judge_model": models.secondary_judge_model,
                     "official_metric": official.to_dict(),
+                    "normalized_answer": normalization.get("normalized_answer"),
+                    "output_normalization": normalization,
                     "judge": judged.result.to_dict(),
                     "judge_attempts": judged.attempts,
                     "judge_prompt_version": JUDGE_PROMPT_VERSION,
@@ -535,6 +575,10 @@ def run_evaluation(
                 failed_record["run_id"] = run_id
             if failed_stage == "judge":
                 failed_record["official_metric"] = official.to_dict()
+                failed_record["normalized_answer"] = normalization.get(
+                    "normalized_answer"
+                )
+                failed_record["output_normalization"] = normalization
                 failed_record["judge"] = {
                     "correct": False,
                     "complete": False,
@@ -725,10 +769,14 @@ def application_configuration_hash(config: AppConfig) -> str:
             },
             "memory_budgets": {
                 "base": config.base_memory_budget,
+                "memory_recall": config.memory_recall_budget_tokens,
                 "chat": config.chat_memory_cap,
                 "document": config.document_memory_cap,
                 "multi_scope": config.multi_scope_memory_cap,
                 "long_document": config.long_document_memory_cap,
+                "global_summary": config.global_summary_budget_tokens,
+                "global_summary_max": config.global_summary_max_budget_tokens,
+                "global_summary_reserve": config.global_summary_reserved_tokens,
                 "required_headroom": config.required_evidence_headroom_ratio,
                 "minimum_utility": config.minimum_optional_candidate_utility,
             },
@@ -743,6 +791,14 @@ def application_configuration_hash(config: AppConfig) -> str:
                 "memory_replay_trigger_tokens": config.memory_replay_trigger_tokens,
                 "memory_replay_max_input_tokens": config.memory_replay_max_input_tokens,
                 "memory_replay_max_messages": config.memory_replay_max_messages,
+            },
+            "retrieval": {
+                "gist_candidates": config.gist_retrieval_candidates,
+                "direct_raw_candidates": config.direct_raw_retrieval_candidates,
+                "raw_span_overlap_threshold": config.raw_span_overlap_threshold,
+                "query_simplification": (
+                    config.enable_retrieval_query_simplification
+                ),
             },
             "routing_mode": "fixture-assisted-rule",
             "reranker_mode": "deterministic",

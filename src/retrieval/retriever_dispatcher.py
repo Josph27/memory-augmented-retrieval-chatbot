@@ -33,6 +33,7 @@ class RetrieverDispatcher:
         raw_message_limit: int = RECENT_MESSAGES_MAX_COUNT,
         retrievers: dict[str, SourceRetriever] | None = None,
         gist_expander: GistRawSpanExpander | None = None,
+        direct_raw_candidate_limit: int | None = None,
     ) -> None:
         self.gist_expander = gist_expander or GistRawSpanExpander(database)
         self.retrievers: dict[str, SourceRetriever] = retrievers or {
@@ -42,7 +43,10 @@ class RetrieverDispatcher:
             "current_chat_gist": CurrentChatGistRetriever(database),
             "current_chat_span": CurrentChatSpanRetriever(database),
             "previous_chat_gist": PreviousChatGistRetriever(database),
-            "raw_message_span": RawMessageSpanRetriever(database),
+            "raw_message_span": RawMessageSpanRetriever(
+                database,
+                direct_limit=direct_raw_candidate_limit,
+            ),
         }
 
     def retrieve(self, chat_id: str, route_plan: RoutePlan) -> list[MemoryCandidate]:

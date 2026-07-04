@@ -26,7 +26,13 @@ from src.routing.routing_agent import RoutingAgent
 
 SYSTEM_PROMPT = (
     "You are a concise, helpful chatbot prototype. Use the structured current-chat memory "
-    "and recent messages as short-term memory. If information is missing, say what you need "
+    "and recent messages as short-term memory. Answer directly when the supplied context "
+    "provides sufficient evidence. Use “I don't know” only when the available context does "
+    "not support an answer. Do not ignore explicit contextual evidence merely because it "
+    "conflicts with prior world knowledge. If supplied context contains unresolved "
+    "conflicting claims, state the conflict rather than choosing arbitrarily. If evidence "
+    "is partial, answer only the supported portion and state the limitation. If information "
+    "is missing, say what you need "
     "instead of inventing facts."
 )
 
@@ -75,12 +81,18 @@ class ChatService:
         endpoint_context_limit_source: str | None = None,
         application_context_cap: int = DEFAULT_GEMMA_APPLICATION_CONTEXT_CAP,
         base_memory_budget: int = 4096,
+        memory_recall_budget_tokens: int = 8192,
         chat_memory_cap: int = 8192,
         document_memory_cap: int = 16_384,
         multi_scope_memory_cap: int = 16_384,
         long_document_memory_cap: int = 32_768,
+        global_summary_budget_tokens: int = 65_536,
+        global_summary_max_budget_tokens: int = 131_072,
+        global_summary_reserved_tokens: int = 4096,
         required_evidence_headroom_ratio: float = 0.25,
         minimum_optional_candidate_utility: float = 0.15,
+        direct_raw_retrieval_candidates: int = 12,
+        raw_span_overlap_threshold: float = 0.7,
     ) -> None:
         self.database = database
         self.model = model
@@ -119,6 +131,7 @@ class ChatService:
                     if recent_messages_max_count is not None
                     else raw_message_limit
                 ),
+                direct_raw_candidate_limit=direct_raw_retrieval_candidates,
             ),
             routing_agent=RoutingAgent(mode=routing_mode, model=model),
             memory_reranker=MemoryReranker(
@@ -143,10 +156,16 @@ class ChatService:
                 endpoint_limit_source=endpoint_context_limit_source,
                 memory_budget_policy=MemoryBudgetPolicy(
                     base_memory_budget=base_memory_budget,
+                    memory_recall_budget_tokens=memory_recall_budget_tokens,
                     chat_memory_cap=chat_memory_cap,
                     document_memory_cap=document_memory_cap,
                     multi_scope_memory_cap=multi_scope_memory_cap,
                     long_document_memory_cap=long_document_memory_cap,
+                    global_summary_budget_tokens=global_summary_budget_tokens,
+                    global_summary_max_budget_tokens=(
+                        global_summary_max_budget_tokens
+                    ),
+                    global_summary_reserved_tokens=global_summary_reserved_tokens,
                     required_evidence_headroom_ratio=(
                         required_evidence_headroom_ratio
                     ),
@@ -154,6 +173,7 @@ class ChatService:
                 minimum_optional_candidate_utility=(
                     minimum_optional_candidate_utility
                 ),
+                raw_span_overlap_threshold=raw_span_overlap_threshold,
             ),
         )
 

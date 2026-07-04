@@ -93,6 +93,20 @@ class ContextBudgetPolicy:
                 safety_margin=0.07,
                 answer_reserve=0.05,
             ),
+            "global_summary": AllocationProfile(
+                system=0.05,
+                recent_messages=0.05,
+                structured_memory=0.05,
+                current_chat_gist=0.0,
+                current_chat_span=0.0,
+                previous_chat_gist=0.2,
+                raw_message_span=0.55,
+                current_chat_chunks=0.0,
+                previous_chat_memory=0.0,
+                document_memory=0.1,
+                safety_margin=0.07,
+                answer_reserve=0.05,
+            ),
         }
     )
 
@@ -211,6 +225,7 @@ def profile_name_for(context_profile: str | None) -> str:
         "memory_recall",
         "document_question",
         "mixed_memory_document",
+        "global_summary",
     }:
         return context_profile
     if context_profile == "structured_memory_plus_recent_messages":

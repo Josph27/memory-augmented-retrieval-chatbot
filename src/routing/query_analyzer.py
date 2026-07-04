@@ -14,6 +14,7 @@ class QuerySignals:
     asks_about_decision: bool = False
     asks_about_task: bool = False
     asks_for_exact_quote: bool = False
+    asks_for_global_summary: bool = False
     asks_general_question: bool = False
 
 
@@ -86,6 +87,14 @@ class QueryAnalyzerPolicy:
         "how did i phrase",
         "verbatim",
     )
+    global_summary_terms: tuple[str, ...] = (
+        "summarize the book",
+        "summarize this book",
+        "summarize what i told you earlier",
+        "summary of the previous conversation",
+        "summarize the previous conversation",
+        "summarize our previous conversation",
+    )
 
 
 class QueryAnalyzer:
@@ -101,18 +110,28 @@ class QueryAnalyzer:
     def analyze(self, query: str) -> QueryAnalysis:
         """Analyze a user query into normalized text, intent, signals, and confidence."""
         normalized = normalize_query(query)
+        inline_summary = bool(
+            re.match(r"^(?:summarize|summary of) this text\s*:", normalized)
+        )
         signals = QuerySignals(
             asks_about_current_chat=contains_any(normalized, self.policy.current_chat_terms),
             asks_about_previous_memory=contains_any(
                 normalized,
                 self.policy.previous_memory_terms,
             ),
-            asks_about_documents=contains_any(normalized, self.policy.document_terms),
+            asks_about_documents=(
+                contains_any(normalized, self.policy.document_terms)
+                and not inline_summary
+            ),
             asks_about_decision=contains_any(normalized, self.policy.decision_terms),
             asks_about_task=contains_any(normalized, self.policy.task_terms),
             asks_for_exact_quote=contains_any(
                 normalized,
                 self.policy.exact_quote_terms,
+            ),
+            asks_for_global_summary=contains_any(
+                normalized,
+                self.policy.global_summary_terms,
             ),
         )
         asks_general = not any(
@@ -123,6 +142,7 @@ class QueryAnalyzer:
                 signals.asks_about_decision,
                 signals.asks_about_task,
                 signals.asks_for_exact_quote,
+                signals.asks_for_global_summary,
             )
         )
         signals = QuerySignals(
@@ -132,6 +152,7 @@ class QueryAnalyzer:
             asks_about_decision=signals.asks_about_decision,
             asks_about_task=signals.asks_about_task,
             asks_for_exact_quote=signals.asks_for_exact_quote,
+            asks_for_global_summary=signals.asks_for_global_summary,
             asks_general_question=asks_general,
         )
         intent = detect_intent(signals)
@@ -155,6 +176,8 @@ def contains_any(query: str, terms: tuple[str, ...]) -> bool:
 
 def detect_intent(signals: QuerySignals) -> str:
     """Map signals to a single coarse intent."""
+    if signals.asks_for_global_summary:
+        return "previous_memory_question"
     if signals.asks_about_documents:
         return "document_question"
     if signals.asks_about_previous_memory:

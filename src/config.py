@@ -35,12 +35,20 @@ class AppConfig:
     endpoint_context_limit_source: str | None
     application_context_cap: int
     base_memory_budget: int
+    memory_recall_budget_tokens: int
     chat_memory_cap: int
     document_memory_cap: int
     multi_scope_memory_cap: int
     long_document_memory_cap: int
+    global_summary_budget_tokens: int
+    global_summary_max_budget_tokens: int
+    global_summary_reserved_tokens: int
     required_evidence_headroom_ratio: float
     minimum_optional_candidate_utility: float
+    gist_retrieval_candidates: int
+    direct_raw_retrieval_candidates: int
+    raw_span_overlap_threshold: float
+    enable_retrieval_query_simplification: bool
     database_path: Path
     raw_message_limit: int
     memory_update_batch_size: int
@@ -96,6 +104,9 @@ class AppConfig:
             endpoint_context_limit_source=endpoint_limit_source,
             application_context_cap=application_context_cap_from_env(),
             base_memory_budget=int(os.getenv("BASE_MEMORY_BUDGET", "4096")),
+            memory_recall_budget_tokens=int(
+                os.getenv("MEMORY_RECALL_BUDGET_TOKENS", "8192")
+            ),
             chat_memory_cap=int(os.getenv("CHAT_MEMORY_CAP", "8192")),
             document_memory_cap=int(os.getenv("DOCUMENT_MEMORY_CAP", "16384")),
             multi_scope_memory_cap=int(
@@ -104,11 +115,33 @@ class AppConfig:
             long_document_memory_cap=int(
                 os.getenv("LONG_DOCUMENT_MEMORY_CAP", "32768")
             ),
+            global_summary_budget_tokens=int(
+                os.getenv("GLOBAL_SUMMARY_BUDGET_TOKENS", "65536")
+            ),
+            global_summary_max_budget_tokens=int(
+                os.getenv("GLOBAL_SUMMARY_MAX_BUDGET_TOKENS", "131072")
+            ),
+            global_summary_reserved_tokens=int(
+                os.getenv("GLOBAL_SUMMARY_RESERVED_TOKENS", "4096")
+            ),
             required_evidence_headroom_ratio=float(
                 os.getenv("REQUIRED_EVIDENCE_HEADROOM_RATIO", "0.25")
             ),
             minimum_optional_candidate_utility=float(
                 os.getenv("MIN_OPTIONAL_CANDIDATE_UTILITY", "0.15")
+            ),
+            gist_retrieval_candidates=int(
+                os.getenv("GIST_RETRIEVAL_CANDIDATES", "8")
+            ),
+            direct_raw_retrieval_candidates=int(
+                os.getenv("DIRECT_RAW_RETRIEVAL_CANDIDATES", "12")
+            ),
+            raw_span_overlap_threshold=float(
+                os.getenv("RAW_SPAN_OVERLAP_THRESHOLD", "0.7")
+            ),
+            enable_retrieval_query_simplification=env_bool(
+                "ENABLE_RETRIEVAL_QUERY_SIMPLIFICATION",
+                default=True,
             ),
             database_path=Path(os.getenv("DATABASE_PATH", "data/chatbot.db")),
             raw_message_limit=int(os.getenv("RAW_MESSAGE_LIMIT", str(RAW_MESSAGE_LIMIT))),

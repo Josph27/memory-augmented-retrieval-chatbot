@@ -91,6 +91,11 @@ class SelectionResult:
     required_trace_ids: set[str]
     trace_id_by_object: dict[int, str]
     optional_selection_stopped_by: str
+    coverage_strategy: str = "relevance_ranked"
+    eligible_history_tokens: int = 0
+    selected_history_tokens: int = 0
+    coverage_ratio: float = 0.0
+    selected_time_range_count: int = 0
 
     def metadata(self) -> dict[str, object]:
         return {
@@ -105,6 +110,11 @@ class SelectionResult:
             ],
             "global_utility": dict(self.utility_by_trace_id),
             "optional_selection_stopped_by": self.optional_selection_stopped_by,
+            "coverage_strategy": self.coverage_strategy,
+            "eligible_history_tokens": self.eligible_history_tokens,
+            "selected_history_tokens": self.selected_history_tokens,
+            "coverage_ratio": self.coverage_ratio,
+            "selected_time_range_count": self.selected_time_range_count,
             "selection_decisions": [
                 {
                     **annotation.to_metadata(),
@@ -304,6 +314,65 @@ class EvidenceConstrainedContextSelector:
         )
         had_optional_candidates = bool(remaining)
         had_non_fitting_candidate = False
+        coverage_strategy = "relevance_ranked"
+        eligible_history_tokens = sum(
+            annotation_by_object[id(candidate)].token_cost
+            for candidate in deduplicated
+            if candidate.source in RAW_SOURCES | GIST_SOURCES
+        )
+        if route_plan.context_profile == "global_summary":
+            coverage_strategy = "chronological_complete_or_timeline_sample"
+            summary_order = global_summary_selection_order(
+                remaining,
+                annotation_by_object=annotation_by_object,
+                available_tokens=max(0, token_budget - used_tokens),
+            )
+            for candidate in summary_order:
+                annotation = annotation_by_object[id(candidate)]
+                remaining.remove(candidate)
+                if used_tokens + annotation.token_cost > token_budget:
+                    had_non_fitting_candidate = True
+                    dropped.append(
+                        drop_record(
+                            candidate,
+                            annotation,
+                            reason="global_budget_exceeded",
+                        )
+                    )
+                    continue
+                selected.append(candidate)
+                selected_ids.add(id(candidate))
+                used_tokens += annotation.token_cost
+                selected_sources.add(candidate.source)
+                reasons[annotation.trace_id] = (
+                    "global_summary_chronological_coverage"
+                )
+                utilities[annotation.trace_id] = required_utility(candidate)
+                used_tokens, folded = fold_parent_gist(
+                    candidate,
+                    selected=selected,
+                    selected_ids=selected_ids,
+                    annotation_by_object=annotation_by_object,
+                    trace_ids=trace_ids,
+                    reasons=reasons,
+                    used_tokens=used_tokens,
+                )
+                dropped.extend(folded)
+                duplicate_decisions.extend(folded)
+            dropped.extend(
+                drop_record(
+                    candidate,
+                    annotation_by_object[id(candidate)],
+                    reason="global_budget_exceeded",
+                )
+                for candidate in remaining
+            )
+            remaining.clear()
+            optional_stop_reason = (
+                "no_fitting_candidate"
+                if had_non_fitting_candidate
+                else "no_candidates"
+            )
         while remaining:
             scored = [
                 (
@@ -390,7 +459,15 @@ class EvidenceConstrainedContextSelector:
                     "required_evidence_only" if selected else "no_candidates"
                 )
 
-        selected.sort(key=lambda item: annotation_by_object[id(item)].rank)
+        if route_plan.context_profile == "global_summary":
+            selected.sort(
+                key=lambda item: global_summary_chronological_key(
+                    item,
+                    annotation_by_object[id(item)].rank,
+                )
+            )
+        else:
+            selected.sort(key=lambda item: annotation_by_object[id(item)].rank)
         dropped.extend(
             {
                 "record_id": None,
@@ -402,6 +479,11 @@ class EvidenceConstrainedContextSelector:
                 "estimated_tokens": 0,
             }
             for requirement in dict.fromkeys(missing)
+        )
+        selected_history_tokens = sum(
+            annotation_by_object[id(candidate)].token_cost
+            for candidate in selected
+            if candidate.source in RAW_SOURCES | GIST_SOURCES
         )
         return SelectionResult(
             selected_candidates=selected,
@@ -424,6 +506,15 @@ class EvidenceConstrainedContextSelector:
             required_trace_ids=required_trace_ids,
             trace_id_by_object=trace_ids,
             optional_selection_stopped_by=optional_stop_reason,
+            coverage_strategy=coverage_strategy,
+            eligible_history_tokens=eligible_history_tokens,
+            selected_history_tokens=selected_history_tokens,
+            coverage_ratio=(
+                min(1.0, selected_history_tokens / eligible_history_tokens)
+                if eligible_history_tokens
+                else 0.0
+            ),
+            selected_time_range_count=selected_time_range_count(selected),
         )
 
 
@@ -478,6 +569,7 @@ def deduplicate_candidates(
         normalized = normalize_text(candidate.content)
         duplicate = normalized_keeper.get(normalized)
         if normalized and duplicate is not None:
+            merge_retrieval_paths(duplicate, candidate)
             annotation = annotation_by_object[id(candidate)]
             record = drop_record(
                 candidate,
@@ -508,18 +600,32 @@ def deduplicate_candidates(
             (
                 existing
                 for existing in kept
-                if spans_overlap(existing, candidate) >= overlap_threshold
+                if should_fold_overlapping_span(
+                    existing,
+                    candidate,
+                    threshold=overlap_threshold,
+                )
             ),
             None,
         )
         if overlapping is not None:
+            overlap_ratio = spans_overlap(overlapping, candidate)
+            unique_ids = sorted(
+                set(candidate.source_message_ids)
+                - set(overlapping.source_message_ids)
+            )
+            merge_retrieval_paths(overlapping, candidate)
             annotation = annotation_by_object[id(candidate)]
             record = drop_record(
                 candidate,
                 annotation,
-                reason="overlapping_span",
+                reason="overlapping_selected_span",
                 merged_into=trace_ids[id(overlapping)],
-                overlap=spans_overlap(overlapping, candidate),
+                overlap_ratio=overlap_ratio,
+                overlap_with_candidate_id=(
+                    f"{overlapping.source}:{overlapping.record_id}"
+                ),
+                unique_message_count=len(unique_ids),
                 merged_source_message_ids=sorted(
                     set(overlapping.source_message_ids)
                     | set(candidate.source_message_ids)
@@ -770,6 +876,162 @@ def spans_overlap(first: MemoryCandidate, second: MemoryCandidate) -> float:
     if not first_ids or not second_ids:
         return 0.0
     return len(first_ids & second_ids) / min(len(first_ids), len(second_ids))
+
+
+def should_fold_overlapping_span(
+    keeper: MemoryCandidate,
+    candidate: MemoryCandidate,
+    *,
+    threshold: float,
+) -> bool:
+    overlap = spans_overlap(keeper, candidate)
+    if overlap < threshold:
+        return False
+    unique_ids = set(candidate.source_message_ids) - set(keeper.source_message_ids)
+    anchors = set(
+        integer_list(
+            candidate.metadata.get("anchor_message_ids")
+            or candidate.metadata.get("matched_message_ids")
+        )
+    )
+    return not (anchors & unique_ids)
+
+
+def merge_retrieval_paths(
+    keeper: MemoryCandidate,
+    duplicate: MemoryCandidate,
+) -> None:
+    paths: list[str] = []
+    for candidate in (keeper, duplicate):
+        values = candidate.metadata.get("retrieval_paths")
+        if isinstance(values, list):
+            paths.extend(str(value) for value in values)
+        path = candidate.metadata.get("retrieval_path")
+        if isinstance(path, str):
+            paths.append(path)
+    merged = list(dict.fromkeys(paths))
+    if merged:
+        keeper.metadata["retrieval_paths"] = merged
+        keeper.metadata["retrieval_path"] = (
+            merged[0] if len(merged) == 1 else "multiple"
+        )
+
+
+def global_summary_selection_order(
+    candidates: list[MemoryCandidate],
+    *,
+    annotation_by_object: dict[int, CandidateAnnotation],
+    available_tokens: int,
+) -> list[MemoryCandidate]:
+    gists = sorted(
+        (candidate for candidate in candidates if candidate.source in GIST_SOURCES),
+        key=lambda item: global_summary_chronological_key(
+            item,
+            annotation_by_object[id(item)].rank,
+        ),
+    )
+    raw = sorted(
+        (candidate for candidate in candidates if candidate.source in RAW_SOURCES),
+        key=lambda item: global_summary_chronological_key(
+            item,
+            annotation_by_object[id(item)].rank,
+        ),
+    )
+    other = sorted(
+        (
+            candidate
+            for candidate in candidates
+            if candidate.source not in GIST_SOURCES | RAW_SOURCES
+        ),
+        key=lambda item: annotation_by_object[id(item)].rank,
+    )
+    gist_tokens = sum(annotation_by_object[id(item)].token_cost for item in gists)
+    raw_tokens = sum(annotation_by_object[id(item)].token_cost for item in raw)
+    if gist_tokens + raw_tokens <= available_tokens:
+        return [*gists, *raw, *other]
+    raw_coverage = [
+        raw[index] for index in timeline_coverage_order(len(raw))
+    ]
+    return [*gists, *raw_coverage, *other]
+
+
+def timeline_coverage_order(count: int) -> list[int]:
+    if count <= 0:
+        return []
+    selected = [0]
+    if count > 1:
+        selected.append(count - 1)
+    if count > 2:
+        selected.append(count // 2)
+    remaining = [index for index in range(count) if index not in selected]
+    while remaining:
+        next_index = max(
+            remaining,
+            key=lambda index: (
+                min(abs(index - chosen) for chosen in selected),
+                -index,
+            ),
+        )
+        selected.append(next_index)
+        remaining.remove(next_index)
+    return selected
+
+
+def global_summary_chronological_key(
+    candidate: MemoryCandidate,
+    rank: int,
+) -> tuple[int, str, int, int]:
+    source_group = 0 if candidate.source in GIST_SOURCES else 1
+    return (
+        source_group,
+        str(candidate.metadata.get("created_at") or candidate.chat_id or ""),
+        int(
+            candidate.metadata.get("timeline_index")
+            or candidate.metadata.get("start_message_id")
+            or 0
+        ),
+        rank,
+    )
+
+
+def selected_time_range_count(
+    candidates: Sequence[MemoryCandidate],
+) -> int:
+    """Count disjoint selected raw-message ranges across source chats."""
+    ranges_by_chat: dict[str, list[tuple[int, int]]] = {}
+    unbounded = 0
+    for candidate in candidates:
+        if candidate.source not in RAW_SOURCES:
+            continue
+        message_ids = sorted(set(candidate.source_message_ids))
+        if not message_ids:
+            unbounded += 1
+            continue
+        chat_key = str(
+            candidate.metadata.get("source_chat_id")
+            or candidate.chat_id
+            or ""
+        )
+        ranges_by_chat.setdefault(chat_key, []).append(
+            (message_ids[0], message_ids[-1])
+        )
+    return unbounded + sum(
+        len(merge_ranges(ranges))
+        for ranges in ranges_by_chat.values()
+    )
+
+
+def merge_ranges(
+    ranges: Sequence[tuple[int, int]],
+) -> list[tuple[int, int]]:
+    merged: list[tuple[int, int]] = []
+    for start, end in sorted(ranges):
+        if not merged or start > merged[-1][1] + 1:
+            merged.append((start, end))
+            continue
+        previous_start, previous_end = merged[-1]
+        merged[-1] = (previous_start, max(previous_end, end))
+    return merged
 
 
 def is_latest_query_candidate(

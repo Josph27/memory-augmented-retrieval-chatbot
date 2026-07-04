@@ -71,6 +71,23 @@ def test_route_planner_profiles_and_sources() -> None:
     assert enabled == {"recent_messages", "structured_memory", "document_memory"}
     assert {"current_chat_chunks", "previous_chat_memory"} <= disabled
 
+    summary = planner.plan("Summarize the book.")
+    assert summary.context_profile == "global_summary"
+    assert {
+        source.source for source in summary.sources if source.enabled
+    } >= {"previous_chat_gist", "raw_message_span"}
+    assert all(
+        source.filters["context_profile"] == "global_summary"
+        for source in summary.sources
+        if source.enabled
+    )
+
+    inline = planner.plan("Summarize this text: The cat sat on the mat.")
+    assert inline.context_profile == "general_chat"
+    assert "document_memory" not in {
+        source.source for source in inline.sources if source.enabled
+    }
+
 
 def test_routing_agent_wraps_existing_route_plan_behavior() -> None:
     decision = RoutingAgent().route("Can you inspect the uploaded PDF document?")

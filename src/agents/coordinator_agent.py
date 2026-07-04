@@ -30,6 +30,7 @@ from src.retrieval.reranker import MemoryReranker
 from src.retrieval.retriever_dispatcher import RetrieverDispatcher
 from src.routing.route_planner import RoutePlanner
 from src.routing.routing_agent import RoutingAgent
+from src.routing.retrieval_query import retrieval_query_for_reranking
 
 
 TERMINATION_RESPONSE_SAVED = "response_generated_and_messages_saved"
@@ -101,7 +102,10 @@ class CoordinatorAgent:
         rerank_result = self.memory_reranker.rank_with_trace(
             candidates=retrieved_candidates,
             ranking_profile=route_plan.ranking_profile,
-            query=content,
+            query=retrieval_query_for_reranking(
+                route_plan,
+                fallback=content,
+            ),
         )
         ranked_candidates = rerank_result.candidates
         reranker_metadata = rerank_result.metadata

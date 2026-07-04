@@ -13,6 +13,7 @@ from src.retrieval.retriever_dispatcher import RetrieverDispatcher
 from src.routing.routing_agent import RoutingAgent
 from src.routing.semantic_contracts import EvidenceContract, SemanticRoutePlan
 from src.routing.semantic_router import SemanticRouter
+from src.routing.retrieval_query import retrieval_query_for_reranking
 
 
 MAX_BASE_CANDIDATES = 32
@@ -258,7 +259,10 @@ def _rerank_node(services: LangGraphSpikeServices):  # type: ignore[no-untyped-d
         result = services.reranker.rank_with_trace(
             candidates=candidates,
             ranking_profile=route_plan.ranking_profile,
-            query=state["user_query"],
+            query=retrieval_query_for_reranking(
+                route_plan,
+                fallback=state["user_query"],
+            ),
         )
         return node_update(
             state,
@@ -547,10 +551,29 @@ def provenance_is_valid(candidates: list[MemoryCandidate]) -> bool:
 
 def semantic_route_trace(plan: SemanticRoutePlan) -> dict[str, Any]:
     """Return bounded typed routing metadata without generated evidence."""
+    retrieval_query = next(
+        (
+            item
+            for item in plan.retrieval_queries
+            if item.is_generated and item.purpose != "quote_orientation_search"
+        ),
+        None,
+    )
     return {
         "routing_mode": plan.router_version,
         "original_query": plan.original_query[:MAX_TRACE_QUERY_CHARS],
         "normalized_query": plan.normalized_query[:MAX_TRACE_QUERY_CHARS],
+        "retrieval_query": (
+            retrieval_query.text[:MAX_TRACE_QUERY_CHARS]
+            if retrieval_query is not None
+            else plan.original_query[:MAX_TRACE_QUERY_CHARS]
+        ),
+        "query_rewrite_applied": retrieval_query is not None,
+        "query_rewrite_reason": (
+            retrieval_query.purpose
+            if retrieval_query is not None
+            else "original_query"
+        ),
         "language": plan.language,
         "intents": [
             {

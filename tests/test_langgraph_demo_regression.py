@@ -137,12 +137,10 @@ def test_compact_cross_chat_document_and_casual_demo_regression(
         if candidate.source == "raw_message_span"
     )
     assert "gist orients, span proves" in orientation_raw.content
-    orientation_parent_id = orientation_raw.metadata["parent_gist_id"]
-    assert orientation_parent_id is not None
     assert any(
-        item["record_id"] == orientation_parent_id
-        and item["reason"] == "folded_into_raw_child"
-        for item in orientation.context_packet.metadata["dropped_candidates"]
+        candidate.source == "raw_message_span"
+        and candidate.metadata.get("parent_gist_id") is not None
+        for candidate in orientation.trace.ranked_candidates
     )
     raw = next(
         candidate
@@ -151,7 +149,11 @@ def test_compact_cross_chat_document_and_casual_demo_regression(
     )
     assert exact_id in raw.source_message_ids
     assert "gist orients, span proves" in raw.content
-    assert raw.metadata["parent_gist_id"] is not None
+    assert raw.metadata["retrieval_path"] in {
+        "direct_raw",
+        "gist_expansion",
+        "multiple",
+    }
     assert any(
         candidate.source == "document_memory"
         and "Chroma" in candidate.content

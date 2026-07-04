@@ -3,6 +3,7 @@ from __future__ import annotations
 import tempfile
 from dataclasses import asdict
 from pathlib import Path
+import re
 import shutil
 from typing import Any, Protocol, cast
 
@@ -14,7 +15,11 @@ from src.agents.coordinator_agent import CoordinatorAgent
 from src.agents.short_term_memory_agent import ShortTermMemoryAgent
 from src.core.contracts import AgentTurnResult, RoutePlan, SourcePlan
 from src.database import Database
-from src.memory.short_term import ShortTermMemory, StructuredMemoryUpdater
+from src.memory.short_term import (
+    ChatEndMemoryProcessingResult,
+    ShortTermMemory,
+    StructuredMemoryUpdater,
+)
 from src.memory.structured_state import MemoryUpdateResult
 from src.orchestration.demo_orchestration import NATIVE
 from src.retrieval.current_chat_span_retriever import CurrentChatSpanRetriever
@@ -39,9 +44,15 @@ from evals.memory_agent_bench.schemas import MABenchExample
 
 
 SYSTEM_PROMPT = (
-    "Answer using only supplied memory evidence. If evidence is insufficient, "
-    "say I don't know."
+    "Answer using only supplied memory evidence. Answer directly when the supplied "
+    "context provides sufficient evidence. Use “I don't know” only when the supplied "
+    "context does not support an answer. Do not ignore explicit contextual evidence "
+    "merely because it conflicts with prior world knowledge. If supplied context contains "
+    "unresolved conflicting claims, state the conflict rather than choosing arbitrarily. "
+    "If evidence is partial, answer only the supported portion and state the limitation."
 )
+ROLELESS_HISTORY_INPUT_MODALITY = "roleless_benchmark_context"
+ROLELESS_HISTORY_STRUCTURED_MEMORY_POLICY = "not_applicable_for_roleless_history"
 
 
 class ChatModel(Protocol):
@@ -116,6 +127,17 @@ class RecordingNoopUpdater:
             memory_state=existing_memory,
             accepted=False,
             rejection_reason="langmem_no_valid_memories",
+        )
+
+
+class SkipStructuredMemoryForRolelessHistory:
+    """Explicitly skip structured-memory formation for role-less benchmark replay."""
+
+    def process_all_for_chat_end(self, chat_id: str) -> ChatEndMemoryProcessingResult:
+        del chat_id
+        return ChatEndMemoryProcessingResult(
+            processed_message_count=0,
+            batch_count=0,
         )
 
 
@@ -226,6 +248,7 @@ class ProductionLikeHarness:
         memory_replay_trigger_tokens: int = 4000,
         memory_replay_max_input_tokens: int = 8000,
         memory_replay_max_messages: int = 128,
+        direct_raw_retrieval_candidates: int = 12,
         database_path: Path | None = None,
     ) -> None:
         self._temp_dir = None
@@ -268,6 +291,10 @@ class ProductionLikeHarness:
         self.memory_replay_trigger_tokens = memory_replay_trigger_tokens
         self.memory_replay_max_input_tokens = memory_replay_max_input_tokens
         self.memory_replay_max_messages = memory_replay_max_messages
+        self.direct_raw_retrieval_candidates = max(
+            1,
+            direct_raw_retrieval_candidates,
+        )
         self._raw_replay_retriever: EvalRawReplayChunkRetriever | None = None
         self._structured_memory_updater = structured_memory_updater
         if self._structured_memory_updater is None and (
@@ -294,6 +321,9 @@ class ProductionLikeHarness:
         self.chat_end_calls = 0
         self.question_count = 0
         self.replayed_chunks: list[dict[str, Any]] = []
+        self.history_input_modality = ROLELESS_HISTORY_INPUT_MODALITY
+        self.structured_memory_policy = ROLELESS_HISTORY_STRUCTURED_MEMORY_POLICY
+        self.prepared_history_gist_count = 0
 
     @property
     def structured_update_backend_calls(self) -> int | None:
@@ -322,8 +352,6 @@ class ProductionLikeHarness:
                     "content": chunk,
                 }
             )
-        replay_result = self.memory.process_replay_batches(chat_id)
-        self.memory_update_calls += replay_result.batch_count
 
     def prepare_history(self, example: MABenchExample) -> None:
         for session in example.sessions:
@@ -341,7 +369,11 @@ class ProductionLikeHarness:
     def end_current_session(self) -> None:
         if self.current_chat_id is None:
             return
-        ChatEndAction(self.database, self.memory).execute(self.current_chat_id)
+        result = ChatEndAction(
+            self.database,
+            SkipStructuredMemoryForRolelessHistory(),
+        ).execute(self.current_chat_id)
+        self.prepared_history_gist_count += result.gist_count
         self.chat_end_calls += 1
         self.current_chat_id = None
 
@@ -362,7 +394,11 @@ class ProductionLikeHarness:
             ),
             "structured_memory": StructuredMemoryRetriever(self.database),
             "previous_chat_gist": PreviousChatGistRetriever(self.database),
-            "raw_message_span": RawMessageSpanRetriever(self.database),
+            "raw_message_span": RawMessageSpanRetriever(
+                self.database,
+                direct_limit=self.direct_raw_retrieval_candidates,
+                enable_direct=not self.raw_replay_enabled,
+            ),
             "current_chat_span": CurrentChatSpanRetriever(self.database),
         }
         if self.raw_replay_enabled:
@@ -485,6 +521,7 @@ def run_example(
             metrics = score_answer(turn.answer, gold_answers, evidence)
             candidate_sources = {candidate.source for candidate in candidates}
             diagnostics = evidence_diagnostics(
+                question=question,
                 gold_answers=gold_answers,
                 replayed_chunks=getattr(selected_harness, "replayed_chunks", []),
                 retrieved=turn.trace.retrieved_candidates,
@@ -682,6 +719,7 @@ def workflow_trace_summary(turn: AgentTurnResult) -> dict[str, Any]:
 
 def evidence_diagnostics(
     *,
+    question: str,
     gold_answers: tuple[str, ...],
     replayed_chunks: list[dict[str, Any]],
     retrieved: list[Any],
@@ -725,6 +763,18 @@ def evidence_diagnostics(
         context_candidates,
         normalized_gold,
     )
+    retrieved_evidence_complete = evidence_complete_for_question(
+        question,
+        "\n".join(str(candidate.content) for candidate in retrieved),
+        literal_gold_present=bool(retrieved_text_ids),
+        gold_answers=gold_answers,
+    )
+    context_evidence_complete = evidence_complete_for_question(
+        question,
+        "\n".join(str(candidate.content) for candidate in context_candidates),
+        literal_gold_present=bool(context_text_ids),
+        gold_answers=gold_answers,
+    )
     raw_provenance_ids = [
         candidate_id(candidate)
         for candidate in retrieved
@@ -733,8 +783,10 @@ def evidence_diagnostics(
     ]
     if not locations:
         failure_stage = "dataset_or_metric_gold_not_in_replay"
-    elif context_text_ids:
+    elif context_evidence_complete:
         failure_stage = "none_literal_gold_reached_context"
+    elif context_text_ids:
+        failure_stage = "literal_gold_present_but_relational_evidence_incomplete"
     elif retrieved_text_ids and not context_text_ids:
         failure_stage = "context_budget_or_context_selection"
     elif raw_provenance_ids:
@@ -751,10 +803,116 @@ def evidence_diagnostics(
         "retrieved_candidate_ids_with_gold_text": retrieved_text_ids,
         "ranked_candidate_ids_with_gold_text": ranked_text_ids,
         "context_candidate_ids_with_gold_text": context_text_ids,
+        "retrieved_evidence_complete": retrieved_evidence_complete,
+        "context_evidence_complete": context_evidence_complete,
         "raw_span_ids_covering_gold_message": raw_provenance_ids,
         "dropped_candidates": dropped_candidates[:20],
         "failure_stage": failure_stage,
     }
+
+
+COMPARISON_QUESTION_PATTERN = re.compile(
+    r"^who is (?:older|younger),?\s+"
+    r"(?P<left>.+?)\s+or\s+(?P<right>.+?)\??$",
+    re.IGNORECASE,
+)
+BIOGRAPHICAL_EVIDENCE_PATTERN = re.compile(
+    r"\b(?:born|birth|aged?|years? old)\b|\b(?:18|19|20)\d{2}\b",
+    re.IGNORECASE,
+)
+DIAGNOSTIC_STOPWORDS = {
+    "a",
+    "an",
+    "at",
+    "by",
+    "did",
+    "does",
+    "in",
+    "is",
+    "of",
+    "the",
+    "to",
+    "was",
+    "were",
+    "what",
+    "when",
+    "where",
+    "which",
+    "who",
+}
+
+
+def evidence_complete_for_question(
+    question: str,
+    evidence: str,
+    *,
+    literal_gold_present: bool,
+    gold_answers: tuple[str, ...] = (),
+) -> bool:
+    """Reject literal-only comparison hits that omit one operand's evidence."""
+    if not literal_gold_present:
+        return False
+    comparison = COMPARISON_QUESTION_PATTERN.fullmatch(question.strip())
+    if comparison is not None:
+        return all(
+            entity_has_biographical_evidence(evidence, comparison.group(name))
+            for name in ("left", "right")
+        )
+    if not gold_answers:
+        return True
+    query_terms = diagnostic_terms(question)
+    if not query_terms:
+        return True
+    minimum_overlap = min(2, len(query_terms))
+    return any(
+        answer_has_local_query_support(
+            evidence,
+            answer,
+            query_terms=query_terms,
+            minimum_overlap=minimum_overlap,
+        )
+        for answer in gold_answers
+    )
+
+
+def entity_has_biographical_evidence(
+    evidence: str,
+    entity: str,
+    *,
+    forward_window: int = 240,
+) -> bool:
+    """Require an entity occurrence followed locally by age/birth evidence."""
+    for match in re.finditer(re.escape(entity.strip()), evidence, re.IGNORECASE):
+        following = evidence[match.start() : match.end() + forward_window]
+        if BIOGRAPHICAL_EVIDENCE_PATTERN.search(following):
+            return True
+    return False
+
+
+def diagnostic_terms(value: str) -> set[str]:
+    """Return bounded relation terms for diagnostic completeness only."""
+    return {
+        term
+        for term in re.findall(r"[a-z0-9_]+", value.casefold())
+        if term not in DIAGNOSTIC_STOPWORDS and len(term) > 1
+    }
+
+
+def answer_has_local_query_support(
+    evidence: str,
+    answer: str,
+    *,
+    query_terms: set[str],
+    minimum_overlap: int,
+    radius: int = 260,
+) -> bool:
+    """Require a literal answer to occur near at least two relation terms."""
+    for match in re.finditer(re.escape(answer.strip()), evidence, re.IGNORECASE):
+        start = max(0, match.start() - radius)
+        end = min(len(evidence), match.end() + radius)
+        if len(query_terms & diagnostic_terms(evidence[start:end])) >= minimum_overlap:
+            return True
+    return False
 
 
 def candidate_ids_containing_gold(

@@ -46,10 +46,12 @@ def route(
     *,
     scopes: tuple[str, ...] = (),
     requires_raw: bool = False,
+    context_profile: str | None = None,
 ) -> RoutePlan:
     return RoutePlan(
         query="relevant evidence",
         intent="EXACT_QUOTE" if requires_raw else "test",
+        context_profile=context_profile,
         sources=[
             SourcePlan(source=source, enabled=source in enabled)
             for source in (
@@ -288,7 +290,167 @@ def test_highly_overlapping_spans_only_consume_budget_once() -> None:
 
     assert selected_ids(result) == {"first"}
     assert result.token_usage == 10
-    assert any(item["reason"] == "overlapping_span" for item in result.duplicate_decisions)
+    decision = next(
+        item
+        for item in result.duplicate_decisions
+        if item["reason"] == "overlapping_selected_span"
+    )
+    assert decision["overlap_ratio"] == 0.75
+    assert decision["unique_message_count"] == 1
+
+
+def test_overlap_below_threshold_keeps_both_spans() -> None:
+    first = candidate(
+        "raw_message_span",
+        5,
+        "first",
+        score=0.9,
+        message_ids=[1, 2, 3, 4],
+    )
+    second = candidate(
+        "raw_message_span",
+        5,
+        "second",
+        score=0.8,
+        message_ids=[4, 5, 6, 7],
+    )
+
+    result = EvidenceConstrainedContextSelector().select(
+        candidates=[first, second],
+        route_plan=route(("raw_message_span",)),
+        token_budget=20,
+        token_counter=WordCounter(),
+    )
+
+    assert selected_ids(result) == {"first", "second"}
+
+
+def test_unique_anchor_prevents_overlap_from_discarding_distinct_evidence() -> None:
+    first = candidate(
+        "raw_message_span",
+        5,
+        "first",
+        score=0.9,
+        message_ids=[1, 2, 3, 4],
+    )
+    second = MemoryCandidate(
+        source="raw_message_span",
+        content="second unique evidence",
+        score=0.8,
+        record_id="second",
+        chat_id="chat",
+        source_message_ids=[2, 3, 4, 5],
+        metadata={"anchor_message_ids": [5]},
+    )
+
+    result = EvidenceConstrainedContextSelector().select(
+        candidates=[first, second],
+        route_plan=route(("raw_message_span",)),
+        token_budget=20,
+        token_counter=WordCounter(),
+    )
+
+    assert selected_ids(result) == {"first", "second"}
+
+
+def test_global_summary_includes_complete_history_when_it_fits() -> None:
+    history = [
+        MemoryCandidate(
+            source="raw_message_span",
+            content=f"segment {index}",
+            score=0.5,
+            record_id=f"segment-{index}",
+            chat_id="history",
+            source_message_ids=[index],
+            metadata={"timeline_index": index},
+        )
+        for index in range(6)
+    ]
+
+    result = EvidenceConstrainedContextSelector().select(
+        candidates=list(reversed(history)),
+        route_plan=route(
+            ("raw_message_span",),
+            context_profile="global_summary",
+        ),
+        token_budget=20,
+        token_counter=WordCounter(),
+    )
+
+    assert [item.record_id for item in result.selected_candidates] == [
+        f"segment-{index}" for index in range(6)
+    ]
+    assert result.coverage_strategy == (
+        "chronological_complete_or_timeline_sample"
+    )
+    assert result.coverage_ratio == 1.0
+
+
+def test_global_summary_oversized_history_covers_beginning_middle_and_end() -> None:
+    history = [
+        MemoryCandidate(
+            source="raw_message_span",
+            content=" ".join([f"segment-{index}"] * 5),
+            score=0.5,
+            record_id=f"segment-{index}",
+            chat_id="history",
+            source_message_ids=[index],
+            metadata={"timeline_index": index},
+        )
+        for index in range(9)
+    ]
+
+    result = EvidenceConstrainedContextSelector().select(
+        candidates=list(reversed(history)),
+        route_plan=route(
+            ("raw_message_span",),
+            context_profile="global_summary",
+        ),
+        token_budget=15,
+        token_counter=WordCounter(),
+    )
+
+    assert selected_ids(result) == {"segment-0", "segment-4", "segment-8"}
+    assert [item.record_id for item in result.selected_candidates] == [
+        "segment-0",
+        "segment-4",
+        "segment-8",
+    ]
+    assert result.selected_time_range_count == 3
+
+
+def test_global_summary_time_range_count_matches_disjoint_selected_ranges() -> None:
+    history = [
+        MemoryCandidate(
+            source="raw_message_span",
+            content=f"segment {index}",
+            score=0.8,
+            record_id=f"segment-{index}",
+            chat_id="history",
+            source_message_ids=message_ids,
+            metadata={"timeline_index": message_ids[0]},
+        )
+        for index, message_ids in enumerate(
+            ([1, 2], [3, 4], [10, 11])
+        )
+    ]
+
+    result = EvidenceConstrainedContextSelector().select(
+        candidates=history,
+        route_plan=route(
+            ("raw_message_span",),
+            context_profile="global_summary",
+        ),
+        token_budget=20,
+        token_counter=WordCounter(),
+    )
+
+    assert [item.record_id for item in result.selected_candidates] == [
+        "segment-0",
+        "segment-1",
+        "segment-2",
+    ]
+    assert result.selected_time_range_count == 2
 
 
 def test_optional_candidates_share_global_pool_and_disabled_sources_are_excluded() -> None:

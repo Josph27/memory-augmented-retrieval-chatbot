@@ -6,7 +6,12 @@ from types import SimpleNamespace
 
 import pytest
 
-from evals.memory_agent_bench.adapter import run_example
+from evals.memory_agent_bench.adapter import (
+    MockAnswerModel,
+    ProductionLikeHarness,
+    evidence_complete_for_question,
+    run_example,
+)
 from evals.memory_agent_bench.loader import (
     load_examples,
     load_huggingface_examples,
@@ -33,6 +38,7 @@ from src.core.contracts import (
     SourcePlan,
     WorkflowTrace,
 )
+from src.memory.structured_state import MemoryUpdateResult
 
 
 FIXTURE = (
@@ -139,6 +145,33 @@ class RecordingHarness:
 
     def close(self) -> None:
         self.closed = True
+
+
+class AcceptedMemoryUpdater:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def update(self, existing_memory, messages):  # type: ignore[no-untyped-def]
+        del existing_memory
+        self.calls += 1
+        return MemoryUpdateResult(
+            memory_state={
+                "memories": [
+                    {
+                        "id": "user_fact:codename",
+                        "category": "user_facts",
+                        "key": "codename",
+                        "value": "cobalt lantern",
+                        "source_message_ids": [
+                            message.id for message in messages if message.role == "user"
+                        ],
+                        "confidence": 0.9,
+                        "status": "active",
+                    }
+                ]
+            },
+            accepted=True,
+        )
 
 
 def test_fixture_parses_normalized_example() -> None:
@@ -366,6 +399,44 @@ def test_incremental_replay_calls_memory_update_and_session_lifecycle() -> None:
     assert harness.closed is True
 
 
+def test_roleless_history_skips_structured_memory_but_finalizes_gist_and_inactive_chat() -> None:
+    updater = AcceptedMemoryUpdater()
+    harness = ProductionLikeHarness(
+        MockAnswerModel(),
+        mock_answer=False,
+        structured_memory_updater=updater,
+    )
+    try:
+        example = load_examples(FIXTURE, limit=1)[0]
+        session = example.sessions[0]
+
+        harness.replay_session(example.example_id, session.session_id, session.chunks)
+        history_chat_id = f"{example.example_id}-{session.session_id}"
+        harness.end_current_session()
+
+        messages = harness.database.messages_for_chat(history_chat_id)
+        gists = harness.database.chat_gists_by_source_type("previous_chat_gist")
+        inactive_chat_ids = {row["id"] for row in harness.database.list_inactive_chats()}
+
+        assert updater.calls == 0
+        assert harness.memory_update_calls == 0
+        assert history_chat_id in inactive_chat_ids
+        assert harness.database.chat_memory_state(history_chat_id) is None
+        assert all(not message.summarized for message in messages)
+        assert all(message.gist_processed for message in messages)
+        assert [message.role for message in messages[:4]] == [
+            "user",
+            "assistant",
+            "user",
+            "assistant",
+        ]
+        assert gists and gists[0].chat_id == history_chat_id
+        assert harness.prepared_history_gist_count == 1
+        assert harness.structured_memory_policy == "not_applicable_for_roleless_history"
+    finally:
+        harness.close()
+
+
 def test_multi_session_calls_chat_end_between_sessions() -> None:
     example = load_examples(FIXTURE)[1]
     harness = RecordingHarness()
@@ -389,8 +460,73 @@ def test_context_evidence_and_provenance_are_reported() -> None:
     assert row["provenance_present"] is True
     assert row["retrieved_candidates"][0]["source_message_ids"] == [11]
     assert row["evidence_diagnostics"]["gold_in_replay"] is True
+    assert row["evidence_diagnostics"][
+        "context_candidate_ids_with_gold_text"
+    ]
+    assert row["evidence_diagnostics"]["context_evidence_complete"] is False
     assert row["evidence_diagnostics"]["failure_stage"] == (
-        "none_literal_gold_reached_context"
+        "literal_gold_present_but_relational_evidence_incomplete"
+    )
+
+
+def test_comparison_evidence_requires_biographical_facts_for_both_operands() -> None:
+    question = "Who is older, Annie Morton or Terry Richardson?"
+    partial = (
+        "Annie Morton (born October 8, 1970) worked with photographer "
+        "Terry Richardson."
+    )
+    complete = (
+        f"{partial}\n"
+        "Terry Richardson (born August 14, 1965) is a photographer."
+    )
+
+    assert (
+        evidence_complete_for_question(
+            question,
+            partial,
+            literal_gold_present=True,
+        )
+        is False
+    )
+    assert (
+        evidence_complete_for_question(
+            question,
+            complete,
+            literal_gold_present=True,
+        )
+        is True
+    )
+
+
+def test_noncomparison_evidence_keeps_literal_diagnostic_contract() -> None:
+    assert evidence_complete_for_question(
+        "What was the launch code?",
+        "The launch code was COBALT-42.",
+        literal_gold_present=True,
+    )
+
+
+def test_literal_answer_without_local_relation_is_not_complete_evidence() -> None:
+    evidence = (
+        "Amala Paul is a citizen of India. "
+        + "unrelated filler " * 80
+        + "rugby union was created in England."
+    )
+
+    assert (
+        evidence_complete_for_question(
+            "Which country was rugby union created in?",
+            evidence,
+            literal_gold_present=True,
+            gold_answers=("India",),
+        )
+        is False
+    )
+    assert evidence_complete_for_question(
+        "Which country was rugby union created in?",
+        "Correction: rugby union was created in the country of India.",
+        literal_gold_present=True,
+        gold_answers=("India",),
     )
 
 
@@ -403,7 +539,7 @@ def test_mock_answer_mode_is_labeled_honestly() -> None:
     assert report["summary"]["generated_answer_grounding_tested"] is False
     assert "not tested" in row["notes"][0]
     assert row["memory_update_calls"] == 0
-    assert row["structured_update_backend_calls"] >= 1
+    assert row["structured_update_backend_calls"] == 0
 
 
 def test_cross_encoder_ablation_is_explicit_and_traceable() -> None:

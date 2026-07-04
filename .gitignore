@@ -17,6 +17,8 @@ eggs/
 .eggs/
 lib/
 lib64/
+!scripts/lib/
+!scripts/lib/load_eval_env.sh
 parts/
 sdist/
 var/
@@ -111,6 +113,8 @@ evals/document_qa/outputs/
 reports/longmemeval_pilot_*.json
 reports/*.jsonl
 .env
+artifacts/eval_runs/
+artifacts/evals/
 
 # poetry
 #   Similar to Pipfile.lock, it is generally recommended to include poetry.lock in version control.

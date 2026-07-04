@@ -50,10 +50,12 @@ def route(
     intent: str = "test",
     task_context: str | None = None,
     requires_raw: bool = False,
+    context_profile: str | None = None,
 ) -> RoutePlan:
     return RoutePlan(
         query="question",
         intent=intent,
+        context_profile=context_profile,
         sources=[
             SourcePlan(source=source, enabled=source in enabled)
             for source in (
@@ -162,6 +164,56 @@ def test_required_floor_smaller_than_base_does_not_shrink_base() -> None:
 
     assert plan.required_target == 1250
     assert plan.working_memory_budget == 4096
+
+
+def test_memory_recall_profile_uses_moderate_requested_budget() -> None:
+    plan = DynamicWorkingMemoryBudgetPlanner().plan(
+        route_plan=route(
+            ("structured_memory", "raw_message_span"),
+            context_profile="memory_recall",
+        ),
+        available_memory_budget=100_000,
+        required_evidence_floor=0,
+    )
+
+    assert plan.requested_memory_budget == 8192
+    assert plan.working_memory_budget == 8192
+
+
+def test_global_summary_profile_uses_large_budget_with_explicit_reserve() -> None:
+    plan = DynamicWorkingMemoryBudgetPlanner().plan(
+        route_plan=route(
+            ("previous_chat_gist", "raw_message_span"),
+            context_profile="global_summary",
+        ),
+        available_memory_budget=100_000,
+        required_evidence_floor=0,
+    )
+
+    assert plan.route_specific_cap == 131_072
+    assert plan.requested_memory_budget == 65_536
+    assert plan.budget_reserve_tokens == 4096
+    assert plan.working_memory_budget == 65_536
+
+
+def test_global_summary_budget_never_consumes_reserved_hard_headroom() -> None:
+    plan = DynamicWorkingMemoryBudgetPlanner(
+        MemoryBudgetPolicy(
+            global_summary_budget_tokens=65_536,
+            global_summary_max_budget_tokens=131_072,
+            global_summary_reserved_tokens=4096,
+        )
+    ).plan(
+        route_plan=route(
+            ("raw_message_span",),
+            context_profile="global_summary",
+        ),
+        available_memory_budget=20_000,
+        required_evidence_floor=0,
+    )
+
+    assert plan.working_memory_budget == 15_904
+    assert plan.working_memory_budget + plan.budget_reserve_tokens == 20_000
 
 
 def test_required_floor_larger_than_base_expands_working_budget() -> None:
@@ -302,3 +354,68 @@ def test_explicit_document_synthesis_can_use_more_than_base_budget() -> None:
     assert result.context_budget.metadata["required_evidence_floor"] > 4096
     assert result.context_packet.metadata["working_memory_budget"] > 4096
     assert len(result.context_packet.candidates) == 5
+
+
+def test_context_profiles_reach_final_packet_without_hidden_4096_cap() -> None:
+    counter = WordCounter()
+    manager = ContextManagerAgent(
+        budget_allocator=ContextBudgetAllocator(token_estimator=counter),
+        context_builder=ContextBuilder(token_estimator=counter),
+        budget_planner=DynamicWorkingMemoryBudgetPlanner(
+            MemoryBudgetPolicy(
+                memory_recall_budget_tokens=8192,
+                global_summary_budget_tokens=65_536,
+                global_summary_max_budget_tokens=131_072,
+                global_summary_reserved_tokens=4096,
+            )
+        ),
+        context_window=ResolvedContextWindow(
+            model_id="test",
+            native_context_window=243_282,
+            sliding_window=None,
+            endpoint_context_window=243_282,
+            endpoint_limit_verified=True,
+            application_context_cap=243_282,
+            effective_context_window=243_282,
+            limit_source="endpoint_metadata",
+        ),
+        output_reserve=512,
+    )
+    history = [
+        candidate(
+            "raw_message_span",
+            1500,
+            f"history-{index}",
+            score=0.9 - index * 0.01,
+            message_ids=[index + 1],
+        )
+        for index in range(6)
+    ]
+
+    recall = manager.build_context_packet(
+        system_prompt="system",
+        latest_user_message={"role": "user", "content": "question"},
+        ranked_candidates=history,
+        route_plan=route(
+            ("raw_message_span",),
+            context_profile="memory_recall",
+        ),
+    )
+    summary = manager.build_context_packet(
+        system_prompt="system",
+        latest_user_message={"role": "user", "content": "summarize history"},
+        ranked_candidates=history,
+        route_plan=route(
+            ("raw_message_span",),
+            context_profile="global_summary",
+        ),
+    )
+
+    assert recall.context_packet.metadata["working_memory_budget"] == 8192
+    assert recall.context_packet.metadata["selected_memory_tokens"] == 7500
+    assert summary.context_packet.metadata["working_memory_budget"] == 65_536
+    assert summary.context_packet.metadata["selected_memory_tokens"] == 9000
+    assert summary.context_packet.metadata["selected_memory_tokens"] > 4096
+    assert summary.context_packet.metadata["final_prompt_tokens"] < (
+        summary.context_packet.metadata["hard_input_budget"]
+    )

@@ -16,10 +16,14 @@ class MemoryBudgetPolicy:
     """Small route-aware working-memory policy, independent of model hard limits."""
 
     base_memory_budget: int = 4096
+    memory_recall_budget_tokens: int = 8192
     chat_memory_cap: int = 8192
     document_memory_cap: int = 16_384
     multi_scope_memory_cap: int = 16_384
     long_document_memory_cap: int = 32_768
+    global_summary_budget_tokens: int = 65_536
+    global_summary_max_budget_tokens: int = 131_072
+    global_summary_reserved_tokens: int = 4096
     required_evidence_headroom_ratio: float = 0.25
 
 
@@ -28,6 +32,8 @@ class DynamicBudgetPlan:
     base_memory_budget: int
     route_specific_cap: int
     route_cap_reason: str
+    requested_memory_budget: int
+    budget_reserve_tokens: int
     required_evidence_floor: int
     required_headroom: int
     required_target: int
@@ -41,6 +47,8 @@ class DynamicBudgetPlan:
             "base_memory_budget": self.base_memory_budget,
             "route_specific_cap": self.route_specific_cap,
             "route_cap_reason": self.route_cap_reason,
+            "requested_memory_budget": self.requested_memory_budget,
+            "budget_reserve_tokens": self.budget_reserve_tokens,
             "required_evidence_floor": self.required_evidence_floor,
             "required_headroom": self.required_headroom,
             "required_target": self.required_target,
@@ -69,24 +77,37 @@ class DynamicWorkingMemoryBudgetPlanner:
         required_evidence_floor: int,
     ) -> DynamicBudgetPlan:
         route_cap, reason = route_specific_cap(route_plan, self.policy)
+        requested_memory_budget = requested_memory_budget_for(
+            route_plan,
+            self.policy,
+        )
+        budget_reserve_tokens = (
+            max(0, self.policy.global_summary_reserved_tokens)
+            if route_plan.context_profile == "global_summary"
+            else 0
+        )
+        safe_available = max(
+            0,
+            available_memory_budget - budget_reserve_tokens,
+        )
         required_headroom = ceil(
             required_evidence_floor
             * max(0.0, self.policy.required_evidence_headroom_ratio)
         )
         required_target = required_evidence_floor + required_headroom
-        normal_target = max(self.policy.base_memory_budget, required_target)
+        normal_target = max(requested_memory_budget, required_target)
         working = min(
-            max(0, available_memory_budget),
+            safe_available,
             max(0, route_cap),
             max(0, normal_target),
         )
         expanded = False
         if (
             required_evidence_floor > route_cap
-            and required_evidence_floor <= available_memory_budget
+            and required_evidence_floor <= safe_available
         ):
             working = min(
-                available_memory_budget,
+                safe_available,
                 max(required_evidence_floor, required_target),
             )
             expanded = working > route_cap
@@ -94,6 +115,8 @@ class DynamicWorkingMemoryBudgetPlanner:
             base_memory_budget=self.policy.base_memory_budget,
             route_specific_cap=route_cap,
             route_cap_reason=reason,
+            requested_memory_budget=requested_memory_budget,
+            budget_reserve_tokens=budget_reserve_tokens,
             required_evidence_floor=required_evidence_floor,
             required_headroom=required_headroom,
             required_target=required_target,
@@ -101,7 +124,7 @@ class DynamicWorkingMemoryBudgetPlanner:
             working_memory_budget=max(0, working),
             budget_expanded_for_required_evidence=expanded,
             required_evidence_exceeds_available=(
-                required_evidence_floor > available_memory_budget
+                required_evidence_floor > safe_available
             ),
         )
 
@@ -118,6 +141,11 @@ def route_specific_cap(
         for scope in metadata.get("required_scopes", [])
         if isinstance(scope, str)
     }
+    if route_plan.context_profile == "global_summary":
+        return (
+            max(0, policy.global_summary_max_budget_tokens),
+            "global_summary_profile",
+        )
     if task_context in LONG_DOCUMENT_TASK_CONTEXTS:
         return policy.long_document_memory_cap, "explicit_long_document_task"
     if len(required_scopes) > 1:
@@ -139,4 +167,17 @@ def route_specific_cap(
         "decision_question",
     }:
         return policy.base_memory_budget, "simple_durable_recall"
+    if route_plan.context_profile == "memory_recall":
+        return policy.memory_recall_budget_tokens, "memory_recall_profile"
     return policy.base_memory_budget, "base_recent_or_general"
+
+
+def requested_memory_budget_for(
+    route_plan: RoutePlan,
+    policy: MemoryBudgetPolicy,
+) -> int:
+    if route_plan.context_profile == "global_summary":
+        return max(0, policy.global_summary_budget_tokens)
+    if route_plan.context_profile == "memory_recall":
+        return max(0, policy.memory_recall_budget_tokens)
+    return max(0, policy.base_memory_budget)

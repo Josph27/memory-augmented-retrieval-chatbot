@@ -15,6 +15,7 @@ from evals.mab_answer_eval.judge import (
     parse_judge_result,
 )
 from evals.mab_answer_eval.metrics import score_official
+from evals.mab_answer_eval.metrics import score_official_for_case
 from evals.mab_answer_eval.manifest import load_manifest, resolve_cases
 from evals.mab_answer_eval.runner import (
     EVALUATION_VERSION,
@@ -51,9 +52,11 @@ class FakeJudge:
         self.model_name = model_name
         self.responses = responses or [VALID_JUDGE]
         self.calls = 0
+        self.messages: list[list[dict[str, str]]] = []
 
     def judge(self, messages: list[dict[str, str]]) -> str:
         self.calls += 1
+        self.messages.append(messages)
         return self.responses[min(self.calls - 1, len(self.responses) - 1)]
 
 
@@ -265,6 +268,248 @@ def test_normalized_token_f1_metric_scores_partial_overlap() -> None:
     assert metric.passed is True
 
 
+def test_banking77_normalization_extracts_single_numeric_label(
+    tmp_path: Path,
+) -> None:
+    manifest = load_manifest(write_manifest(tmp_path / "manifest.yaml", manifest_value(1)))
+    case = replace(
+        manifest.cases[0],
+        dataset="icl_banking77",
+        official_metric="normalized_exact_match",
+    )
+
+    metric, normalization = score_official_for_case(
+        case,
+        "Customer report matched label: 38.",
+        ("38",),
+    )
+
+    assert normalization["normalized_answer"] == "38"
+    assert normalization["status"] == "applied"
+    assert metric.passed is True
+
+
+@pytest.mark.parametrize(
+    "prediction",
+    (
+        "50",
+        "label: 50",
+        "The answer is label 50",
+    ),
+)
+def test_banking77_normalization_accepts_only_explicit_label_forms(
+    tmp_path: Path,
+    prediction: str,
+) -> None:
+    manifest = load_manifest(write_manifest(tmp_path / "manifest.yaml", manifest_value(1)))
+    case = replace(
+        manifest.cases[0],
+        dataset="icl_banking77",
+        official_metric="normalized_exact_match",
+    )
+
+    metric, normalization = score_official_for_case(case, prediction, ("50",))
+
+    assert normalization["normalized_answer"] == "50"
+    assert metric.passed is True
+
+
+def test_banking77_normalization_ignores_unlabelled_explanation_number(
+    tmp_path: Path,
+) -> None:
+    manifest = load_manifest(write_manifest(tmp_path / "manifest.yaml", manifest_value(1)))
+    case = replace(
+        manifest.cases[0],
+        dataset="icl_banking77",
+        official_metric="normalized_exact_match",
+    )
+
+    metric, normalization = score_official_for_case(
+        case,
+        "The customer waited 50 days.",
+        ("50",),
+    )
+
+    assert normalization["normalized_answer"] is None
+    assert normalization["status"] == "not_applicable"
+    assert metric.passed is False
+
+
+def test_banking77_normalization_rejects_conflicting_labels(
+    tmp_path: Path,
+) -> None:
+    manifest = load_manifest(write_manifest(tmp_path / "manifest.yaml", manifest_value(1)))
+    case = replace(
+        manifest.cases[0],
+        dataset="icl_banking77",
+        official_metric="normalized_exact_match",
+    )
+
+    metric, normalization = score_official_for_case(
+        case,
+        "Possible labels are 50 or 48.",
+        ("48",),
+    )
+
+    assert normalization["normalized_answer"] is None
+    assert normalization["status"] == "ambiguous"
+    assert metric.passed is False
+
+
+def test_detectiveqa_normalization_extracts_answer_from_fenced_json(
+    tmp_path: Path,
+) -> None:
+    manifest = load_manifest(write_manifest(tmp_path / "manifest.yaml", manifest_value(1)))
+    case = replace(
+        manifest.cases[0],
+        dataset="detective_qa",
+        official_metric="normalized_exact_match",
+    )
+    references = ("D. Her sister Charlotte Blacklock",)
+
+    metric, normalization = score_official_for_case(
+        case,
+        '```json\n{"answer":"D. Her sister Charlotte Blacklock","reasoning":"..."}\n```',
+        references,
+    )
+
+    assert normalization["normalized_answer"] == references[0]
+    assert normalization["status"] == "applied"
+    assert metric.passed is True
+
+
+def test_detectiveqa_normalization_extracts_option_from_explanatory_prose(
+    tmp_path: Path,
+) -> None:
+    manifest = load_manifest(write_manifest(tmp_path / "manifest.yaml", manifest_value(1)))
+    case = replace(
+        manifest.cases[0],
+        dataset="detective_qa",
+        official_metric="normalized_exact_match",
+    )
+    references = ("C. Inheriting by means of falsified identity",)
+
+    metric, normalization = score_official_for_case(
+        case,
+        "The answer is C. Inheriting by means of falsified identity because the inheritance used a fake identity.",
+        references,
+    )
+
+    assert normalization["normalized_answer"] == references[0]
+    assert normalization["status"] == "applied"
+    assert metric.passed is True
+
+
+@pytest.mark.parametrize(
+    "prediction",
+    (
+        "D",
+        "The answer is D.",
+        "D. Charlotte Blacklock",
+    ),
+)
+def test_detectiveqa_normalization_accepts_unambiguous_option_forms(
+    tmp_path: Path,
+    prediction: str,
+) -> None:
+    manifest = load_manifest(write_manifest(tmp_path / "manifest.yaml", manifest_value(1)))
+    case = replace(
+        manifest.cases[0],
+        dataset="detective_qa",
+        official_metric="normalized_exact_match",
+    )
+    references = ("D. Charlotte Blacklock",)
+
+    metric, normalization = score_official_for_case(case, prediction, references)
+
+    assert normalization["normalized_answer"] == references[0]
+    assert metric.passed is True
+
+
+def test_detectiveqa_normalization_does_not_guess_from_malformed_json(
+    tmp_path: Path,
+) -> None:
+    manifest = load_manifest(write_manifest(tmp_path / "manifest.yaml", manifest_value(1)))
+    case = replace(
+        manifest.cases[0],
+        dataset="detective_qa",
+        official_metric="normalized_exact_match",
+    )
+
+    metric, normalization = score_official_for_case(
+        case,
+        '```json\n{"answer":"D. Her sister Charlotte Blacklock"\n```',
+        ("D. Her sister Charlotte Blacklock",),
+    )
+
+    assert normalization["normalized_answer"] is None
+    assert normalization["status"] == "not_applicable"
+    assert metric.passed is False
+
+
+def test_detectiveqa_normalization_rejects_ambiguous_options(
+    tmp_path: Path,
+) -> None:
+    manifest = load_manifest(write_manifest(tmp_path / "manifest.yaml", manifest_value(1)))
+    case = replace(
+        manifest.cases[0],
+        dataset="detective_qa",
+        official_metric="normalized_exact_match",
+    )
+
+    metric, normalization = score_official_for_case(
+        case,
+        "Either B or D",
+        ("D. Her sister Charlotte Blacklock",),
+    )
+
+    assert normalization["normalized_answer"] is None
+    assert normalization["status"] == "ambiguous"
+    assert metric.passed is False
+
+
+def test_detectiveqa_normalization_rejects_conflicting_json_answer_fields(
+    tmp_path: Path,
+) -> None:
+    manifest = load_manifest(write_manifest(tmp_path / "manifest.yaml", manifest_value(1)))
+    case = replace(
+        manifest.cases[0],
+        dataset="detective_qa",
+        official_metric="normalized_exact_match",
+    )
+
+    metric, normalization = score_official_for_case(
+        case,
+        '{"answer":"C. First","answer":"D. Second"}',
+        ("D. Second",),
+    )
+
+    assert normalization["normalized_answer"] is None
+    assert normalization["status"] == "ambiguous"
+    assert metric.passed is False
+
+
+def test_detectiveqa_normalization_rejects_json_array_mimicking_object_pairs(
+    tmp_path: Path,
+) -> None:
+    manifest = load_manifest(write_manifest(tmp_path / "manifest.yaml", manifest_value(1)))
+    case = replace(
+        manifest.cases[0],
+        dataset="detective_qa",
+        official_metric="normalized_exact_match",
+    )
+
+    metric, normalization = score_official_for_case(
+        case,
+        '[["answer", "D. Charlotte Blacklock"]]',
+        ("D. Charlotte Blacklock",),
+    )
+
+    assert normalization["normalized_answer"] is None
+    assert normalization["status"] == "not_applicable"
+    assert metric.passed is False
+
+
 def test_answer_and_judge_endpoint_configuration_are_independent(
     monkeypatch,
 ) -> None:
@@ -409,6 +654,9 @@ def test_formal_mab_execution_uses_production_updater_not_noop(
             replayed_chunks=[],
             history_ingestion_count=1,
             structured_updater_call_count=0,
+            history_input_modality="roleless_benchmark_context",
+            structured_memory_policy="not_applicable_for_roleless_history",
+            gist_count=1,
             shared_question_count=1,
         ),
     )
@@ -474,6 +722,9 @@ def test_same_history_is_prepared_once_for_multiple_questions(
             self.database_path.write_text("prepared", encoding="utf-8")
             self.replayed_chunks = []
             self.memory_update_calls = 0
+            self.history_input_modality = "roleless_benchmark_context"
+            self.structured_memory_policy = "not_applicable_for_roleless_history"
+            self.prepared_history_gist_count = 1
             case_db_paths.append(self.database_path)
 
         def prepare_history(self, example):  # type: ignore[no-untyped-def]
@@ -555,18 +806,110 @@ def test_mab_history_finalization_persists_memory_gist_and_inactive_chat() -> No
 
         question_turn = harness.ask(example.questions[0], example.answers[0])
 
-        assert updater.calls >= 1
+        assert updater.calls == 0
+        assert harness.memory_update_calls == 0
         assert history_chat_id in inactive_chat_ids
-        assert memory_json is not None and "Alex" in memory_json
+        assert memory_json is None
         assert gists and gists[0].chat_id == history_chat_id
-        assert all(message.summarized for message in messages)
+        assert all(not message.summarized for message in messages)
         assert all(message.gist_processed for message in messages)
+        assert [message.content for message in messages] == [
+            "My name is Alex.",
+            "Acknowledged.",
+        ]
         assert "benchmark-question-1" in active_chat_ids | {
             row["id"] for row in harness.database.list_active_chats()
         }
         assert question_turn.trace.chat_id == "benchmark-question-1"
+        assert harness.prepared_history_gist_count == 1
     finally:
         harness.close()
+
+
+def test_mab_prepared_snapshot_metadata_reports_structured_memory_skip(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    manifest = load_manifest(
+        write_manifest(tmp_path / "manifest.yaml", manifest_value(1))
+    )
+    case = resolve_cases(manifest, catalog_loader=catalog)[0]
+    executor = MABAnswerExecutor(
+        model=CountingAnswerModel(),
+        config=config(),
+        execution_mode="graph",
+    )
+    snapshot = tmp_path / "prepared.db"
+    snapshot.write_text("prepared", encoding="utf-8")
+
+    monkeypatch.setattr(
+        executor,
+        "_prepared_snapshot",
+        lambda *args, **kwargs: PreparedHistorySnapshot(
+            history_key=("split", "source-0", 0),
+            snapshot_path=snapshot,
+            replayed_chunks=[],
+            history_ingestion_count=1,
+            structured_updater_call_count=0,
+            history_input_modality="roleless_benchmark_context",
+            structured_memory_policy="not_applicable_for_roleless_history",
+            gist_count=1,
+            shared_question_count=2,
+        ),
+    )
+    class CountingHarness:
+        def __init__(self, model, mock_answer, **kwargs):  # type: ignore[no-untyped-def]
+            del model, mock_answer
+            self.database_path = Path(kwargs["database_path"])
+            self.database_path.parent.mkdir(parents=True, exist_ok=True)
+            self.database_path.write_text("prepared", encoding="utf-8")
+            self.replayed_chunks = []
+
+        def close(self) -> None:
+            return None
+
+    monkeypatch.setattr(
+        "evals.mab_answer_eval.runner.ProductionLikeHarness",
+        CountingHarness,
+    )
+    monkeypatch.setattr(
+        "evals.mab_answer_eval.runner.run_example",
+        lambda *args, **kwargs: [
+            {
+                "prediction": "answer-0",
+                "workflow_trace": {
+                    "context_manager": {
+                        "evidence_selection": {"token_usage": 10},
+                        "token_accounting": {"final_prompt_tokens": 20, "tokenizer_mode": "text_tokenizer"},
+                    },
+                    "timings_ms": {"main_model_call": 1.0, "total_turn": 2.0},
+                    "prompt_source": "context_packet",
+                },
+                "evidence_diagnostics": {
+                    "retrieved_candidate_ids_with_gold_text": ["raw:1"],
+                    "context_candidate_ids_with_gold_text": ["raw:1"],
+                    "normalized_gold_answers": ["answer-0"],
+                    "failure_stage": None,
+                    "dropped_candidates": [],
+                },
+                "sources": ["raw_message_span"],
+                "selected_evidence_ids": ["raw:1"],
+                "route_plan": {"metadata": {"required_scopes": []}, "active_sources": ["raw_message_span"]},
+                "ranked_candidates": [],
+                "context_packet_summary": "summary",
+            }
+        ],
+    )
+
+    result = executor.execute(case)
+
+    assert result.raw_metadata["history_input_modality"] == "roleless_benchmark_context"
+    assert (
+        result.raw_metadata["structured_memory_policy"]
+        == "not_applicable_for_roleless_history"
+    )
+    assert result.raw_metadata["structured_updater_call_count"] == 0
+    assert result.raw_metadata["production_gist_generated"] is True
 
 
 def test_result_is_persisted_and_failure_keeps_prior_case(tmp_path: Path) -> None:
@@ -842,6 +1185,51 @@ def test_official_metric_and_judge_are_persisted_separately(tmp_path: Path) -> N
     assert completed["official_metric"]["passed"] is False
     assert completed["judge"]["correct"] is True
     assert completed["judge_prompt_version"] == JUDGE_PROMPT_VERSION
+
+
+def test_normalized_metric_keeps_raw_answer_for_storage_judge_and_cache(
+    tmp_path: Path,
+) -> None:
+    value = manifest_value(1)
+    value["cases"][0]["dataset"] = "icl_banking77"
+    value["cases"][0]["official_metric"] = "normalized_exact_match"
+    manifest = load_manifest(write_manifest(tmp_path / "manifest.yaml", value))
+    output = tmp_path / "artifacts"
+    raw_answer = "The answer is label 38"
+    judge = FakeJudge()
+
+    def numeric_catalog(_: str, __: str):  # type: ignore[no-untyped-def]
+        yield {
+            "context": "Example label mapping.",
+            "question": "Which label applies?",
+            "answer": "38",
+            "metadata": {"source": "source-0"},
+        }
+
+    run_evaluation(
+        manifest,
+        models=models(),
+        config=config(),
+        options=RunOptions(output, "graph"),
+        executor=FakeExecutor({"case-0": raw_answer}),
+        judge_client=judge,
+        catalog_loader=numeric_catalog,
+    )
+
+    completed = read_jsonl(output / "results.jsonl")[-1]
+    resolved_case = resolve_cases(manifest, catalog_loader=numeric_catalog)[0]
+    judge_payload = json.loads(judge.messages[0][-1]["content"])
+    assert completed["generated_answer"] == raw_answer
+    assert completed["normalized_answer"] == "38"
+    assert completed["output_normalization"]["status"] == "applied"
+    assert completed["official_metric"]["passed"] is True
+    assert judge_payload["generated_answer"] == raw_answer
+    assert completed["judge_cache_key"] == judge_cache_key(
+        resolved_case,
+        generated_answer=raw_answer,
+        judge_model=models().judge_model,
+        judge_endpoint=models().judge_endpoint,
+    )
 
 
 def test_compact_summary_and_disagreement_artifacts(tmp_path: Path) -> None:

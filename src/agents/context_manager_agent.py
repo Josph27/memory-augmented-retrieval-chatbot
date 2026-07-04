@@ -71,6 +71,7 @@ class ContextManagerAgent:
         tokenizer_loader: ProcessorLoader | None = None,
         memory_budget_policy: MemoryBudgetPolicy | None = None,
         minimum_optional_candidate_utility: float = 0.15,
+        raw_span_overlap_threshold: float = 0.7,
     ) -> "ContextManagerAgent":
         """Construct one shared model-aware allocator/builder pair."""
         profile = model_profile_for(model_id)
@@ -93,7 +94,8 @@ class ContextManagerAgent:
             output_reserve=profile.default_output_reserve,
             selector=EvidenceConstrainedContextSelector(
                 SelectorPolicy(
-                    minimum_optional_utility=minimum_optional_candidate_utility
+                    minimum_optional_utility=minimum_optional_candidate_utility,
+                    overlap_threshold=raw_span_overlap_threshold,
                 )
             ),
             budget_planner=DynamicWorkingMemoryBudgetPlanner(memory_budget_policy),
@@ -196,6 +198,8 @@ class ContextManagerAgent:
                     fixed_formatting_overhead
                 ),
                 "source_budgets_advisory_only": True,
+                "context_profile": route_plan.context_profile,
+                "effective_memory_budget": working_memory_budget,
                 "budget_planning_ms": round(budget_planning_ms, 3),
             }
         )
@@ -248,6 +252,8 @@ class ContextManagerAgent:
                 "base_memory_budget",
                 "route_specific_cap",
                 "route_cap_reason",
+                "requested_memory_budget",
+                "budget_reserve_tokens",
                 "required_evidence_floor",
                 "required_headroom",
                 "required_target",
@@ -316,6 +322,8 @@ class ContextManagerAgent:
             "final_prompt_tokens": packet.metadata.get("final_prompt_tokens"),
         }
         packet.metadata["working_memory_budget"] = working_memory_budget
+        packet.metadata["effective_memory_budget"] = working_memory_budget
+        packet.metadata["context_profile"] = route_plan.context_profile
         packet.metadata["hard_input_budget"] = hard_input_budget
         packet.metadata["evidence_contract_satisfied"] = (
             selection.evidence_contract_satisfied
@@ -463,6 +471,16 @@ def context_manager_metadata(
         "context_manager_used": True,
         "source_budgets": dict(context_budget.source_token_budgets),
         "source_budgets_advisory_only": True,
+        "context_profile": context_packet.metadata.get("context_profile"),
+        "requested_memory_budget": context_packet.metadata.get(
+            "requested_memory_budget"
+        ),
+        "effective_memory_budget": context_packet.metadata.get(
+            "effective_memory_budget"
+        ),
+        "budget_reserve_tokens": context_packet.metadata.get(
+            "budget_reserve_tokens"
+        ),
         "working_memory_budget": context_packet.metadata.get(
             "working_memory_budget"
         ),

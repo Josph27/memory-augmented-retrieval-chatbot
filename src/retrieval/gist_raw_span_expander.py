@@ -141,6 +141,8 @@ class GistRawSpanExpander:
                             len(included) < len(messages) or content != full_content
                         ),
                         "retrieval_mode": "gist_provenance_expansion",
+                        "retrieval_path": "gist_expansion",
+                        "retrieval_paths": ["gist_expansion"],
                         "span_kind": "gist_expanded_exact_raw",
                         "status": "active",
                     },
@@ -226,18 +228,19 @@ def best_message_ids(
 ) -> set[int]:
     """Return the query-best raw message IDs that char truncation must retain."""
     query_terms = content_terms(query)
+    if not query_terms:
+        return {messages[-1].id}
     best_overlap = max(
         len(query_terms & content_terms(message.content))
         for message in messages
     )
-    best = [
-        message
+    if best_overlap <= 0:
+        return {messages[-1].id}
+    return {
+        message.id
         for message in messages
         if len(query_terms & content_terms(message.content)) == best_overlap
-    ]
-    user_best = [message for message in best if message.role == "user"]
-    selected = max(user_best or best, key=lambda message: message.id)
-    return {selected.id}
+    }
 
 
 def int_metadata(metadata: dict[str, object], name: str) -> int | None:

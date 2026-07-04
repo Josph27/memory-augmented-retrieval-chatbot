@@ -5,6 +5,7 @@ from dataclasses import dataclass
 
 from src.core.contracts import RoutePlan, SourcePlan
 from src.routing.query_analyzer import QueryAnalysis, QueryAnalyzer
+from src.routing.retrieval_query import simplify_retrieval_query
 
 
 @dataclass(frozen=True)
@@ -111,17 +112,37 @@ class RoutePlanner:
 
     def plan_from_analysis(self, analysis: QueryAnalysis) -> RoutePlan:
         """Build a RoutePlan from precomputed query analysis."""
+        context_profile = (
+            "global_summary"
+            if analysis.signals.asks_for_global_summary
+            else self.policy.intent_context_profiles.get(
+                analysis.intent,
+                "general_chat",
+            )
+        )
+        rewrite = simplify_retrieval_query(
+            analysis.normalized_query,
+            context_profile=context_profile,
+            enabled=retrieval_query_simplification_enabled(),
+        )
         sources = [
             SourcePlan(
                 source=source_policy.source,
                 enabled=source_enabled(source_policy, analysis),
                 reason=source_reason(source_policy, analysis),
                 query=(
-                    analysis.normalized_query
+                    rewrite.retrieval_query
                     if source_enabled(source_policy, analysis)
                     else None
                 ),
                 limit=source_policy.limit,
+                filters={
+                    "context_profile": context_profile,
+                    "original_query": analysis.normalized_query,
+                    "retrieval_query": rewrite.retrieval_query,
+                    "query_rewrite_applied": rewrite.applied,
+                    "query_rewrite_reason": rewrite.reason,
+                },
             )
             for source_policy in (*self.policy.active_sources, *self.policy.future_sources)
         ]
@@ -132,16 +153,17 @@ class RoutePlanner:
             requires_retrieval=analysis.signals.asks_about_documents,
             sources=sources,
             ranking_profile=self.policy.ranking_profile,
-            context_profile=self.policy.intent_context_profiles.get(
-                analysis.intent,
-                "general_chat",
-            ),
+            context_profile=context_profile,
             fallback_policy=self.policy.fallback_policy,
             update_policy=self.policy.update_policy,
             termination_policy=self.policy.termination_policy,
             metadata={
                 "signals": signals_to_csv(analysis),
                 "requires_raw_span": analysis.signals.asks_for_exact_quote,
+                "original_query": analysis.normalized_query,
+                "retrieval_query": rewrite.retrieval_query,
+                "query_rewrite_applied": rewrite.applied,
+                "query_rewrite_reason": rewrite.reason,
             },
         )
 
@@ -157,6 +179,7 @@ def signals_to_csv(analysis: QueryAnalysis) -> str:
             ("asks_about_decision", analysis.signals.asks_about_decision),
             ("asks_about_task", analysis.signals.asks_about_task),
             ("asks_for_exact_quote", analysis.signals.asks_for_exact_quote),
+            ("asks_for_global_summary", analysis.signals.asks_for_global_summary),
             ("asks_general_question", analysis.signals.asks_general_question),
         )
         if enabled
@@ -179,13 +202,18 @@ def source_enabled(
     if source_policy.source == "previous_chat_gist":
         return (
             previous_chat_gist_retrieval_enabled()
-            and analysis.signals.asks_about_previous_memory
+            and (
+                analysis.signals.asks_about_previous_memory
+                or analysis.signals.asks_for_global_summary
+            )
         )
     if source_policy.source == "raw_message_span":
         return (
             previous_chat_gist_retrieval_enabled()
-            and analysis.signals.asks_about_previous_memory
-            and analysis.signals.asks_for_exact_quote
+            and (
+                analysis.signals.asks_about_previous_memory
+                or analysis.signals.asks_for_global_summary
+            )
         )
     return source_policy.enabled
 
@@ -206,16 +234,21 @@ def source_reason(
     if (
         source_policy.source == "previous_chat_gist"
         and previous_chat_gist_retrieval_enabled()
-        and analysis.signals.asks_about_previous_memory
+        and (
+            analysis.signals.asks_about_previous_memory
+            or analysis.signals.asks_for_global_summary
+        )
     ):
         return "Previous-chat memory query detected; enabling previous-chat gist retrieval."
     if (
         source_policy.source == "raw_message_span"
         and previous_chat_gist_retrieval_enabled()
-        and analysis.signals.asks_about_previous_memory
-        and analysis.signals.asks_for_exact_quote
+        and (
+            analysis.signals.asks_about_previous_memory
+            or analysis.signals.asks_for_global_summary
+        )
     ):
-        return "Exact previous-chat wording requested; reserving raw-span evidence."
+        return "Previous-chat recall enables direct raw-span evidence."
     return source_policy.reason
 
 
@@ -230,3 +263,10 @@ def previous_chat_gist_retrieval_enabled() -> bool:
         "yes",
         "on",
     }
+
+
+def retrieval_query_simplification_enabled() -> bool:
+    value = os.getenv("ENABLE_RETRIEVAL_QUERY_SIMPLIFICATION")
+    if value is None:
+        return True
+    return value.strip().lower() in {"1", "true", "yes", "on"}

@@ -194,10 +194,22 @@ class LongMemEvalAnswerExecutor:
                 endpoint_limit_source=self.config.endpoint_context_limit_source,
                 memory_budget_policy=MemoryBudgetPolicy(
                     base_memory_budget=self.config.base_memory_budget,
+                    memory_recall_budget_tokens=(
+                        self.config.memory_recall_budget_tokens
+                    ),
                     chat_memory_cap=self.config.chat_memory_cap,
                     document_memory_cap=self.config.document_memory_cap,
                     multi_scope_memory_cap=self.config.multi_scope_memory_cap,
                     long_document_memory_cap=self.config.long_document_memory_cap,
+                    global_summary_budget_tokens=(
+                        self.config.global_summary_budget_tokens
+                    ),
+                    global_summary_max_budget_tokens=(
+                        self.config.global_summary_max_budget_tokens
+                    ),
+                    global_summary_reserved_tokens=(
+                        self.config.global_summary_reserved_tokens
+                    ),
                     required_evidence_headroom_ratio=(
                         self.config.required_evidence_headroom_ratio
                     ),
@@ -205,6 +217,7 @@ class LongMemEvalAnswerExecutor:
                 minimum_optional_candidate_utility=(
                     self.config.minimum_optional_candidate_utility
                 ),
+                raw_span_overlap_threshold=self.config.raw_span_overlap_threshold,
             )
             coordinator = CoordinatorAgent(
                 database=database,

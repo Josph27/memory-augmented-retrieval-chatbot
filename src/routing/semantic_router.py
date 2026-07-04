@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import re
 
 from src.core.contracts import RoutePlan, SourcePlan
@@ -10,6 +11,7 @@ from src.routing.semantic_contracts import (
     RetrievalQuery,
     SemanticRoutePlan,
 )
+from src.routing.retrieval_query import simplify_retrieval_query
 
 
 EXACT_QUOTE = "EXACT_QUOTE"
@@ -77,6 +79,7 @@ CURRENT_CHAT_PATTERNS = (
 PREVIOUS_CHAT_PATTERNS = (
     r"\blast time\b",
     r"\bprevious chat\b",
+    r"\bprevious conversation\b",
     r"\bpast chat\b",
     r"\bearlier chat\b",
     r"上次",
@@ -94,6 +97,23 @@ DOCUMENT_PATTERNS = (
     r"\buploaded (?:document|file|report|paper)\b",
     r"\b(?:document|report|paper|pdf) says?\b",
     r"根据(?:上传的)?(?:文档|文件|报告)",
+)
+SUMMARY_REQUEST_PATTERNS = (
+    r"\bsummar(?:ize|y)\b",
+    r"\btl;dr\b",
+    r"总结",
+    r"概括",
+    r"摘要",
+)
+SUMMARY_REFERENTIAL_PATTERNS = (
+    *DOCUMENT_PATTERNS,
+    r"\bbook\b",
+    r"\bstory\b",
+    r"\bnovel\b",
+    r"\bprevious conversation\b",
+    r"\bearlier conversation\b",
+    r"\bwhat i told you earlier\b",
+    r"\bwhat we discussed earlier\b",
 )
 PREFERENCE_PATTERNS = (
     r"\bwhat do i prefer\b",
@@ -124,6 +144,8 @@ PREVIOUS_RECALL_PATTERNS = (
     r"\bwhat did we discuss last time\b",
     r"\bwhat did we discuss before\b",
     r"\bremember from before\b",
+    r"\bsummary of the previous conversation\b",
+    r"\bsummar(?:ize|y) (?:the )?previous conversation\b",
     r"上次.*(?:说|讨论)",
     r"之前的聊天",
 )
@@ -176,6 +198,7 @@ class SemanticRouter:
             required_scopes=required_scopes,
         )
         contract = evidence_contract_for(intent)
+        profile = context_profile_for(intent, normalized)
         return SemanticRoutePlan(
             original_query=query,
             normalized_query=normalized,
@@ -195,6 +218,7 @@ class SemanticRouter:
                 normalized_query=normalized,
                 intent=intent,
                 enabled_sources=sources,
+                context_profile=profile,
             ),
             confidence=confidence,
             retrieval_need=retrieval_need,
@@ -207,17 +231,40 @@ class SemanticRouter:
     def to_route_plan(self, semantic_plan: SemanticRoutePlan) -> RoutePlan:
         """Adapt typed semantic routing to the existing dispatcher contract."""
         enabled = set(semantic_plan.enabled_sources)
+        profile = context_profile_for(
+            semantic_plan.intents[0].intent,
+            semantic_plan.normalized_query,
+        )
+        retrieval_query = generated_retrieval_query(semantic_plan)
+        rewrite_applied = retrieval_query != semantic_plan.original_query
+        rewrite_reason = next(
+            (
+                item.purpose
+                for item in semantic_plan.retrieval_queries
+                if item.is_generated and item.text == retrieval_query
+            ),
+            "original_query",
+        )
         source_plans = [
             SourcePlan(
                 source=source,  # type: ignore[arg-type]
                 enabled=source in enabled,
                 reason=source_reason(source, semantic_plan),
-                query=semantic_plan.original_query if source in enabled else None,
-                limit=SEMANTIC_SOURCE_CANDIDATE_LIMIT
-                if source in enabled
-                else None,
+                query=(
+                    retrieval_query
+                    if source in enabled and source != "recent_messages"
+                    else semantic_plan.original_query
+                    if source in enabled
+                    else None
+                ),
+                limit=source_candidate_limit(source) if source in enabled else None,
                 filters={
                     "semantic_router_version": semantic_plan.router_version,
+                    "context_profile": profile,
+                    "original_query": semantic_plan.original_query,
+                    "retrieval_query": retrieval_query,
+                    "query_rewrite_applied": rewrite_applied,
+                    "query_rewrite_reason": rewrite_reason,
                     "retrieval_query_purposes": [
                         item.purpose
                         for item in semantic_plan.retrieval_queries
@@ -235,7 +282,7 @@ class SemanticRouter:
             requires_retrieval=primary_intent != CASUAL_CHAT,
             sources=source_plans,
             ranking_profile="semantic_v2",
-            context_profile=context_profile_for(primary_intent),
+            context_profile=profile,
             fallback_policy="abstain_when_evidence_contract_is_unsatisfied",
             update_policy="read_only_langgraph_spike",
             termination_policy="mock_answer_or_insufficient_evidence",
@@ -248,6 +295,10 @@ class SemanticRouter:
                 "primary_scope": semantic_plan.primary_scope,
                 "required_scopes": sorted(semantic_plan.required_scopes),
                 "task_context": semantic_plan.task_context,
+                "original_query": semantic_plan.original_query,
+                "retrieval_query": retrieval_query,
+                "query_rewrite_applied": rewrite_applied,
+                "query_rewrite_reason": rewrite_reason,
             },
         )
 
@@ -383,9 +434,13 @@ def sources_for(
     source_by_scope = {
         SCOPE_DOCUMENT: {"document_memory"},
         SCOPE_CURRENT_CHAT: {"current_chat_span"},
-        SCOPE_PREVIOUS_CHAT: {"previous_chat_gist"},
+        SCOPE_PREVIOUS_CHAT: {"previous_chat_gist", "raw_message_span"},
         SCOPE_DURABLE: {"structured_memory"},
-        SCOPE_UNKNOWN: {"structured_memory", "previous_chat_gist"},
+        SCOPE_UNKNOWN: {
+            "structured_memory",
+            "previous_chat_gist",
+            "raw_message_span",
+        },
     }
     for scope in scopes:
         enabled.update(source_by_scope[scope])
@@ -402,6 +457,11 @@ def retrieval_need_for(
 ) -> str:
     """Separate retrieval necessity from source scope and intent wording."""
     if intent != CASUAL_CHAT:
+        return RETRIEVAL_REQUIRED
+    if matches_any(normalized_query, SUMMARY_REQUEST_PATTERNS) and matches_any(
+        normalized_query,
+        SUMMARY_REFERENTIAL_PATTERNS,
+    ):
         return RETRIEVAL_REQUIRED
     if matches_any(normalized_query, NON_RETRIEVAL_PATTERNS):
         return RETRIEVAL_NONE
@@ -452,6 +512,7 @@ def retrieval_queries_for(
     normalized_query: str,
     intent: str,
     enabled_sources: tuple[str, ...],
+    context_profile: str,
 ) -> tuple[RetrievalQuery, ...]:
     """Build bounded hints while preserving the original query exactly."""
     queries = [
@@ -462,6 +523,22 @@ def retrieval_queries_for(
             is_generated=False,
         )
     ]
+    rewrite = simplify_retrieval_query(
+        original_query,
+        context_profile=context_profile,
+        enabled=query_simplification_enabled(),
+    )
+    if rewrite.applied:
+        queries.append(
+            RetrievalQuery(
+                text=rewrite.retrieval_query,
+                purpose=rewrite.reason,
+                allowed_sources=tuple(
+                    source for source in enabled_sources if source != "recent_messages"
+                ),
+                is_generated=True,
+            )
+        )
     if intent == EXACT_QUOTE:
         queries.append(
             RetrievalQuery(
@@ -478,12 +555,49 @@ def matches_any(query: str, patterns: tuple[str, ...]) -> bool:
     return any(re.search(pattern, query, flags=re.IGNORECASE) for pattern in patterns)
 
 
-def context_profile_for(intent: str) -> str:
+def context_profile_for(intent: str, normalized_query: str = "") -> str:
+    if matches_any(normalized_query, SUMMARY_REQUEST_PATTERNS) and matches_any(
+        normalized_query,
+        SUMMARY_REFERENTIAL_PATTERNS,
+    ):
+        return "global_summary"
     if intent == DOCUMENT_QA:
         return "document_question"
     if intent == CASUAL_CHAT:
         return "general_chat"
     return "memory_recall"
+
+
+def generated_retrieval_query(semantic_plan: SemanticRoutePlan) -> str:
+    generated = next(
+        (
+            item.text
+            for item in semantic_plan.retrieval_queries
+            if item.is_generated and item.purpose != "quote_orientation_search"
+        ),
+        None,
+    )
+    return generated or semantic_plan.original_query
+
+
+def source_candidate_limit(source: str) -> int:
+    env_name = {
+        "previous_chat_gist": "GIST_RETRIEVAL_CANDIDATES",
+        "raw_message_span": "DIRECT_RAW_RETRIEVAL_CANDIDATES",
+    }.get(source)
+    if env_name is None:
+        return SEMANTIC_SOURCE_CANDIDATE_LIMIT
+    try:
+        return max(1, int(os.getenv(env_name, "8" if source == "previous_chat_gist" else "12")))
+    except ValueError:
+        return 8 if source == "previous_chat_gist" else 12
+
+
+def query_simplification_enabled() -> bool:
+    return os.getenv(
+        "ENABLE_RETRIEVAL_QUERY_SIMPLIFICATION",
+        "1",
+    ).strip().lower() in {"1", "true", "yes", "on"}
 
 
 def source_reason(source: str, semantic_plan: SemanticRoutePlan) -> str:

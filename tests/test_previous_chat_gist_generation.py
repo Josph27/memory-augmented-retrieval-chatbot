@@ -140,6 +140,43 @@ def test_previous_chat_gist_retrieval_returns_memory_candidate(tmp_path: Path) -
     assert "Previous chat covered" in candidates[0].content
 
 
+def test_global_summary_gist_retrieval_exposes_complete_chronology(
+    tmp_path: Path,
+) -> None:
+    database = Database(tmp_path / "chatbot.db")
+    for index in range(5):
+        chat_id = f"history-{index}"
+        database.create_chat(chat_id)
+        message_id = database.save_message(
+            chat_id,
+            "user",
+            f"Chronological gist source {index}.",
+        )
+        database.insert_chat_gist(
+            chat_id=chat_id,
+            source_type="previous_chat_gist",
+            gist_text=f"Chronological gist {index}.",
+            start_message_id=message_id,
+            end_message_id=message_id,
+        )
+
+    candidates = PreviousChatGistRetriever(database).retrieve(
+        chat_id="new-chat",
+        source_plan=SourcePlan(
+            source="previous_chat_gist",
+            enabled=True,
+            query="global summary complete previous content",
+            limit=2,
+            filters={"context_profile": "global_summary"},
+        ),
+    )
+
+    assert len(candidates) == 5
+    assert [candidate.content for candidate in candidates] == [
+        f"Chronological gist {index}." for index in range(5)
+    ]
+
+
 def test_route_planner_enables_previous_chat_gist_by_default_for_previous_intent(
     monkeypatch,
 ) -> None:
