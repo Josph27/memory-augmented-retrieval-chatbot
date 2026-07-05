@@ -1,0 +1,11 @@
+{
+  "case_definition_count": 50,
+  "categories": [],
+  "executed_result_count": 50,
+  "judge_calls": 0,
+  "layers": [],
+  "model_calls": 0,
+  "production_changes": false,
+  "run_id": "product_behavior_baseline_20260705_v2",
+  "runtime_ms": 415.935
+}

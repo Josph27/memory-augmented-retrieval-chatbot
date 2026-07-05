@@ -1,0 +1,2 @@
+"""Deterministic product-behavior benchmark."""
+
