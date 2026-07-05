@@ -795,6 +795,225 @@ def run_evaluation(
     return metadata
 
 
+def run_judge_only(
+    manifest: LongMemManifest,
+    *,
+    source_results_path: Path,
+    models: EvaluationModels,
+    options: RunOptions,
+    judge_client: JudgeClient | None = None,
+) -> dict[str, Any]:
+    """Judge frozen answers without loading datasets or executing the answer path."""
+    if options.execution_mode != manifest.execution_mode:
+        raise ValueError("CLI execution mode must match the frozen manifest")
+    source_rows = validate_frozen_answer_rows(
+        manifest,
+        read_jsonl(source_results_path),
+        execution_mode=options.execution_mode,
+        answer_model=models.answer_model,
+    )
+    if options.max_cases is not None:
+        source_rows = source_rows[: max(0, options.max_cases)]
+    source_hash = hashlib.sha256(source_results_path.read_bytes()).hexdigest()
+    dry_plan = {
+        "evaluation_level": "judge",
+        "evaluation_version": EVALUATION_VERSION,
+        "manifest_name": manifest.name,
+        "manifest_hash": manifest.manifest_hash,
+        "cases": len(source_rows),
+        "execution_mode": options.execution_mode,
+        "answer_model": models.answer_model,
+        "judge_model": models.judge_model,
+        "judge_endpoint": models.judge_endpoint,
+        "secondary_judge_model": models.secondary_judge_model,
+        "estimated_generation_calls": 0,
+        "estimated_judge_calls": len(source_rows),
+        "source_answer_results": str(source_results_path),
+        "source_answer_results_sha256": source_hash,
+        "output_paths": artifact_paths(options.output_dir),
+        "dry_run": options.dry_run,
+    }
+    if options.dry_run:
+        return dry_plan
+    if judge_client is None:
+        raise ValueError("judge-only evaluation requires a judge client")
+
+    results_path = options.output_dir / RESULTS_FILE
+    prior_rows = read_jsonl(results_path) if options.resume else []
+    run_id = str(uuid4())
+    judge_calls = 0
+    skipped_completed = 0
+    for source_row in source_rows:
+        answer_key = str(source_row["answer_cache_key"])
+        judge_key = frozen_answer_judge_key(source_row, models)
+        completed = find_completed_judge(
+            prior_rows,
+            answer_key=answer_key,
+            judge_key=judge_key,
+        )
+        if completed is not None:
+            skipped_completed += 1
+            continue
+
+        try:
+            judge_started = time.perf_counter()
+            judge_calls += 1
+            judged = evaluate_with_judge(
+                judge_client,
+                question=str(source_row["question"]),
+                references=tuple(str(value) for value in source_row["reference_answer"]),
+                generated_answer=str(source_row["generated_answer"]),
+            )
+            judge_latency = (time.perf_counter() - judge_started) * 1000
+            if judged.result is None:
+                raise JudgeStageError(judged.error or "judge parse failed")
+            generation_total = float(source_row["latency_ms"].get("total", 0.0))
+            completed_record = {
+                **source_row,
+                "source_answer_run_id": source_row.get("run_id"),
+                "run_id": run_id,
+                "judge_model": models.judge_model,
+                "judge_endpoint": models.judge_endpoint,
+                "secondary_judge_model": models.secondary_judge_model,
+                "judge": judged.result.to_dict(),
+                "judge_attempts": judged.attempts,
+                "judge_prompt_version": JUDGE_PROMPT_VERSION,
+                "judge_cache_key": judge_key,
+                "latency_ms": {
+                    **source_row["latency_ms"],
+                    "judge": round(judge_latency, 3),
+                    "total": round(generation_total + judge_latency, 3),
+                },
+                "status": "completed",
+                "error": None,
+            }
+            append_jsonl(results_path, completed_record)
+            prior_rows.append(completed_record)
+        except Exception as error:
+            failed = {
+                **source_row,
+                "source_answer_run_id": source_row.get("run_id"),
+                "run_id": run_id,
+                "judge_model": models.judge_model,
+                "judge_endpoint": models.judge_endpoint,
+                "secondary_judge_model": models.secondary_judge_model,
+                "judge": JudgeResult(
+                    correct=False,
+                    complete=False,
+                    brief_reason="Judge stage failed.",
+                    raw_parse_status="invalid",
+                ).to_dict(),
+                "status": "failed",
+                "failed_stage": "judge",
+                "error": f"{type(error).__name__}: {error}"[:1000],
+            }
+            append_jsonl(results_path, failed)
+            prior_rows.append(failed)
+            if options.fail_fast:
+                raise
+
+    latest = latest_results(prior_rows)
+    metadata = {
+        **dry_plan,
+        "dry_run": False,
+        "run_id": run_id,
+        "generation_calls_this_invocation": 0,
+        "judge_calls_this_invocation": judge_calls,
+        "skipped_completed": skipped_completed,
+        "answer_parameters": ANSWER_PARAMETERS,
+        "judge_parameters": judge_parameters(),
+    }
+    write_compact_artifacts(
+        options.output_dir,
+        results=latest,
+        run_metadata=metadata,
+    )
+    write_judge_comparison(
+        options.output_dir,
+        rows=prior_rows,
+        active_judge_model=models.judge_model,
+        active_judge_endpoint=models.judge_endpoint,
+    )
+    return metadata
+
+
+def validate_frozen_answer_rows(
+    manifest: LongMemManifest,
+    rows: list[dict[str, Any]],
+    *,
+    execution_mode: str,
+    answer_model: str,
+) -> list[dict[str, Any]]:
+    """Return frozen answer rows in manifest order or reject the source file."""
+    expected = {case.case_id: case for case in manifest.cases}
+    by_case: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        case_id = str(row.get("case_id") or "")
+        if case_id not in expected:
+            raise ValueError(f"non-frozen LongMemEval answer row: {case_id or '<missing>'}")
+        if case_id in by_case:
+            raise ValueError(f"duplicate LongMemEval answer row: {case_id}")
+        if row.get("status") != "answer_completed":
+            raise ValueError(
+                f"LongMemEval answer row {case_id} is not frozen answer_completed"
+            )
+        if row.get("manifest_name") != manifest.name:
+            raise ValueError(f"manifest name mismatch for LongMemEval row {case_id}")
+        if row.get("manifest_hash") != manifest.manifest_hash:
+            raise ValueError(f"manifest hash mismatch for LongMemEval row {case_id}")
+        if row.get("evaluation_version") != EVALUATION_VERSION:
+            raise ValueError(f"evaluation version mismatch for LongMemEval row {case_id}")
+        if row.get("execution_mode") != execution_mode:
+            raise ValueError(f"execution mode mismatch for LongMemEval row {case_id}")
+        if row.get("answer_model") != answer_model:
+            raise ValueError(f"answer model mismatch for LongMemEval row {case_id}")
+        if row.get("question_type") != expected[case_id].question_type:
+            raise ValueError(f"question type mismatch for LongMemEval row {case_id}")
+        require_frozen_answer_fields(row, case_id=case_id)
+        by_case[case_id] = row
+    missing = [case.case_id for case in manifest.cases if case.case_id not in by_case]
+    if missing:
+        raise ValueError(f"missing LongMemEval answer rows: {', '.join(missing)}")
+    return [by_case[case.case_id] for case in manifest.cases]
+
+
+def require_frozen_answer_fields(row: dict[str, Any], *, case_id: str) -> None:
+    required_strings = (
+        "answer_cache_key",
+        "generated_answer",
+        "selected_evidence_hash",
+        "question",
+        "result_identity",
+    )
+    for field in required_strings:
+        if not isinstance(row.get(field), str) or not row[field]:
+            raise ValueError(f"LongMemEval answer row {case_id} lacks {field}")
+    if not isinstance(row.get("reference_answer"), list) or not row["reference_answer"]:
+        raise ValueError(f"LongMemEval answer row {case_id} lacks reference_answer")
+    for field in ("context_diagnostics", "official_metric", "latency_ms"):
+        if not isinstance(row.get(field), dict):
+            raise ValueError(f"LongMemEval answer row {case_id} lacks {field}")
+
+
+def frozen_answer_judge_key(
+    row: dict[str, Any],
+    models: EvaluationModels,
+) -> str:
+    return stable_hash(
+        {
+            "question": row["question"],
+            "reference": row["reference_answer"],
+            "question_type": row["question_type"],
+            "generated_answer": row["generated_answer"],
+            "selected_evidence_hash": row["selected_evidence_hash"],
+            "evaluation_version": row["evaluation_version"],
+            "judge_endpoint": models.judge_endpoint,
+            "judge_model": models.judge_model,
+            "judge_parameters": judge_parameters(),
+        }
+    )
+
+
 def base_record(
     run_id: str,
     manifest: LongMemManifest,
@@ -863,6 +1082,11 @@ def main() -> None:
     parser.add_argument("--answer-model")
     parser.add_argument("--judge-model")
     parser.add_argument("--judge-base-url")
+    parser.add_argument(
+        "--judge-only-answers",
+        type=Path,
+        help="Judge frozen answer_completed rows without loading or replaying the dataset.",
+    )
     parser.add_argument("--secondary-judge-model")
     parser.add_argument("--resume", action="store_true")
     parser.add_argument("--max-cases", type=int)
@@ -933,7 +1157,7 @@ def main() -> None:
     )
     executor = None
     judge_client = None
-    if not args.dry_run:
+    if not args.dry_run and args.judge_only_answers is None:
         answer_wrapper = EvaluationAnswerModel(
             ModelWrapper(config, model_name=answer_model)
         )
@@ -942,20 +1166,30 @@ def main() -> None:
             config=config,
             execution_mode=execution_mode,
         )
+    if not args.dry_run:
         judge_client = OpenAIJudgeClient(
             config,
             judge_model,
             base_url=judge_base_url,
             api_key=judge_api_key,
         )
-    report = run_evaluation(
-        manifest,
-        models=models,
-        config=config,
-        options=options,
-        executor=executor,
-        judge_client=judge_client,
-    )
+    if args.judge_only_answers is not None:
+        report = run_judge_only(
+            manifest,
+            source_results_path=args.judge_only_answers.resolve(),
+            models=models,
+            options=options,
+            judge_client=judge_client,
+        )
+    else:
+        report = run_evaluation(
+            manifest,
+            models=models,
+            config=config,
+            options=options,
+            executor=executor,
+            judge_client=judge_client,
+        )
     print(json.dumps(report, indent=2, ensure_ascii=True))
 
 

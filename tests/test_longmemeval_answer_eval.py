@@ -6,12 +6,14 @@ import inspect
 
 import pytest
 
+import evals.longmemeval_answer_eval as longmemeval_eval
 from evals.longmemeval_answer_eval import (
     RunOptions,
     load_manifest,
     replay_history_sessions_production_like,
     resolve_cases,
     run_evaluation,
+    run_judge_only,
     timestamp_preservation_status,
 )
 from evals.longmemeval_adapter.schema import HistoryMessage, HistorySession, LongMemEvalCase
@@ -61,6 +63,24 @@ class AcceptedMemoryUpdater:
         )
 
 
+class FakeJudgeClient:
+    model_name = "judge-a"
+
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def judge(self, messages):  # type: ignore[no-untyped-def]
+        del messages
+        self.calls += 1
+        return json.dumps(
+            {
+                "correct": True,
+                "complete": True,
+                "brief_reason": "Matches the reference.",
+            }
+        )
+
+
 FIXTURE = (
     Path(__file__).resolve().parents[1]
     / "evals"
@@ -92,6 +112,39 @@ def write_manifest(path: Path) -> Path:
     return path
 
 
+def frozen_answer_row(manifest_path: Path) -> dict:
+    manifest = load_manifest(manifest_path)
+    return {
+        "evaluation_level": "answer",
+        "evaluation_version": "lifecycle_v2",
+        "run_id": "frozen-answer-run",
+        "manifest_name": manifest.name,
+        "manifest_hash": manifest.manifest_hash,
+        "case_id": "tiny-preference",
+        "dataset": "longmemeval",
+        "execution_mode": "graph",
+        "question_type": "single-session-user",
+        "answer_model": "answer-a",
+        "judge_model": "__answer_only__",
+        "judge_endpoint": None,
+        "question": "Which theme do I prefer?",
+        "reference_answer": ["solarized dark"],
+        "generated_answer": "solarized dark",
+        "answer_cache_key": "answer-key",
+        "selected_evidence_hash": "evidence-hash",
+        "result_identity": "result-identity",
+        "generation_parameters": {"temperature": 0},
+        "context_diagnostics": {
+            "selected_memory_tokens": 10,
+            "final_prompt_tokens": 20,
+        },
+        "latency_ms": {"generation": 4.0, "judge": 0.0, "total": 5.0},
+        "official_metric": {"name": "pilot", "score": 1.0, "passed": True},
+        "status": "answer_completed",
+        "error": None,
+    }
+
+
 def test_manifest_resolves_fixture_case(tmp_path: Path) -> None:
     manifest = load_manifest(write_manifest(tmp_path / "manifest.yaml"))
     resolved = resolve_cases(manifest)
@@ -120,6 +173,112 @@ def test_dry_run_validates_without_writing(tmp_path: Path) -> None:
     assert report["estimated_generation_calls"] == 1
     assert report["estimated_judge_calls"] == 1
     assert not output_dir.exists()
+
+
+def test_judge_only_uses_frozen_answers_without_replay_or_generation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    manifest_path = write_manifest(tmp_path / "manifest.yaml")
+    manifest = load_manifest(manifest_path)
+    source_path = tmp_path / "frozen-results.jsonl"
+    source_path.write_text(
+        json.dumps(frozen_answer_row(manifest_path)) + "\n",
+        encoding="utf-8",
+    )
+    source_before = source_path.read_bytes()
+    output_dir = tmp_path / "judge"
+    judge = FakeJudgeClient()
+
+    def forbidden(*args, **kwargs):  # type: ignore[no-untyped-def]
+        del args, kwargs
+        raise AssertionError("answer generation or replay was called")
+
+    monkeypatch.setattr(longmemeval_eval, "resolve_cases", forbidden)
+    monkeypatch.setattr(
+        longmemeval_eval,
+        "replay_history_sessions_production_like",
+        forbidden,
+    )
+    monkeypatch.setattr(longmemeval_eval.LongMemEvalAnswerExecutor, "execute", forbidden)
+
+    report = run_judge_only(
+        manifest,
+        source_results_path=source_path,
+        models=EvaluationModels(
+            "answer-a",
+            "judge-a",
+            judge_endpoint="https://judge.example",
+        ),
+        options=RunOptions(
+            output_dir=output_dir,
+            execution_mode="graph",
+            resume=True,
+        ),
+        judge_client=judge,
+    )
+
+    assert source_path.read_bytes() == source_before
+    assert judge.calls == 1
+    assert report["generation_calls_this_invocation"] == 0
+    assert report["judge_calls_this_invocation"] == 1
+    completed = json.loads(
+        (output_dir / "results.jsonl").read_text(encoding="utf-8").strip()
+    )
+    assert completed["status"] == "completed"
+    assert completed["generated_answer"] == "solarized dark"
+    assert completed["answer_cache_key"] == "answer-key"
+    assert completed["selected_evidence_hash"] == "evidence-hash"
+    assert completed["context_diagnostics"] == {
+        "selected_memory_tokens": 10,
+        "final_prompt_tokens": 20,
+    }
+
+
+@pytest.mark.parametrize(
+    ("mutation", "expected"),
+    [
+        (lambda rows: [], "missing LongMemEval answer rows"),
+        (lambda rows: [*rows, dict(rows[0])], "duplicate LongMemEval answer row"),
+        (
+            lambda rows: [{**rows[0], "case_id": "not-frozen"}],
+            "non-frozen LongMemEval answer row",
+        ),
+        (
+            lambda rows: [{**rows[0], "status": "completed"}],
+            "is not frozen answer_completed",
+        ),
+    ],
+)
+def test_judge_only_rejects_invalid_frozen_answer_sets(
+    tmp_path: Path,
+    mutation,  # type: ignore[no-untyped-def]
+    expected: str,
+) -> None:
+    manifest_path = write_manifest(tmp_path / "manifest.yaml")
+    manifest = load_manifest(manifest_path)
+    source_path = tmp_path / "frozen-results.jsonl"
+    rows = mutation([frozen_answer_row(manifest_path)])
+    source_path.write_text(
+        "".join(json.dumps(row) + "\n" for row in rows),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match=expected):
+        run_judge_only(
+            manifest,
+            source_results_path=source_path,
+            models=EvaluationModels(
+                "answer-a",
+                "judge-a",
+                judge_endpoint="https://judge.example",
+            ),
+            options=RunOptions(
+                output_dir=tmp_path / "judge",
+                execution_mode="graph",
+                dry_run=True,
+            ),
+        )
 
 
 def test_longmemeval_history_replay_finalizes_each_session_and_preserves_boundaries(

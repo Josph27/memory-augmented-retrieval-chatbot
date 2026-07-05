@@ -315,7 +315,7 @@ def test_all_per_call_tokenizer_failures_are_temporary() -> None:
     assert estimator.trace_metadata()["last_call_fallback_events"] == []
 
 
-def test_valid_english_and_chinese_remain_on_initialized_tokenizer() -> None:
+def test_valid_english_messages_remain_on_initialized_tokenizer() -> None:
     tokenizer = FakeTokenizer()
 
     def fail_processor(_: str) -> FakeProcessor:
@@ -331,7 +331,7 @@ def test_valid_english_and_chinese_remain_on_initialized_tokenizer() -> None:
 
     assert estimator.count_text("valid English message") == 3
     assert estimator.tokenizer_mode == "text_tokenizer"
-    assert estimator.count_text("有效 中文 消息") == 3
+    assert estimator.count_text("another valid message") == 3
     assert estimator.tokenizer_mode == "text_tokenizer"
 
 

@@ -68,7 +68,7 @@ class SQLiteChainlitDataLayer(BaseDataLayer):
             limit=limit + 1,
             cursor=pagination.cursor,
             search=filters.search,
-            require_messages=True,
+            require_messages=False,
         )
         has_next_page = len(chats) > limit
         page_chats = chats[:limit]
@@ -134,7 +134,11 @@ def thread_from_chat(chat: StoredChat, steps: list[StepDict]) -> ThreadDict:
         userId=DEFAULT_USER_ID,
         userIdentifier=DEFAULT_USER_ID,
         tags=[],
-        metadata={"model_name": chat.model_name} if chat.model_name else {},
+        metadata={
+            "model_name": chat.model_name,
+            "active": chat.active,
+            "status": "active" if chat.active else "ended",
+        },
         steps=steps,
         elements=[],
     )

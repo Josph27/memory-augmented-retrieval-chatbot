@@ -142,26 +142,16 @@ async def chat_profiles(
 
 @cl.on_chat_start
 async def on_chat_start() -> None:
-    """Create a persistent chat row for the current Chainlit session."""
+    """Show an empty Home surface without creating a persisted chat."""
     model_name = selected_model_name()
-    chat_service = chat_service_for_model(model_name)
-    chat_id = chat_service.start_chat(chat_id=current_chainlit_thread_id())
-    cl.user_session.set("chat_id", chat_id)
+    cl.user_session.set("chat_id", None)
     cl.user_session.set("chat_ended", False)
     cl.user_session.set("model_name", model_name)
     cl.user_session.set(ORCHESTRATION_SETTING_ID, configured_orchestration_mode())
-
-    await cl.Message(
-        content=(
-            "Chat is ready. Messages are stored in SQLite. Older turns update structured "
-            "JSON memory while recent turns remain available as raw short-term memory. "
-            "You can also upload .txt, .md, or .pdf files for document-memory retrieval.\n\n"
-            f"Model: `{model_name}`"
-        )
-    ).send()
-    if demo_memory_trace_enabled():
-        await cl.Message(content="Demo memory trace is enabled.").send()
+    cl.user_session.set("product_view", "home")
+    cl.user_session.set("lifecycle_action_in_progress", None)
     await send_orchestration_settings()
+    await send_product_state(view="home", chat_id=None, active=None)
 
 
 @cl.on_chat_resume
@@ -170,11 +160,15 @@ async def on_chat_resume(thread: dict) -> None:
     chat_id = thread.get("id")
     if chat_id:
         cl.user_session.set("chat_id", chat_id)
-        cl.user_session.set("chat_ended", False)
+        cl.user_session.set("chat_ended", not database.is_chat_active(str(chat_id)))
     model_name = model_name_from_thread(thread)
     cl.user_session.set("model_name", model_name)
     cl.user_session.set(ORCHESTRATION_SETTING_ID, configured_orchestration_mode())
+    cl.user_session.set("product_view", "chat")
+    cl.user_session.set("lifecycle_action_in_progress", None)
     await send_orchestration_settings()
+    if chat_id:
+        await send_chat_controls(str(chat_id))
 
 
 @cl.on_settings_update
@@ -189,7 +183,19 @@ async def on_settings_update(settings: dict) -> None:
 async def on_message(message: cl.Message) -> None:
     """Handle one browser chat message."""
     chat_id = cl.user_session.get("chat_id")
+    if chat_id and not database.is_chat_active(str(chat_id)):
+        cl.user_session.set("chat_ended", True)
+        await send_product_state(
+            view="chat",
+            chat_id=str(chat_id),
+            active=False,
+        )
+        await send_chat_controls(str(chat_id))
+        return
     if not chat_id:
+        if cl.user_session.get("chat_ended"):
+            await send_product_state(view="home", chat_id=None, active=None)
+            return
         model_name = selected_model_name()
         chat_service = chat_service_for_model(model_name)
         thread_id = (
@@ -201,6 +207,12 @@ async def on_message(message: cl.Message) -> None:
         cl.user_session.set("chat_id", chat_id)
         cl.user_session.set("chat_ended", False)
         cl.user_session.set("model_name", model_name)
+        cl.user_session.set("product_view", "chat")
+        await send_product_state(
+            view="chat",
+            chat_id=str(chat_id),
+            active=True,
+        )
 
     model_name = cl.user_session.get("model_name") or model_name_for_chat(chat_id)
     chat_service = chat_service_for_model(model_name)
@@ -236,19 +248,42 @@ async def on_message(message: cl.Message) -> None:
         )
         if saved_trace:
             await cl.Message(content=saved_trace).send()
-    await send_chat_actions()
+    await send_chat_controls(str(chat_id))
 
 
-async def send_chat_actions() -> None:
-    """Show lifecycle controls backed by the current chat action services."""
+async def send_chat_controls(chat_id: str) -> None:
+    """Send non-persistent controls that custom JS moves outside the transcript."""
+    chat = database.get_chat(chat_id)
+    if chat is None:
+        return
+    actions = [
+        cl.Action(
+            name="fork_chat",
+            label="Fork Chat",
+            payload={"chat_id": chat_id},
+        ),
+        cl.Action(name="new_chat", label="New Chat", payload={"value": "new"}),
+        cl.Action(name="nav_home", label="Home", payload={"view": "home"}),
+    ]
+    if chat.active:
+        actions.insert(
+            0,
+            cl.Action(
+                name="end_chat",
+                label="End Chat",
+                payload={"chat_id": chat_id},
+            ),
+        )
     await cl.Message(
-        content="Actions",
-        actions=[
-            cl.Action(name="end_chat", label="End chat", payload={"value": "end"}),
-            cl.Action(name="fork_chat", label="Fork chat", payload={"value": "fork"}),
-            cl.Action(name="new_chat", label="New chat", payload={"value": "new"}),
-        ],
+        content="__MEMORY_CHATBOT_CONTROLS__",
+        actions=actions,
+        metadata={"ui_surface": "chat_controls"},
     ).send()
+    await send_product_state(
+        view="chat",
+        chat_id=chat_id,
+        active=chat.active,
+    )
 
 
 async def send_orchestration_settings() -> None:
@@ -269,63 +304,203 @@ async def send_orchestration_settings() -> None:
 @cl.action_callback("end_chat")
 async def end_chat_handler(action: cl.Action) -> None:
     """Finalize the current chat through the existing safe lifecycle action."""
-    del action
-    chat_id = cl.user_session.get("chat_id")
+    chat_id = action_payload(action).get("chat_id") or cl.user_session.get("chat_id")
     if not chat_id:
-        await cl.Message(content="No active chat to end.").send()
+        await send_product_error("No active chat to end.")
         return
-
+    if not database.is_chat_active(str(chat_id)):
+        cl.user_session.set("chat_ended", True)
+        await send_chat_controls(str(chat_id))
+        return
+    if not begin_lifecycle_action("end", str(chat_id)):
+        await send_product_error("End Chat is already being processed.")
+        return
     try:
         model_name = cl.user_session.get("model_name") or model_name_for_chat(chat_id)
         chat_service = chat_service_for_model(model_name)
         ChatEndAction(database=database, memory=chat_service.memory).execute(chat_id)
     except Exception as error:
-        await cl.Message(content=format_action_error("end chat", error)).send()
+        await send_product_error(format_action_error("end chat", error))
         return
+    finally:
+        finish_lifecycle_action()
 
-    cl.user_session.set("chat_id", None)
     cl.user_session.set("chat_ended", True)
-    await cl.Message(content="Chat ended and pending memory was finalized.").send()
+    await send_chat_controls(str(chat_id))
+    await refresh_sidebar()
 
 
 @cl.action_callback("fork_chat")
 async def fork_chat_handler(action: cl.Action) -> None:
     """Fork the current chat through the existing transactional action."""
-    del action
-    chat_id = cl.user_session.get("chat_id")
+    chat_id = action_payload(action).get("chat_id") or cl.user_session.get("chat_id")
     if not chat_id:
-        await cl.Message(content="No active chat to fork.").send()
+        await send_product_error("No chat to fork.")
         return
-
+    if not frontend_thread_switch_available():
+        await send_product_error(frontend_navigation_limitation("fork"))
+        return
+    if not begin_lifecycle_action("fork", str(chat_id)):
+        await send_product_error("Fork Chat is already being processed.")
+        return
+    new_chat_id: str | None = None
     try:
         new_chat_id = ChatForkAction(database=database).execute(chat_id)
+        if not await resume_frontend_thread(new_chat_id):
+            raise RuntimeError("Chainlit did not accept the frontend thread switch")
     except Exception as error:
-        await cl.Message(content=format_action_error("fork chat", error)).send()
+        if new_chat_id is not None:
+            database.delete_chat(new_chat_id)
+        await send_product_error(format_action_error("fork chat", error))
         return
+    finally:
+        finish_lifecycle_action()
 
     cl.user_session.set("chat_id", new_chat_id)
     cl.user_session.set("chat_ended", False)
-    await cl.Message(content=f"Chat forked. Active chat: `{new_chat_id}`.").send()
-    await send_chat_actions()
+    cl.user_session.set("product_view", "chat")
+    await send_chat_controls(new_chat_id)
 
 
 @cl.action_callback("new_chat")
 async def new_chat_handler(action: cl.Action) -> None:
     """Create a clean backend chat without mutating the previous chat."""
     del action
+    if not frontend_thread_switch_available():
+        await send_product_error(frontend_navigation_limitation("start a new chat"))
+        return
+    if not begin_lifecycle_action("new", ""):
+        await send_product_error("New Chat is already being processed.")
+        return
+    chat_id: str | None = None
     try:
         model_name = cl.user_session.get("model_name") or selected_model_name()
         chat_service = chat_service_for_model(model_name)
         chat_id = chat_service.start_chat()
+        if not await resume_frontend_thread(chat_id):
+            raise RuntimeError("Chainlit did not accept the frontend thread switch")
     except Exception as error:
-        await cl.Message(content=format_action_error("start a new chat", error)).send()
+        if chat_id is not None:
+            database.delete_chat(chat_id)
+        await send_product_error(format_action_error("start a new chat", error))
         return
+    finally:
+        finish_lifecycle_action()
 
     cl.user_session.set("chat_id", chat_id)
     cl.user_session.set("chat_ended", False)
     cl.user_session.set("model_name", model_name)
-    await cl.Message(content=f"New chat started: `{chat_id}`.").send()
-    await send_chat_actions()
+    cl.user_session.set("product_view", "chat")
+    await send_chat_controls(chat_id)
+
+
+@cl.action_callback("nav_home")
+async def nav_home_handler(action: cl.Action) -> None:
+    """Return to the empty Home surface without writing a chat message."""
+    del action
+    cl.user_session.set("chat_id", None)
+    cl.user_session.set("chat_ended", False)
+    cl.user_session.set("product_view", "home")
+    await send_product_state(view="home", chat_id=None, active=None)
+
+
+def action_payload(action: object) -> dict:
+    """Return a bounded action payload from Chainlit or a test double."""
+    payload = getattr(action, "payload", None)
+    return payload if isinstance(payload, dict) else {}
+
+
+def begin_lifecycle_action(name: str, chat_id: str) -> bool:
+    """Prevent duplicate lifecycle callbacks within one browser session."""
+    if cl.user_session.get("lifecycle_action_in_progress"):
+        return False
+    cl.user_session.set("lifecycle_action_in_progress", f"{name}:{chat_id}")
+    return True
+
+
+def finish_lifecycle_action() -> None:
+    """Clear the per-session lifecycle action guard."""
+    cl.user_session.set("lifecycle_action_in_progress", None)
+
+
+def frontend_thread_switch_available() -> bool:
+    """Return whether this Chainlit version exposes a real resume event."""
+    try:
+        return callable(cl.context.emitter.resume_thread)
+    except Exception:
+        return False
+
+
+async def resume_frontend_thread(chat_id: str) -> bool:
+    """Open an existing persisted thread without generating or saving a turn."""
+    thread = await data_layer().get_thread(chat_id)
+    if thread is None:
+        return False
+    try:
+        session = cl.context.session
+        emitter = cl.context.emitter
+    except Exception:
+        return False
+    await emitter.resume_thread(thread)
+    session.thread_id = chat_id
+    session.thread_id_to_resume = chat_id
+    return True
+
+
+def frontend_navigation_limitation(action: str) -> str:
+    """Explain a missing Chainlit capability without mutating backend state."""
+    return (
+        f"Could not {action} because this Chainlit client does not expose the "
+        "thread-resume event. Use the native History/New Chat controls."
+    )
+
+
+async def send_product_state(
+    *,
+    view: str,
+    chat_id: str | None,
+    active: bool | None,
+) -> None:
+    """Update the custom product shell without inserting transcript content."""
+    try:
+        await cl.send_window_message(
+            {
+                "source": "memory-chatbot-ui",
+                "command": "product-state",
+                "view": view,
+                "chat_id": chat_id,
+                "active": active,
+            }
+        )
+    except Exception:
+        return
+
+
+async def refresh_sidebar() -> None:
+    """Reload native thread history after a persisted lifecycle transition."""
+    try:
+        await cl.send_window_message(
+            {
+                "source": "memory-chatbot-ui",
+                "command": "refresh-sidebar",
+            }
+        )
+    except Exception:
+        return
+
+
+async def send_product_error(content: str) -> None:
+    """Show a transient product error without persisting it as chat history."""
+    try:
+        await cl.send_window_message(
+            {
+                "source": "memory-chatbot-ui",
+                "command": "product-error",
+                "message": content,
+            }
+        )
+    except Exception:
+        return
 
 
 def format_action_error(action_name: str, error: Exception) -> str:

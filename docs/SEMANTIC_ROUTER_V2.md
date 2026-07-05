@@ -38,7 +38,7 @@ hints only; they are never user evidence or `MemoryCandidate.content`.
 - `MEMORY_QA`
 - `CASUAL_CHAT`
 
-The baseline uses deterministic English and Chinese example patterns. It makes
+The baseline uses deterministic English example patterns. It makes
 no model call and is not a complete state-of-the-art semantic router.
 
 ## Temporal Scope
@@ -128,7 +128,7 @@ contract. Existing retrievers, gist expansion, reranking,
 
 - Classification is deterministic example matching, not embedding or
   model-based semantic classification.
-- Language support is deliberately narrow (`en`, `zh`, `unknown`).
+- Language support is deliberately narrow (`en`, `unknown`).
 - The existing dispatcher accepts one query per source, so generated variants
   are currently preserved and traced as hints but are not fanned out into
   multiple retrieval calls.
