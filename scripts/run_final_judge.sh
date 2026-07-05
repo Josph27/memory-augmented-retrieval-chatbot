@@ -90,7 +90,7 @@ RUN_DIR="$(final_eval_new_run_dir "$ROOT/artifacts/eval_runs" "$JUDGE_RUN_NAME")
 final_eval_create_fresh_dir "$RUN_DIR" ".final_52_judge_run"
 mkdir -p "$RUN_DIR"/{logs,meta}
 cp -R "$ANSWER_RUN_DIR/mab" "$RUN_DIR/mab"
-cp -R "$ANSWER_RUN_DIR/longmemeval" "$RUN_DIR/longmemeval"
+mkdir -p "$RUN_DIR/longmemeval"
 printf '%s\n' "$RUN_DIR" > "$JUDGE_STATE_FILE"
 if [[ -n "$RUN_PATH_FILE" ]]; then
   mkdir -p "$(dirname -- "$RUN_PATH_FILE")"
@@ -146,7 +146,7 @@ trap cleanup EXIT
 cat > "$COMMANDS_FILE" <<EOF
 bash scripts/run_final_judge.sh --answer-run-dir "$ANSWER_RUN_DIR"
 uv run python -m evals.mab_answer_eval --manifest "$ROOT/evals/manifests/mab_answer_heldout_v1.yaml" --execution-mode graph --output-dir "$RUN_DIR/mab" --answer-model "$ANSWER_MODEL_RESOLVED" --judge-model "\$JUDGE_MODEL" --resume
-uv run python -m evals.longmemeval_answer_eval --manifest "$ROOT/evals/manifests/longmemeval_answer_heldout_v1.yaml" --execution-mode graph --output-dir "$RUN_DIR/longmemeval" --answer-model "$ANSWER_MODEL_RESOLVED" --judge-model "\$JUDGE_MODEL" --resume
+uv run python -m evals.longmemeval_answer_eval --manifest "$ROOT/evals/manifests/longmemeval_answer_heldout_v1.yaml" --execution-mode graph --output-dir "$RUN_DIR/longmemeval" --answer-model "$ANSWER_MODEL_RESOLVED" --judge-model "\$JUDGE_MODEL" --judge-only-answers "$ANSWER_RUN_DIR/longmemeval/results.jsonl" --resume
 EOF
 
 git status --short > "$GIT_STATUS_FILE"
@@ -194,6 +194,7 @@ uv run python -m evals.longmemeval_answer_eval \
   --answer-model "$ANSWER_MODEL_RESOLVED" \
   --judge-model "$JUDGE_MODEL" \
   "${JUDGE_BASE_URL_ARGS[@]}" \
+  --judge-only-answers "$ANSWER_RUN_DIR/longmemeval/results.jsonl" \
   --resume
 
 echo "Judge artifacts:"

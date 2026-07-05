@@ -59,12 +59,6 @@ EXACT_QUOTE_PATTERNS = (
     r"\bhow did i phrase\b",
     r"\bwhat wording did i use\b",
     r"\bwhat were my .*words\b",
-    r"原话",
-    r"具体怎么说",
-    r"什么措辞",
-    r"用了什么措辞",
-    r"逐字引用",
-    r"怎么说的",
 )
 CURRENT_CHAT_PATTERNS = (
     r"\bearlier in this chat\b",
@@ -72,9 +66,6 @@ CURRENT_CHAT_PATTERNS = (
     r"\bthis conversation\b",
     r"\babove\b",
     r"\bjust now\b",
-    r"刚才",
-    r"这个\s*chat",
-    r"这次聊天",
 )
 PREVIOUS_CHAT_PATTERNS = (
     r"\blast time\b",
@@ -82,28 +73,20 @@ PREVIOUS_CHAT_PATTERNS = (
     r"\bprevious conversation\b",
     r"\bpast chat\b",
     r"\bearlier chat\b",
-    r"上次",
-    r"之前的聊天",
 )
 ANY_CHAT_PATTERNS = (
     r"\bwe discussed before\b",
     r"\bwhat did i say about\b",
     r"\bmy earlier message\b",
-    r"我们之前说过",
-    r"我之前关于",
 )
 DOCUMENT_PATTERNS = (
     r"\baccording to (?:the )?(?:uploaded )?(?:document|file|report|paper)\b",
     r"\buploaded (?:document|file|report|paper)\b",
     r"\b(?:document|report|paper|pdf) says?\b",
-    r"根据(?:上传的)?(?:文档|文件|报告)",
 )
 SUMMARY_REQUEST_PATTERNS = (
     r"\bsummar(?:ize|y)\b",
     r"\btl;dr\b",
-    r"总结",
-    r"概括",
-    r"摘要",
 )
 SUMMARY_REFERENTIAL_PATTERNS = (
     *DOCUMENT_PATTERNS,
@@ -120,8 +103,6 @@ PREFERENCE_PATTERNS = (
     r"\bmy preference\b",
     r"\bdo i prefer\b",
     r"\bremember my preference\b",
-    r"我的偏好",
-    r"我更喜欢",
 )
 PROJECT_STATE_PATTERNS = (
     r"\bwhere are we\b",
@@ -129,16 +110,11 @@ PROJECT_STATE_PATTERNS = (
     r"\bcurrent status\b",
     r"\bnext steps?\b",
     r"\bopen tasks?\b",
-    r"项目进展",
-    r"当前状态",
-    r"下一步",
 )
 SAME_CHAT_RECALL_PATTERNS = (
     r"\bwhat did i say earlier\b",
     r"\bwhat did we discuss earlier\b",
     r"\bearlier in (?:this )?(?:chat|conversation)\b",
-    r"刚才说",
-    r"这次聊天.*说",
 )
 PREVIOUS_RECALL_PATTERNS = (
     r"\bwhat did we discuss last time\b",
@@ -146,8 +122,6 @@ PREVIOUS_RECALL_PATTERNS = (
     r"\bremember from before\b",
     r"\bsummary of the previous conversation\b",
     r"\bsummar(?:ize|y) (?:the )?previous conversation\b",
-    r"上次.*(?:说|讨论)",
-    r"之前的聊天",
 )
 NON_RETRIEVAL_PATTERNS = (
     r"^(?:hi|hello|hey|thanks|thank you|good morning|good evening)[!. ]*$",
@@ -309,16 +283,14 @@ def normalize_query(query: str) -> str:
 
 
 def detect_language(query: str) -> str:
-    """Return a conservative en/zh/unknown language label."""
-    if re.search(r"[\u3400-\u9fff]", query):
-        return "zh"
+    """Return a conservative English-or-unknown language label."""
     if re.search(r"[a-zA-Z]", query):
         return "en"
     return "unknown"
 
 
 def classify_intent(normalized_query: str) -> tuple[str, float, str]:
-    """Classify a query using deterministic multilingual semantic examples."""
+    """Classify a query using deterministic English semantic examples."""
     rules = (
         (EXACT_QUOTE, EXACT_QUOTE_PATTERNS, 0.95, "quote/provenance wording"),
         (DOCUMENT_QA, DOCUMENT_PATTERNS, 0.92, "document-grounded wording"),

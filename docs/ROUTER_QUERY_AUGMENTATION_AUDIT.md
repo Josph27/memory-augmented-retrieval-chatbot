@@ -57,7 +57,6 @@ The current rule router produced:
 | `What were my exact words...` | `general_question` | recent, structured |
 | `How did I phrase...` | `general_question` | recent, structured |
 | `Can you quote my earlier message...` | `current_chat_question` | recent, structured |
-| Chinese quote/provenance examples | `general_question` | recent, structured |
 | `What did I say earlier in this chat?` | `current_chat_question` | recent, structured |
 | `What did we discuss last time?` | `previous_memory_question` | recent, structured; gist only if configured |
 | preference recall | `general_question` | recent, structured |
@@ -85,8 +84,7 @@ activate the exact evidence source needed for that profile.
    broad terms (`source`, `text`) can create false positives.
 8. Project-state summaries receive a memory profile but no current-chat gist or
    span source.
-9. Chinese and paraphrased provenance queries are not recognized.
-10. LLM/hybrid routing cannot activate current spans, previous gists, or raw
+9. LLM/hybrid routing cannot activate current spans, previous gists, or raw
     spans because those fields are absent from its structured output.
 
 The current router can reliably separate explicit document wording and several
@@ -114,7 +112,7 @@ deterministic reranker boosts `raw_message_span` for:
 exactly, exact words, quote, evidence, provenance, did i say
 ```
 
-It does not include `exact phrase`, `wording`, or Chinese equivalents. This is
+It does not include `exact phrase` or `wording`. This is
 why “Quote exactly...” can rank an already-retrieved raw span more strongly.
 The reranker cannot retrieve a missing source, so this boost does not repair the
 production routing gap.
@@ -258,8 +256,8 @@ The smallest safe first implementation should be deterministic and default-off:
 
 1. Add immutable query-analysis contracts in `src/routing/`, not in an agent
    module imported by `src/core/contracts.py`.
-2. Implement a deterministic augmenter/classifier for explicit English and
-   Chinese quote/provenance phrases.
+2. Implement a deterministic augmenter/classifier for explicit English
+   quote/provenance phrases.
 3. Feed typed intent/evidence hints into a Router v2 adapter around the existing
    `RoutePlanner`; preserve Router v1 as the default.
 4. Use `original_query` for user-message persistence, exact-evidence matching,
@@ -380,29 +378,28 @@ If a contract is unsatisfied:
 1. Augmentation preserves `original_query` byte-for-byte.
 2. Deterministic augmentation maps all listed English quote paraphrases to
    `EXACT_QUOTE`.
-3. Chinese quote/provenance phrases map to `EXACT_QUOTE`.
-4. `What exact phrase did I use about X?` activates a raw-capable source plan.
-5. Current-scope exact quote enables `current_chat_span`.
-6. Previous-scope exact quote enables `previous_chat_gist` and permits derived
+3. `What exact phrase did I use about X?` activates a raw-capable source plan.
+4. Current-scope exact quote enables `current_chat_span`.
+5. Previous-scope exact quote enables `previous_chat_gist` and permits derived
    `raw_message_span`.
-7. Gist-only ContextPacket fails the exact-quote evidence contract.
-8. Missing raw evidence produces abstention/insufficient-evidence trace rather
+6. Gist-only ContextPacket fails the exact-quote evidence contract.
+7. Missing raw evidence produces abstention/insufficient-evidence trace rather
    than a quoted answer.
-9. Casual chat does not activate span, gist, or document retrieval.
-10. Document QA activates `document_memory` and requires document provenance.
-11. Preference recall activates/retains `structured_memory`.
-12. Project-state summary preserves current safe defaults until current gist is
+8. Casual chat does not activate span, gist, or document retrieval.
+9. Document QA activates `document_memory` and requires document provenance.
+10. Preference recall activates/retains `structured_memory`.
+11. Project-state summary preserves current safe defaults until current gist is
     explicitly enabled.
-13. Synthetic variants never appear as user messages or MemoryCandidate
+12. Synthetic variants never appear as user messages or MemoryCandidate
     evidence.
-14. Router v1 behavior remains unchanged when Router v2 is disabled.
-15. Optional model augmentation falls back on missing model, timeout, malformed
+13. Router v1 behavior remains unchanged when Router v2 is disabled.
+14. Optional model augmentation falls back on missing model, timeout, malformed
     JSON, low confidence, unknown intents, or unknown sources.
-16. Production-path acceptance test covers:
+15. Production-path acceptance test covers:
     Router v2→dispatcher→gist expansion/current span→reranker→budget→
     ContextPacket→contract validation.
 
-Use a table-driven multilingual corpus rather than adding isolated phrase checks
+Use a table-driven English corpus rather than adding isolated phrase checks
 throughout RoutePlanner and reranker.
 
 ## Implementation Risks
@@ -417,19 +414,16 @@ throughout RoutePlanner and reranker.
    prompt. Validate ContextPacket.
 5. **Temporal ambiguity:** “earlier” may mean this chat or an older chat. Model
    this explicitly or ask clarification.
-6. **Multilingual tokenization:** current span retrieval tokenizes only
-   `[a-z0-9]+`; routing Chinese quote intent is not enough to retrieve Chinese
-   evidence. A later Unicode-aware retriever update will be needed.
-7. **Hybrid router mismatch:** the current LLM schema cannot express new typed
+6. **Hybrid router mismatch:** the current LLM schema cannot express new typed
    sources/contracts. Do not call it Router v2 without extending and validating
    the schema.
-8. **Contract compatibility:** adding required fields directly to RoutePlan can
+7. **Contract compatibility:** adding required fields directly to RoutePlan can
    break many tests/fixtures. Prefer optional metadata or a wrapper decision
    initially, then migrate deliberately.
-9. **Availability:** previous-chat gist retrieval is config-controlled and
+8. **Availability:** previous-chat gist retrieval is config-controlled and
    current gist stays default-off. Router v2 must distinguish requested source
    from available source.
-10. **Teammate dedup bug:** never deduplicate solely by `record_id`; include
+9. **Teammate dedup bug:** never deduplicate solely by `record_id`; include
     source and provenance identity.
 
 ## Recommended Next Step
@@ -444,7 +438,7 @@ Scope:
 
 - add local immutable `AugmentedQuery` and `EvidenceContract` contracts;
 - add deterministic intent/evidence hint classification for the specified
-  English and Chinese quote phrases;
+  English quote phrases;
 - add a Router v2 adapter that maps only `EXACT_QUOTE` to existing raw-capable
   source plans;
 - add trace output and table-driven tests;

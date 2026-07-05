@@ -130,7 +130,7 @@ structured, gist, and recent-message formatting are unchanged.
 
 - The LangGraph spike wraps existing read-side services as graph nodes.
 - Graph state and trace fields are bounded.
-- Semantic Router v2 is a deterministic English/Chinese typed baseline, but it
+- Semantic Router v2 is a deterministic English typed baseline, but it
   is default-off and currently used only by the spike/tests.
 - Router v2 emits intent, temporal scope, source plans, retrieval hints, and an
   evidence contract.

@@ -36,6 +36,7 @@ class StoredChat:
     created_at: str
     updated_at: str
     model_name: str | None
+    active: bool = True
 
 
 @dataclass(frozen=True)
@@ -283,7 +284,7 @@ class Database:
         with self.connect() as connection:
             row = connection.execute(
                 """
-                SELECT id, title, created_at, updated_at, model_name
+                SELECT id, title, created_at, updated_at, model_name, active
                 FROM chats
                 WHERE id = ?
                 """,
@@ -306,8 +307,10 @@ class Database:
         if cursor:
             cursor_chat = self.get_chat(cursor)
             if cursor_chat:
-                clauses.append("updated_at < ?")
-                parameters.append(cursor_chat.updated_at)
+                clauses.append("(updated_at < ? OR (updated_at = ? AND id < ?))")
+                parameters.extend(
+                    [cursor_chat.updated_at, cursor_chat.updated_at, cursor_chat.id]
+                )
         if search:
             clauses.append("(title LIKE ? OR id LIKE ?)")
             pattern = f"%{search}%"
@@ -318,10 +321,10 @@ class Database:
         with self.connect() as connection:
             rows = connection.execute(
                 f"""
-                SELECT id, title, created_at, updated_at, model_name
+                SELECT id, title, created_at, updated_at, model_name, active
                 FROM chats
                 {where_clause}
-                ORDER BY updated_at DESC, created_at DESC
+                ORDER BY updated_at DESC, id DESC
                 LIMIT ?
                 """,
                 parameters,
@@ -365,6 +368,15 @@ class Database:
                 "UPDATE chats SET active = 0 WHERE id = ?",
                 (chat_id,),
             )
+
+    def is_chat_active(self, chat_id: str) -> bool:
+        """Return whether an existing chat currently accepts new turns."""
+        with self.connect() as connection:
+            row = connection.execute(
+                "SELECT active FROM chats WHERE id = ?",
+                (chat_id,),
+            ).fetchone()
+        return bool(row["active"]) if row is not None else False
 
     def list_active_chats(self) -> list[dict]:
         """Return active chats ordered by most recent update."""
@@ -937,6 +949,7 @@ class Database:
             created_at=row["created_at"],
             updated_at=row["updated_at"],
             model_name=row["model_name"],
+            active=bool(row["active"]),
         )
 
     def _message_from_row(self, row: sqlite3.Row) -> StoredMessage:

@@ -42,26 +42,6 @@ def test_english_quote_paraphrases_require_raw_evidence(query: str) -> None:
     } <= set(plan.enabled_sources)
 
 
-@pytest.mark.parametrize(
-    "query",
-    [
-        "我原话怎么说的？",
-        "我当时具体怎么说的？",
-        "我用了什么措辞？",
-        "能不能逐字引用我之前说的？",
-    ],
-)
-def test_chinese_quote_paraphrases_require_raw_evidence(query: str) -> None:
-    plan = SemanticRouter().route(query)
-
-    assert plan.language == "zh"
-    assert plan.intents[0].intent == EXACT_QUOTE
-    assert plan.evidence_contract.requires_raw_span is True
-    assert plan.evidence_contract.must_not_answer_from_gist_only is True
-    assert "current_chat_span" in plan.enabled_sources
-    assert "raw_message_span" in plan.enabled_sources
-
-
 def test_document_question_requires_document_citation() -> None:
     plan = SemanticRouter().route(
         "According to the uploaded document, what does it say about X?"

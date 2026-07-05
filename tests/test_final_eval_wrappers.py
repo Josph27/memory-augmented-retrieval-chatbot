@@ -307,7 +307,8 @@ def test_judge_requires_exact_answer_path_and_writes_separate_copy() -> None:
     assert 'missing required argument: --answer-run-dir' in text
     assert '--answer-run-dir "$ANSWER_RUN_DIR"' in text
     assert 'cp -R "$ANSWER_RUN_DIR/mab" "$RUN_DIR/mab"' in text
-    assert 'cp -R "$ANSWER_RUN_DIR/longmemeval" "$RUN_DIR/longmemeval"' in text
+    assert 'cp -R "$ANSWER_RUN_DIR/longmemeval" "$RUN_DIR/longmemeval"' not in text
+    assert '--judge-only-answers "$ANSWER_RUN_DIR/longmemeval/results.jsonl"' in text
     assert '--output-dir "$RUN_DIR/mab"' in text
     assert '--output-dir "$RUN_DIR/longmemeval"' in text
     assert "--resume" in text
