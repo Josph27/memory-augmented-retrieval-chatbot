@@ -16,6 +16,7 @@ from src.core.contracts import AgentTurnResult
 from src.context.model_profile import DEFAULT_GEMMA_APPLICATION_CONTEXT_CAP
 from src.context.dynamic_budget import MemoryBudgetPolicy
 from src.database import Database
+from src.lifecycle.operation_guard import guarded_chat_operation
 from src.memory.previous_chat_gist import PreviousChatGistGenerator
 from src.memory.short_term import ShortTermMemory
 from src.model_wrapper import ModelWrapper
@@ -206,17 +207,99 @@ class ChatService:
         self,
         path: str | Path,
         display_name: str | None = None,
+        *,
+        chat_id: str | None = None,
+        operation_id: str | None = None,
     ) -> DocumentFileIndexResult:
-        """Load and index an uploaded local file into document memory."""
-        result = self.document_ingestion_agent.index_file(
-            path,
-            display_name=display_name,
-        )
-        return DocumentFileIndexResult(
-            file_name=result.file_name,
-            document_id=result.document_id,
-            chunk_count=result.chunk_count,
-        )
+        """Persist lifecycle state, index, and associate one uploaded document."""
+        if chat_id is None:
+            result = self.document_ingestion_agent.index_file(
+                path,
+                display_name=display_name,
+            )
+            return DocumentFileIndexResult(
+                file_name=result.file_name,
+                document_id=result.document_id,
+                chunk_count=result.chunk_count,
+            )
+
+        with guarded_chat_operation(self.database.path, chat_id):
+            file_name = display_name or Path(path).name
+            previous_operation = (
+                self.database.get_operation_result(operation_id)
+                if operation_id
+                else None
+            )
+            if previous_operation is not None:
+                if (
+                    previous_operation.operation_type != "document_upload"
+                    or previous_operation.scope_id != chat_id
+                ):
+                    raise RuntimeError("operation id belongs to a different upload scope")
+                document_id = str(previous_operation.result_ref or "")
+                existing = self.database.get_document(document_id)
+                if existing is None:
+                    raise RuntimeError("upload retry references a missing document record")
+                if existing.status == "Ready":
+                    return DocumentFileIndexResult(
+                        file_name=existing.file_name,
+                        document_id=existing.id,
+                        chunk_count=existing.chunk_count,
+                    )
+            else:
+                document_id = str(uuid4())
+                if operation_id:
+                    claimed, document_id = self.database.claim_document_upload(
+                        operation_id=operation_id,
+                        chat_id=chat_id,
+                        document_id=document_id,
+                        file_name=file_name,
+                        source=str(path),
+                    )
+                    if not claimed:
+                        existing = self.database.get_document(document_id)
+                        if existing is None:
+                            raise RuntimeError(
+                                "upload retry references a missing document record"
+                            )
+                        if existing.status == "Ready":
+                            return DocumentFileIndexResult(
+                                file_name=existing.file_name,
+                                document_id=existing.id,
+                                chunk_count=existing.chunk_count,
+                            )
+                else:
+                    self.database.create_document_record(
+                        document_id,
+                        file_name,
+                        status="Uploading",
+                        source=str(path),
+                    )
+                    self.database.associate_document_with_chat(chat_id, document_id)
+            self.database.update_document_status(document_id, "Indexing")
+            try:
+                result = self.document_ingestion_agent.index_file(
+                    path,
+                    display_name=display_name,
+                    document_id=document_id,
+                )
+            except Exception as error:
+                self.database.update_document_status(
+                    document_id,
+                    "Failed",
+                    error=f"{type(error).__name__}: {error}",
+                )
+                raise
+            self.database.update_document_status(
+                document_id,
+                "Ready",
+                chunk_count=result.chunk_count,
+            )
+            return DocumentFileIndexResult(
+                file_name=result.file_name,
+                document_id=result.document_id,
+                chunk_count=result.chunk_count,
+            )
 
     def handle_user_message(self, chat_id: str, content: str) -> str:
         """Save a user message, call the model, and save the assistant response."""
@@ -236,16 +319,16 @@ class ChatService:
         defer_post_answer_memory_update: bool = False,
     ) -> AgentTurnResult:
         """Run one user turn and return the agent-shaped result."""
-        self.ensure_chat_title_from_message(chat_id=chat_id, content=content)
-        result = self.coordinator.run_turn(
-            chat_id=chat_id,
-            content=content,
-            orchestration_mode=orchestration_mode,
-            perform_memory_update=not defer_post_answer_memory_update,
-        )
-        if not defer_post_answer_memory_update:
-            return result
-        return result
+        with guarded_chat_operation(self.database.path, chat_id):
+            if not self.database.is_chat_active(chat_id):
+                raise RuntimeError(f"Chat is inactive: {chat_id}")
+            self.ensure_chat_title_from_message(chat_id=chat_id, content=content)
+            return self.coordinator.run_turn(
+                chat_id=chat_id,
+                content=content,
+                orchestration_mode=orchestration_mode,
+                perform_memory_update=not defer_post_answer_memory_update,
+            )
 
     def finalize_post_answer_memory_update(self, chat_id: str) -> bool:
         """Run the synchronous post-answer memory update after visible answer emission."""

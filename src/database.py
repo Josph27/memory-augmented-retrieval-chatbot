@@ -57,6 +57,30 @@ class StoredChatGist:
     metadata_json: str
 
 
+@dataclass(frozen=True)
+class StoredDocument:
+    """Persisted document lifecycle metadata; chunks remain in Chroma."""
+
+    id: str
+    file_name: str
+    status: str
+    source: str | None
+    chunk_count: int
+    error: str | None
+    created_at: str
+    updated_at: str
+    metadata_json: str
+
+
+@dataclass(frozen=True)
+class StoredOperationResult:
+    operation_id: str
+    operation_type: str
+    scope_id: str | None
+    result_ref: str | None
+    created_at: str
+
+
 class Database:
     """Small SQLite adapter for chats, messages, and structured memory."""
 
@@ -70,6 +94,7 @@ class Database:
         """Open a connection with row dictionaries enabled."""
         connection = sqlite3.connect(self.path)
         connection.row_factory = sqlite3.Row
+        connection.execute("PRAGMA foreign_keys = ON")
         try:
             yield connection
             connection.commit()
@@ -157,6 +182,42 @@ class Database:
 
                 CREATE INDEX IF NOT EXISTS idx_long_term_memories_category
                 ON long_term_memories(category);
+
+                CREATE TABLE IF NOT EXISTS document_records (
+                    id TEXT PRIMARY KEY,
+                    file_name TEXT NOT NULL,
+                    status TEXT NOT NULL CHECK (
+                        status IN ('Uploading', 'Indexing', 'Ready', 'Failed')
+                    ),
+                    source TEXT,
+                    chunk_count INTEGER NOT NULL DEFAULT 0,
+                    error TEXT,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    metadata_json TEXT NOT NULL DEFAULT '{}'
+                );
+
+                CREATE TABLE IF NOT EXISTS chat_documents (
+                    chat_id TEXT NOT NULL,
+                    document_id TEXT NOT NULL,
+                    selected INTEGER NOT NULL DEFAULT 0,
+                    associated_at TEXT NOT NULL,
+                    PRIMARY KEY (chat_id, document_id),
+                    FOREIGN KEY (chat_id) REFERENCES chats(id) ON DELETE CASCADE,
+                    FOREIGN KEY (document_id) REFERENCES document_records(id)
+                        ON DELETE CASCADE
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_chat_documents_chat
+                ON chat_documents(chat_id, associated_at DESC);
+
+                CREATE TABLE IF NOT EXISTS operation_results (
+                    operation_id TEXT PRIMARY KEY,
+                    operation_type TEXT NOT NULL,
+                    scope_id TEXT,
+                    result_ref TEXT,
+                    created_at TEXT NOT NULL
+                );
 
                 """
             )
@@ -597,6 +658,251 @@ class Database:
                 (chat_id,),
             )
             connection.execute("DELETE FROM chats WHERE id = ?", (chat_id,))
+
+    def create_document_record(
+        self,
+        document_id: str,
+        file_name: str,
+        *,
+        status: str = "Uploading",
+        source: str | None = None,
+        metadata_json: str = "{}",
+    ) -> StoredDocument:
+        """Create document lifecycle metadata before indexing begins."""
+        timestamp = utc_now()
+        with self.connect() as connection:
+            connection.execute(
+                """
+                INSERT INTO document_records (
+                    id, file_name, status, source, created_at, updated_at, metadata_json
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    document_id,
+                    file_name,
+                    status,
+                    source,
+                    timestamp,
+                    timestamp,
+                    metadata_json,
+                ),
+            )
+        document = self.get_document(document_id)
+        if document is None:  # pragma: no cover - defensive database invariant
+            raise RuntimeError(f"document record was not persisted: {document_id}")
+        return document
+
+    def update_document_status(
+        self,
+        document_id: str,
+        status: str,
+        *,
+        chunk_count: int | None = None,
+        error: str | None = None,
+    ) -> None:
+        """Transition persisted document lifecycle state truthfully."""
+        if status not in {"Uploading", "Indexing", "Ready", "Failed"}:
+            raise ValueError(f"invalid document status: {status}")
+        timestamp = utc_now()
+        with self.connect() as connection:
+            connection.execute(
+                """
+                UPDATE document_records
+                SET status = ?,
+                    chunk_count = COALESCE(?, chunk_count),
+                    error = ?,
+                    updated_at = ?
+                WHERE id = ?
+                """,
+                (status, chunk_count, error, timestamp, document_id),
+            )
+
+    def associate_document_with_chat(
+        self,
+        chat_id: str,
+        document_id: str,
+        *,
+        selected: bool = False,
+    ) -> None:
+        """Associate an indexed document with exactly one persisted chat scope."""
+        timestamp = utc_now()
+        with self.connect() as connection:
+            connection.execute(
+                """
+                INSERT INTO chat_documents (
+                    chat_id, document_id, selected, associated_at
+                )
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT(chat_id, document_id) DO UPDATE SET
+                    selected = excluded.selected
+                """,
+                (chat_id, document_id, int(selected), timestamp),
+            )
+
+    def get_document(self, document_id: str) -> StoredDocument | None:
+        """Load one persisted document lifecycle record."""
+        with self.connect() as connection:
+            row = connection.execute(
+                """
+                SELECT id, file_name, status, source, chunk_count, error,
+                       created_at, updated_at, metadata_json
+                FROM document_records
+                WHERE id = ?
+                """,
+                (document_id,),
+            ).fetchone()
+        return self._document_from_row(row) if row else None
+
+    def documents_for_chat(
+        self,
+        chat_id: str,
+        *,
+        statuses: tuple[str, ...] | None = None,
+    ) -> list[StoredDocument]:
+        """List documents associated with a chat in most-recent-first order."""
+        parameters: list[object] = [chat_id]
+        status_clause = ""
+        if statuses:
+            placeholders = ", ".join("?" for _ in statuses)
+            status_clause = f"AND documents.status IN ({placeholders})"
+            parameters.extend(statuses)
+        with self.connect() as connection:
+            rows = connection.execute(
+                f"""
+                SELECT documents.id, documents.file_name, documents.status,
+                       documents.source, documents.chunk_count, documents.error,
+                       documents.created_at, documents.updated_at,
+                       documents.metadata_json
+                FROM document_records AS documents
+                JOIN chat_documents AS links
+                  ON links.document_id = documents.id
+                WHERE links.chat_id = ?
+                {status_clause}
+                ORDER BY links.associated_at DESC, documents.id DESC
+                """,
+                parameters,
+            ).fetchall()
+        return [self._document_from_row(row) for row in rows]
+
+    def record_operation_once(
+        self,
+        operation_id: str,
+        operation_type: str,
+        *,
+        scope_id: str | None = None,
+        result_ref: str | None = None,
+    ) -> bool:
+        """Record an idempotency key, returning false for an already-seen operation."""
+        with self.connect() as connection:
+            cursor = connection.execute(
+                """
+                INSERT OR IGNORE INTO operation_results (
+                    operation_id, operation_type, scope_id, result_ref, created_at
+                )
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (operation_id, operation_type, scope_id, result_ref, utc_now()),
+            )
+        return cursor.rowcount == 1
+
+    def claim_document_upload(
+        self,
+        *,
+        operation_id: str,
+        chat_id: str,
+        document_id: str,
+        file_name: str,
+        source: str | None,
+    ) -> tuple[bool, str]:
+        """Atomically claim an upload key and create its document metadata."""
+        timestamp = utc_now()
+        with self.connect() as connection:
+            cursor = connection.execute(
+                """
+                INSERT OR IGNORE INTO operation_results (
+                    operation_id, operation_type, scope_id, result_ref, created_at
+                )
+                VALUES (?, 'document_upload', ?, ?, ?)
+                """,
+                (operation_id, chat_id, document_id, timestamp),
+            )
+            if cursor.rowcount != 1:
+                row = connection.execute(
+                    """
+                    SELECT operation_type, scope_id, result_ref
+                    FROM operation_results
+                    WHERE operation_id = ?
+                    """,
+                    (operation_id,),
+                ).fetchone()
+                if (
+                    row is None
+                    or row["operation_type"] != "document_upload"
+                    or row["scope_id"] != chat_id
+                    or not row["result_ref"]
+                ):
+                    raise RuntimeError(
+                        "operation id belongs to a different upload scope"
+                    )
+                return False, str(row["result_ref"])
+            connection.execute(
+                """
+                INSERT INTO document_records (
+                    id, file_name, status, source, created_at, updated_at
+                )
+                VALUES (?, ?, 'Uploading', ?, ?, ?)
+                """,
+                (document_id, file_name, source, timestamp, timestamp),
+            )
+            connection.execute(
+                """
+                INSERT INTO chat_documents (
+                    chat_id, document_id, selected, associated_at
+                )
+                VALUES (?, ?, 0, ?)
+                """,
+                (chat_id, document_id, timestamp),
+            )
+        return True, document_id
+
+    def get_operation_result(
+        self,
+        operation_id: str,
+    ) -> StoredOperationResult | None:
+        """Load the stable result reference for an idempotent operation."""
+        with self.connect() as connection:
+            row = connection.execute(
+                """
+                SELECT operation_id, operation_type, scope_id, result_ref, created_at
+                FROM operation_results
+                WHERE operation_id = ?
+                """,
+                (operation_id,),
+            ).fetchone()
+        if row is None:
+            return None
+        return StoredOperationResult(
+            operation_id=str(row["operation_id"]),
+            operation_type=str(row["operation_type"]),
+            scope_id=row["scope_id"],
+            result_ref=row["result_ref"],
+            created_at=str(row["created_at"]),
+        )
+
+    @staticmethod
+    def _document_from_row(row: sqlite3.Row) -> StoredDocument:
+        return StoredDocument(
+            id=str(row["id"]),
+            file_name=str(row["file_name"]),
+            status=str(row["status"]),
+            source=row["source"],
+            chunk_count=int(row["chunk_count"]),
+            error=row["error"],
+            created_at=str(row["created_at"]),
+            updated_at=str(row["updated_at"]),
+            metadata_json=str(row["metadata_json"]),
+        )
 
     def save_message(
         self,

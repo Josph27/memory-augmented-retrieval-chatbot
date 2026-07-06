@@ -127,21 +127,29 @@ def persisted_user(identifier: str = DEFAULT_USER_ID) -> PersistedUser:
 
 def thread_from_chat(chat: StoredChat, steps: list[StepDict]) -> ThreadDict:
     """Convert one project chat row into Chainlit's thread shape."""
+    metadata: dict[str, object] = {
+        "model_name": chat.model_name,
+        "active": chat.active,
+    }
+    if not chat.active:
+        metadata["status"] = "Ended"
     return ThreadDict(
         id=chat.id,
         createdAt=chat.created_at,
-        name=chat.title or "Chainlit chat",
+        name=thread_display_name(chat),
         userId=DEFAULT_USER_ID,
         userIdentifier=DEFAULT_USER_ID,
         tags=[],
-        metadata={
-            "model_name": chat.model_name,
-            "active": chat.active,
-            "status": "active" if chat.active else "ended",
-        },
+        metadata=metadata,
         steps=steps,
         elements=[],
     )
+
+
+def thread_display_name(chat: StoredChat) -> str:
+    """Decorate ended threads for navigation without changing persisted titles."""
+    title = chat.title or "Chainlit chat"
+    return title if chat.active else f"{title} · Ended"
 
 
 def step_from_message(message: StoredMessage, thread_id: str) -> StepDict:

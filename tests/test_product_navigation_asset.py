@@ -9,10 +9,15 @@ def test_chainlit_loads_product_navigation_asset() -> None:
     script = (ROOT / "public/product-navigation.js").read_text(encoding="utf-8")
 
     assert 'custom_js = "/public/product-navigation.js"' in config
-    assert "__MEMORY_CHATBOT_CONTROLS__" in script
+    assert '"lifecycle-action"' in script
+    assert '"Chat lifecycle controls"' in script
     assert '"refresh-sidebar"' in script
     assert "setComposerEnabled(productState.active !== false)" in script
     assert "window.location.reload()" in script
+    assert 'document.querySelector("main")' in script
+    assert 'element.dataset.mount = "composer"' in script
+    assert 'position: "fixed"' not in script
+    assert "document.body.appendChild(toolbar)" not in script
 
 
 def test_product_navigation_has_no_backend_or_model_calls() -> None:

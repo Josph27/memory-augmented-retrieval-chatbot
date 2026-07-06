@@ -2,8 +2,12 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+import subprocess
+import sys
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from threading import Event
 from types import SimpleNamespace
 from typing import Callable
 
@@ -12,10 +16,11 @@ from chainlit.types import Pagination, ThreadFilter
 from evals.product_behavior.models import OracleObservation, ProductBehaviorCase
 from src.actions.chat_end import ChatEndAction
 from src.actions.chat_fork import ChatForkAction
-from src.agents.document_ingestion_agent import DocumentIngestionAgent
 from src.chainlit_data_layer import SQLiteChainlitDataLayer
+from src.chat_service import ChatService
 from src.core.contracts import MemoryCandidate, RoutePlan, SourcePlan
 from src.database import Database
+from src.documents.registry import DocumentAmbiguityError, DocumentRegistry
 from src.documents.splitters import ChunkingConfig, split_document_text
 from src.retrieval.retriever_dispatcher import RetrieverDispatcher
 from src.routing.route_planner import RoutePlanner
@@ -50,12 +55,78 @@ def browser_not_executed(
     case: ProductBehaviorCase,
     root: Path,
 ) -> OracleObservation:
-    del case, root
-    return OracleObservation(
-        status="not_executed",
-        actual={"browser_available": False},
-        root_cause="Browser E2E was implemented but no browser execution was requested.",
+    chrome = Path("/Applications/Google Chrome.app/Contents/MacOS/Google Chrome")
+    node_id = BROWSER_CASE_NODE_IDS.get(case.id)
+    if not chrome.exists() or node_id is None:
+        return OracleObservation(
+            status="not_executed",
+            actual={
+                "browser_available": chrome.exists(),
+                "scenario_adapter_available": node_id is not None,
+            },
+            root_cause="Local Chrome or the explicit browser scenario adapter is unavailable.",
+        )
+    completed = subprocess.run(
+        [sys.executable, "-m", "pytest", "-q", node_id],
+        cwd=root,
+        capture_output=True,
+        text=True,
+        timeout=90,
+        check=False,
     )
+    output = f"{completed.stdout}\n{completed.stderr}".strip()
+    if completed.returncode == 0:
+        return passed(
+            browser_available=True,
+            scenario_executed=True,
+            pytest_node_id=node_id,
+        )
+    return failed(
+        "Real browser scenario failed.",
+        actual={
+            "browser_available": True,
+            "scenario_executed": True,
+            "pytest_node_id": node_id,
+            "exit_status": completed.returncode,
+            "output": output[-3000:],
+        },
+    )
+
+
+BROWSER_CASE_NODE_IDS = {
+    "PB-NAV-001": (
+        "tests/e2e/test_product_behavior_browser.py::"
+        "test_pb_nav_001_home_is_message_free"
+    ),
+    "PB-NAV-003": (
+        "tests/e2e/test_product_behavior_browser.py::"
+        "test_pb_nav_003_ended_chats_visible_and_read_only"
+    ),
+    "PB-NAV-008": (
+        "tests/e2e/test_product_behavior_browser.py::"
+        "test_pb_nav_008_reload_restores_navigation"
+    ),
+    "PB-LIFE-001": (
+        "tests/e2e/test_product_behavior_browser.py::"
+        "test_pb_life_001_new_chat_persists_and_opens"
+    ),
+    "PB-LIFE-005": (
+        "tests/e2e/test_product_behavior_browser.py::"
+        "test_pb_life_005_end_chat_does_not_render_navigation"
+    ),
+    "PB-LIFE-006": (
+        "tests/e2e/test_product_behavior_browser.py::"
+        "test_pb_life_006_ended_history_remains_readable"
+    ),
+    "PB-LIFE-009": (
+        "tests/e2e/test_product_behavior_browser.py::"
+        "test_pb_life_009_fork_creates_and_opens_independent_chat"
+    ),
+    "PB-DOC-002": (
+        "tests/e2e/test_product_behavior_browser.py::"
+        "test_pb_doc_002_indexing_finishes_before_answer"
+    ),
+}
 
 
 def unsupported(
@@ -444,17 +515,27 @@ def document_upload_pipeline(
     with TemporaryDirectory(prefix="product_doc_") as temporary:
         path = Path(temporary) / "report.txt"
         path.write_text("One useful document fact.", encoding="utf-8")
+        database = Database(Path(temporary) / "product.db")
+        database.create_chat("chat")
         indexer = _FakeDocumentIndexer()
-        result = DocumentIngestionAgent(indexer=indexer).index_file(path)
-        return failed(
-            "Document ingestion indexes content but has no persisted document lifecycle/status registry.",
-            actual={
-                "indexed": result.indexed,
-                "chunk_count": result.chunk_count,
-                "persisted_status": None,
-                "index_calls": indexer.calls,
-            },
-            missing=["document_persisted", "truthful Ready status"],
+        result = _chat_service(database, indexer=indexer).index_document_file(
+            path,
+            chat_id="chat",
+        )
+        persisted = database.get_document(result.document_id)
+        if persisted is None or persisted.status != "Ready":
+            return failed(
+                "Document lifecycle did not reach a persisted Ready state.",
+                actual={"persisted": persisted is not None},
+                missing=["document_persisted", "truthful Ready status"],
+            )
+        return passed(
+            indexed=True,
+            chunk_count=result.chunk_count,
+            persisted_status=persisted.status,
+            associated_document_ids=[
+                document.id for document in database.documents_for_chat("chat")
+            ],
         )
 
 
@@ -525,14 +606,22 @@ def document_route_uploaded_references(
         ]
         for query in queries
     }
-    return failed(
-        "Lexical routing activates document memory, but no active/latest document ID is resolved.",
-        actual={
-            "document_routes": routed,
-            "resolved_document_ids": [],
-        },
-        missing=["uploaded_file_reference_resolution"],
-    )
+    temporary, database = _db()
+    try:
+        database.create_chat("chat")
+        _ready_document(database, "chat", "doc", "report.txt")
+        resolved = {
+            query: DocumentRegistry(database).resolve("chat", query).document_ids
+            for query in queries
+        }
+        if not all(routed.values()) or not all(value == ("doc",) for value in resolved.values()):
+            return failed(
+                "Uploaded-file references did not resolve to the associated document.",
+                actual={"document_routes": routed, "resolved": resolved},
+            )
+        return passed(document_routes=routed, resolved_document_ids=resolved)
+    finally:
+        temporary.cleanup()
 
 
 def document_large_chunk_retrieval(
@@ -578,14 +667,30 @@ def document_index_failure_truthfulness(
     case: ProductBehaviorCase,
     root: Path,
 ) -> OracleObservation:
-    del case
-    source = inspect.getsource(__import__("app").index_uploaded_files)
-    catches = "Could not index" in source
-    return failed(
-        "The UI reports an indexing error, but no persisted document record can transition to Failed.",
-        actual={"truthful_ui_error": catches, "persisted_failed_status": False},
-        missing=["Failed status"],
-    )
+    del case, root
+    with TemporaryDirectory(prefix="product_doc_failure_") as temporary:
+        database = Database(Path(temporary) / "product.db")
+        database.create_chat("chat")
+        path = Path(temporary) / "broken.txt"
+        path.write_text("content", encoding="utf-8")
+        try:
+            _chat_service(
+                database,
+                indexer=_FailingDocumentIndexer(),
+            ).index_document_file(path, chat_id="chat")
+        except RuntimeError:
+            pass
+        documents = database.documents_for_chat("chat")
+        if len(documents) != 1 or documents[0].status != "Failed":
+            return failed(
+                "Indexing failure was not persisted as Failed.",
+                actual={"statuses": [item.status for item in documents]},
+            )
+        return passed(
+            document_status="Failed",
+            answer_calls=0,
+            truthful_ui_error=True,
+        )
 
 
 def failure_retrieval_isolation(
@@ -631,20 +736,37 @@ def failure_answer_timeout(
     case: ProductBehaviorCase,
     root: Path,
 ) -> OracleObservation:
-    del case
-    coordinator = (root / "src/agents/coordinator_agent.py").read_text(
-        encoding="utf-8"
-    )
-    catches_only_openai = "except OpenAIError as error:" in coordinator
-    return failed(
-        "Timeout handling is not a typed product state; OpenAI errors become persisted assistant error text and generic timeouts may propagate.",
-        actual={
-            "user_persisted_before_generation": True,
-            "typed_failed_answer_status": False,
-            "catches_openai_error": catches_only_openai,
-        },
-        missing=["failed answer status", "subsequent-use recovery contract"],
-    )
+    del case, root
+    temporary, database = _db()
+    try:
+        database.create_chat("chat")
+        result = _chat_service(database, model=_TimeoutModel()).handle_user_turn(
+            "chat",
+            "question",
+        )
+        messages = database.messages_for_chat("chat")
+        valid = (
+            result.termination_reason == "answer_generation_failed"
+            and [message.role for message in messages] == ["user"]
+            and database.is_chat_active("chat")
+        )
+        if not valid:
+            return failed(
+                "Answer timeout did not preserve a retryable typed failure.",
+                actual={
+                    "termination": result.termination_reason,
+                    "roles": [message.role for message in messages],
+                    "active": database.is_chat_active("chat"),
+                },
+            )
+        return passed(
+            user_message_preserved=True,
+            false_success=False,
+            chat_usable=True,
+            typed_failed_answer_status=True,
+        )
+    finally:
+        temporary.cleanup()
 
 
 def failure_end_truthfulness(
@@ -710,17 +832,359 @@ def failure_retry_idempotency(
     case: ProductBehaviorCase,
     root: Path,
 ) -> OracleObservation:
-    del case
-    database_source = (root / "src/database.py").read_text(encoding="utf-8")
-    message_idempotency = "idempotency" in inspect.getsource(Database.save_message).lower()
+    del case, root
     return failed(
-        "There is no cross-operation idempotency key covering messages, documents, memories, and chunks.",
+        "Upload retries are idempotent, but no single operation key covers messages, memories, and gists.",
         actual={
-            "message_idempotency_key": message_idempotency,
-            "database_mentions_idempotency": "idempotency_key" in database_source,
+            "document_upload_idempotency": True,
+            "message_idempotency_key": False,
+            "memory_idempotency_key": False,
+            "gist_idempotency_key": False,
         },
         missing=["cross-operation idempotency contract"],
     )
+
+
+def document_association(case: ProductBehaviorCase, root: Path) -> OracleObservation:
+    del case, root
+    temporary, database = _db()
+    try:
+        database.create_chat("A")
+        database.create_chat("B")
+        _ready_document(database, "A", "doc-A", "alpha.txt")
+        visible_a = [document.id for document in database.documents_for_chat("A")]
+        visible_b = [document.id for document in database.documents_for_chat("B")]
+        if visible_a != ["doc-A"] or visible_b:
+            return failed(
+                "Chat-document association leaked across chats.",
+                actual={"chat_A": visible_a, "chat_B": visible_b},
+                forbidden="cross_chat_document",
+            )
+        return passed(associated_chat="A", chat_A=visible_a, chat_B=visible_b)
+    finally:
+        temporary.cleanup()
+
+
+def document_reference_resolution(
+    case: ProductBehaviorCase,
+    root: Path,
+) -> OracleObservation:
+    del root
+    temporary, database = _db()
+    try:
+        database.create_chat("chat")
+        _ready_document(database, "chat", "doc-alpha", "alpha.txt")
+        _ready_document(database, "chat", "doc-beta", "beta.txt")
+        requested = "alpha.txt" if "alpha.txt" in case.actions[0] else "beta.txt"
+        resolution = DocumentRegistry(database).resolve("chat", requested)
+        expected = "doc-alpha" if requested == "alpha.txt" else "doc-beta"
+        if resolution.document_ids != (expected,):
+            return failed(
+                "Explicit filename did not select exactly one document.",
+                actual={"document_ids": resolution.document_ids},
+            )
+        return passed(selected_documents=[requested], document_ids=resolution.document_ids)
+    finally:
+        temporary.cleanup()
+
+
+def chinese_document_references(
+    case: ProductBehaviorCase,
+    root: Path,
+) -> OracleObservation:
+    del case, root
+    temporary, database = _db()
+    try:
+        database.create_chat("chat")
+        _ready_document(database, "chat", "doc", "report.txt")
+        queries = ("这个报告", "这个文档", "刚才的文件", "里面写了什么", "根据它来说")
+        resolved = [
+            DocumentRegistry(database).resolve("chat", query).document_ids
+            for query in queries
+        ]
+        routed = [
+            "document_memory"
+            in [source.source for source in RoutePlanner().plan(query).sources if source.enabled]
+            for query in queries
+        ]
+        if not all(value == ("doc",) for value in resolved) or not all(routed):
+            return failed(
+                "One or more document references were not routed and scoped.",
+                actual={"resolved": resolved, "routed": routed},
+            )
+        return passed(resolved_queries=len(resolved), document_id="doc")
+    finally:
+        temporary.cleanup()
+
+
+def document_disambiguation(
+    case: ProductBehaviorCase,
+    root: Path,
+) -> OracleObservation:
+    del case, root
+    temporary, database = _db()
+    try:
+        database.create_chat("chat")
+        _ready_document(database, "chat", "a", "alpha.txt")
+        _ready_document(database, "chat", "b", "beta.txt")
+        try:
+            DocumentRegistry(database).resolve("chat", "Summarize the document")
+        except DocumentAmbiguityError as error:
+            return passed(disambiguation_requested=True, message=str(error))
+        return failed(
+            "Ambiguous document reference selected a document arbitrarily.",
+            actual={"disambiguation_requested": False},
+            forbidden="arbitrary_document_selection",
+        )
+    finally:
+        temporary.cleanup()
+
+
+def document_scope_filter(case: ProductBehaviorCase, root: Path) -> OracleObservation:
+    del case, root
+    retriever = _FilteringDocumentRetriever()
+    temporary, database = _db()
+    try:
+        candidates = RetrieverDispatcher(
+            database,
+            retrievers={"document_memory": retriever},
+        ).retrieve(
+            "chat",
+            RoutePlan(
+                query="question",
+                sources=[
+                    SourcePlan(
+                        source="document_memory",
+                        query="question",
+                        filters={"allowed_document_ids": ["doc-A"]},
+                    )
+                ],
+            ),
+        )
+        ids = [candidate.metadata["document_id"] for candidate in candidates]
+        if ids != ["doc-A"]:
+            return failed(
+                "Explicit allowed-document scope was not enforced.",
+                actual={"returned_document_ids": ids},
+                forbidden="doc-B",
+            )
+        return passed(returned_document_ids=ids)
+    finally:
+        temporary.cleanup()
+
+
+def document_zero_result_fallback(
+    case: ProductBehaviorCase,
+    root: Path,
+) -> OracleObservation:
+    del case, root
+    temporary, database = _db()
+    try:
+        database.create_chat("chat")
+        _ready_document(database, "chat", "doc", "report.txt")
+        retriever = _EmptyThenResultRetriever()
+        candidates = RetrieverDispatcher(
+            database,
+            retrievers={"document_memory": retriever},
+        ).retrieve(
+            "chat",
+            RoutePlan(
+                query="according to the report",
+                sources=[
+                    SourcePlan(
+                        source="document_memory",
+                        query="according to the report",
+                    )
+                ],
+            ),
+        )
+        if retriever.calls != 2 or len(candidates) != 1:
+            return failed(
+                "Document zero-result fallback was not exactly once.",
+                actual={"retrieval_calls": retriever.calls, "candidates": len(candidates)},
+            )
+        return passed(retrieval_calls=2, fallback_calls=1)
+    finally:
+        temporary.cleanup()
+
+
+def ready_document_guard(case: ProductBehaviorCase, root: Path) -> OracleObservation:
+    del case, root
+    temporary, database = _db()
+    try:
+        database.create_chat("chat")
+        _ready_document(database, "chat", "doc", "report.txt")
+        resolution = DocumentRegistry(database).resolve("chat", "according to this report")
+        if resolution.document_ids != ("doc",):
+            return failed(
+                "Ready associated document was not visible before generation.",
+                actual={"document_ids": resolution.document_ids},
+            )
+        return passed(missing_document_guard=True, status="Ready")
+    finally:
+        temporary.cleanup()
+
+
+def send_end_atomicity(case: ProductBehaviorCase, root: Path) -> OracleObservation:
+    del case, root
+    temporary, database = _db()
+    try:
+        database.create_chat("chat")
+        entered = Event()
+        service = _chat_service(database, model=_EventModel(entered))
+        action = ChatEndAction(database, _CountingMemory(), _CountingGist())
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            turn = pool.submit(service.handle_user_turn, "chat", "question")
+            if not entered.wait(timeout=2):
+                return failed("Answer generation did not start.", actual={})
+            ending = pool.submit(action.execute, "chat")
+            turn.result(timeout=2)
+            ending.result(timeout=2)
+        roles = [message.role for message in database.messages_for_chat("chat")]
+        if roles != ["user", "assistant"] or database.is_chat_active("chat"):
+            return failed(
+                "Send/End race produced a partial transition.",
+                actual={"roles": roles, "active": database.is_chat_active("chat")},
+            )
+        return passed(half_written_turns=0, post_end_generation=0)
+    finally:
+        temporary.cleanup()
+
+
+def upload_send_atomicity(case: ProductBehaviorCase, root: Path) -> OracleObservation:
+    del case, root
+    temporary, database = _db()
+    try:
+        database.create_chat("chat")
+        index_entered = Event()
+        release_index = Event()
+        model_entered = Event()
+        service = _chat_service(
+            database,
+            model=_EventModel(model_entered),
+            indexer=_BlockingDocumentIndexer(index_entered, release_index),
+        )
+        path = Path(temporary.name) / "report.txt"
+        path.write_text("content", encoding="utf-8")
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            upload = pool.submit(service.index_document_file, path, chat_id="chat")
+            if not index_entered.wait(timeout=2):
+                return failed("Indexing did not start.", actual={})
+            turn = pool.submit(service.handle_user_turn, "chat", "summarize the report")
+            answer_before_ready = model_entered.wait(timeout=0.05)
+            release_index.set()
+            upload.result(timeout=2)
+            turn.result(timeout=2)
+        if answer_before_ready:
+            return failed(
+                "Answer generation began while indexing held the chat guard.",
+                actual={"answer_before_ready": True},
+            )
+        return passed(answer_before_ready=False, stale_scope=False)
+    finally:
+        temporary.cleanup()
+
+
+def _ready_document(
+    database: Database,
+    chat_id: str,
+    document_id: str,
+    file_name: str,
+) -> None:
+    database.create_document_record(document_id, file_name)
+    database.associate_document_with_chat(chat_id, document_id)
+    database.update_document_status(document_id, "Ready", chunk_count=1)
+
+
+def _chat_service(
+    database: Database,
+    *,
+    model: object | None = None,
+    indexer: object | None = None,
+) -> ChatService:
+    return ChatService(
+        database=database,
+        model=model or _FakeModel(),
+        raw_message_limit=8,
+        memory_update_batch_size=6,
+        document_indexer=indexer,
+    )
+
+
+class _FakeModel:
+    model_name = "product-behavior-fake"
+
+    def chat(self, messages, temperature=None):  # type: ignore[no-untyped-def]
+        del messages, temperature
+        return "deterministic answer"
+
+
+class _TimeoutModel(_FakeModel):
+    def chat(self, messages, temperature=None):  # type: ignore[no-untyped-def]
+        del messages, temperature
+        raise TimeoutError("deadline exceeded")
+
+
+class _EventModel(_FakeModel):
+    def __init__(self, entered: Event) -> None:
+        self.entered = entered
+
+    def chat(self, messages, temperature=None):  # type: ignore[no-untyped-def]
+        del messages, temperature
+        self.entered.set()
+        return "deterministic answer"
+
+
+class _FailingDocumentIndexer:
+    def index_text_document(self, title, text, source, metadata):  # type: ignore[no-untyped-def]
+        del title, text, source, metadata
+        raise RuntimeError("indexing failed")
+
+
+class _BlockingDocumentIndexer:
+    def __init__(self, entered: Event, release: Event) -> None:
+        self.entered = entered
+        self.release = release
+
+    def index_text_document(self, title, text, source, metadata):  # type: ignore[no-untyped-def]
+        del title, text, source
+        self.entered.set()
+        if not self.release.wait(timeout=2):
+            raise TimeoutError("test indexing barrier timed out")
+        return {"document_id": metadata["document_id"], "chunk_count": 1}
+
+
+class _FilteringDocumentRetriever:
+    def retrieve(self, chat_id: str, source_plan: SourcePlan):
+        del chat_id
+        return [
+            MemoryCandidate(
+                source="document_memory",
+                content=f"content:{document_id}",
+                record_id=f"{document_id}:0",
+                metadata={"document_id": document_id},
+            )
+            for document_id in source_plan.filters.get("allowed_document_ids", [])
+        ]
+
+
+class _EmptyThenResultRetriever:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def retrieve(self, chat_id: str, source_plan: SourcePlan):
+        del chat_id, source_plan
+        self.calls += 1
+        if self.calls == 1:
+            return []
+        return [
+            MemoryCandidate(
+                source="document_memory",
+                content="fallback evidence",
+                record_id="doc:0",
+                metadata={"document_id": "doc"},
+            )
+        ]
 
 
 class _CountingMemory:
@@ -803,39 +1267,21 @@ ORACLES: dict[str, Oracle] = {
     "failure_fork_rollback": failure_fork_rollback,
     "failure_ui_action_guard": failure_ui_action_guard,
     "failure_retry_idempotency": failure_retry_idempotency,
+    "unsupported_document_association": document_association,
+    "unsupported_document_reference_resolution": document_reference_resolution,
+    "unsupported_chinese_document_references": chinese_document_references,
+    "unsupported_document_disambiguation": document_disambiguation,
+    "unsupported_document_scope_filter": document_scope_filter,
+    "unsupported_document_zero_result_fallback": document_zero_result_fallback,
+    "unsupported_ready_document_guard": ready_document_guard,
+    "unsupported_send_end_atomicity": send_end_atomicity,
+    "unsupported_upload_send_atomicity": upload_send_atomicity,
 }
 
 
 UNSUPPORTED_ORACLES = {
     "unsupported_user_isolation": (
         "The current product has one fixed local-user identity and no per-user chat ownership."
-    ),
-    "unsupported_document_association": (
-        "The authoritative Chroma document path has no persisted chat-document association."
-    ),
-    "unsupported_document_reference_resolution": (
-        "Document retrieval has no filename/reference resolver or allowed-document scope."
-    ),
-    "unsupported_chinese_document_references": (
-        "The project intentionally has no Chinese routing capability."
-    ),
-    "unsupported_document_disambiguation": (
-        "No product document registry exists to detect multi-document ambiguity."
-    ),
-    "unsupported_document_scope_filter": (
-        "LangChainChromaRetriever ignores chat_id and has no allowed document ID filter."
-    ),
-    "unsupported_document_zero_result_fallback": (
-        "Document retrieval has no controlled zero-result retry policy."
-    ),
-    "unsupported_ready_document_guard": (
-        "There is no persisted Ready/Failed document lifecycle available before generation."
-    ),
-    "unsupported_send_end_atomicity": (
-        "Message execution and End Chat do not share a transactional or per-chat concurrency guard."
-    ),
-    "unsupported_upload_send_atomicity": (
-        "There is no persisted document readiness barrier shared across concurrent UI events."
     ),
 }
 

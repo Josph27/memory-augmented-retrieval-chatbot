@@ -152,12 +152,6 @@ alert_style = "classic"
 # Specify a custom meta image url.
 # custom_meta_image_url = "https://chainlit-cloud.s3.eu-west-3.amazonaws.com/logo/chainlit_banner.png"
 
-# Load assistant logo directly from URL.
-logo_file_url = ""
-
-# Load assistant avatar image directly from URL.
-default_avatar_file_url = ""
-
 # Avatar size in pixels (default: 20).
 # avatar_size = 20
 

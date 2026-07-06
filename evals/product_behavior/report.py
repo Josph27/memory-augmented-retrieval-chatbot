@@ -120,7 +120,7 @@ def render_markdown(
         f"- Passed: **{summary['passed']}**",
         f"- Failed: **{summary['failed']}**",
         f"- Errors: **{summary['errors']}**",
-        f"- Browser not executed: **{summary['not_executed']}**",
+        f"- Not executed: **{summary['not_executed']}**",
         f"- Overall pass rate: **{percent(summary['overall_pass_rate'])}**",
         f"- Runtime: **{summary['runtime_ms']} ms**",
         "",
@@ -169,27 +169,18 @@ def render_markdown(
         [
             "## Untestable gaps",
             "",
-            "- The eight browser scenarios are implemented as explicit E2E cases but were "
-            "not executed because no browser harness was available.",
             "- No real-model scenarios were included in this baseline, so pass@1 and "
             "pass^3 are not applicable.",
             "- Cross-user isolation cannot be exercised because the product exposes one "
             "fixed local user and stores no chat owner.",
-            "- Document readiness, association, ambiguity, and scoped retrieval cannot be "
-            "fully exercised because the authoritative Chroma path has no product document "
-            "registry.",
-            "- Send/End and Upload/Send race invariants lack a shared production concurrency "
-            "seam; these remain capability failures rather than simulated passes.",
+            "- Browser execution requires local Chrome and the Playwright development "
+            "dependency; unavailable environments report browser cases as not executed.",
             "",
             "## Recommended next fix order",
             "",
-            "1. Add ownership and scope enforcement where data leakage is possible.",
-            "2. Define atomic Send/End behavior and per-chat lifecycle concurrency.",
-            "3. Add a document lifecycle registry with Ready/Failed status and chat association.",
-            "4. Pass explicit allowed document IDs into retrieval.",
-            "5. Add filename, pronoun, latest-document, and ambiguity resolution.",
-            "6. Add typed retrieval/answer failure states and retry idempotency.",
-            "7. Execute the frozen browser suite and address visual polish last.",
+            "1. Add ownership and scope enforcement if multi-user deployment becomes in scope.",
+            "2. Complete cross-operation idempotency beyond document uploads.",
+            "3. Address browser-observed New/End/Fork lifecycle control gaps.",
             "",
             "## Case inventory",
             "",
@@ -209,8 +200,8 @@ def render_markdown(
             "",
             "- Browser cases are not treated as passing when browser execution is unavailable.",
             "- Unsupported product capabilities remain failed rather than weakening expectations.",
-            "- This run used deterministic repository/service and Chainlit data-layer probes only.",
-            "- No production behavior, MAB, LongMemEval, or model configuration was changed.",
+            "- Browser results are counted only when a real local Chrome process executes.",
+            "- Deterministic model/indexer fakes prevent external model calls.",
         ]
     )
     return "\n".join(lines) + "\n"
