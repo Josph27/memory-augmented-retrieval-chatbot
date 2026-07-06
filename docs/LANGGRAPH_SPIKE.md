@@ -6,7 +6,8 @@ Validate LangGraph as a control-flow wrapper around the existing typed-memory
 read path without replacing production orchestration or memory services.
 
 The graph remains read-only, but it can now be selected explicitly from the
-Chainlit demo. Native orchestration remains the default.
+Chainlit demo. LangGraph Demo is now the live default, with Native retained as
+the fallback.
 
 ## What This Spike Includes
 
@@ -107,7 +108,7 @@ Focused tests cover:
 1. exact current-chat quote with raw span present;
 2. exact quote with gist-only evidence and deterministic insufficiency;
 3. previous-chat gist expansion into linked raw transcript evidence;
-4. native default and explicit demo/shadow integration;
+4. LangGraph Demo default, Native fallback, and explicit shadow integration;
 5. bounded trace fields and unchanged SQLite messages, gists, and memory state.
 
 All answer text is explicitly prefixed `MOCK`.
@@ -118,8 +119,9 @@ All answer text is explicitly prefixed `MOCK`.
 uv run pytest -q tests/test_langgraph_memory_pipeline.py
 ```
 
-The graph can be invoked directly in tests or selected per Chainlit session.
-`ORCHESTRATION_MODE=native` is the default.
+The graph can be invoked directly in tests or selected through startup
+configuration.
+`ORCHESTRATION_MODE=langgraph_demo` is the default.
 
 ## Next Steps
 

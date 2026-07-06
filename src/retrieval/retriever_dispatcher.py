@@ -68,7 +68,7 @@ class RetrieverDispatcher:
             plan = source_plan
             if source_plan.source == "document_memory":
                 try:
-                    plan = self._document_scoped_plan(chat_id, source_plan)
+                    plan = self.scoped_source_plan(chat_id, source_plan)
                 except DocumentScopeError as error:
                     self.last_errors.append(
                         {
@@ -109,11 +109,14 @@ class RetrieverDispatcher:
             query=route_plan.query,
         )
 
-    def _document_scoped_plan(
+    def scoped_source_plan(
         self,
         chat_id: str,
         source_plan: SourcePlan,
     ) -> SourcePlan:
+        """Apply persisted source scope before any retriever invocation."""
+        if source_plan.source != "document_memory":
+            return source_plan
         if "allowed_document_ids" in source_plan.filters:
             return source_plan
         if self.database is None or self.database.get_chat(chat_id) is None:

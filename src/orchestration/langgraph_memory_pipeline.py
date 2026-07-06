@@ -204,10 +204,14 @@ def _retrieve_node(services: LangGraphSpikeServices):  # type: ignore[no-untyped
             if retriever is None:
                 continue
             try:
+                scoped_plan = services.dispatcher.scoped_source_plan(
+                    state["chat_id"],
+                    source_plan,
+                )
                 candidates.extend(
                     retriever.retrieve(
                         chat_id=state["chat_id"],
-                        source_plan=source_plan,
+                        source_plan=scoped_plan,
                     )
                 )
             except Exception as error:

@@ -154,6 +154,10 @@ class SemanticRouter:
         normalized = normalize_query(query)
         language = detect_language(query)
         intent, confidence, reason = classify_intent(normalized)
+        if task_context == "document_qa":
+            intent = DOCUMENT_QA
+            confidence = max(confidence, 0.95)
+            reason = "same-turn attachment requires scoped document retrieval"
         retrieval_need = retrieval_need_for(
             normalized,
             intent=intent,
@@ -442,6 +446,8 @@ def retrieval_need_for(
     if matches_any(normalized_query, NON_RETRIEVAL_PATTERNS):
         return RETRIEVAL_NONE
     if task_context == "memory_qa":
+        return RETRIEVAL_REQUIRED
+    if task_context == "document_qa":
         return RETRIEVAL_REQUIRED
     if (
         matches_any(normalized_query, QUESTION_PATTERNS)

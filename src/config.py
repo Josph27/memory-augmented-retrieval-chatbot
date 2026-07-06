@@ -219,7 +219,10 @@ class AppConfig:
             ),
             langchain_chunk_size=int(os.getenv("LANGCHAIN_CHUNK_SIZE", "1000")),
             langchain_chunk_overlap=int(os.getenv("LANGCHAIN_CHUNK_OVERLAP", "150")),
-            orchestration_mode=os.getenv("ORCHESTRATION_MODE", "native").strip().lower(),
+            orchestration_mode=os.getenv(
+                "ORCHESTRATION_MODE",
+                "langgraph_demo",
+            ).strip().lower(),
             routing_mode=os.getenv("ROUTING_MODE", "rule").strip().lower(),
             reranker_mode=os.getenv(
                 "RERANKER_MODE",

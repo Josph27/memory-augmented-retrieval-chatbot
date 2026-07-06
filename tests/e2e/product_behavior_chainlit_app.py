@@ -8,6 +8,7 @@ import os
 from pathlib import Path
 
 from src.chat_service import ChatService
+from src.core.contracts import MemoryCandidate
 from src.memory.structured_state import MemoryUpdateResult
 
 
@@ -35,18 +36,54 @@ class DeterministicBrowserModel:
                     ).fetchall()
                 ]
             with Path(event_path).open("a", encoding="utf-8") as stream:
-                stream.write(json.dumps({"document_statuses": statuses}) + "\n")
+                stream.write(
+                    json.dumps(
+                        {
+                            "document_statuses": statuses,
+                            "prompt": "\n".join(
+                                str(message.get("content", ""))
+                                for message in messages
+                            ),
+                        }
+                    )
+                    + "\n"
+                )
         return f"Deterministic answer: {latest}"
 
 
 class DeterministicBrowserIndexer:
+    def __init__(self) -> None:
+        self.documents: dict[str, str] = {}
+
     def index_text_document(self, title, text, source="manual", metadata=None):  # type: ignore[no-untyped-def]
         del title, source
         values = dict(metadata or {})
+        self.documents[str(values["document_id"])] = str(text)
         return {
             "document_id": values["document_id"],
             "chunk_count": 1 if text else 0,
         }
+
+
+class DeterministicBrowserDocumentRetriever:
+    def __init__(self, indexer: DeterministicBrowserIndexer) -> None:
+        self.indexer = indexer
+
+    def retrieve(self, chat_id, source_plan):  # type: ignore[no-untyped-def]
+        del chat_id
+        return [
+            MemoryCandidate(
+                source="document_memory",
+                content=self.indexer.documents[document_id],
+                record_id=f"{document_id}:0",
+                metadata={
+                    "document_id": document_id,
+                    "retrieval_path": "deterministic_browser_fixture",
+                },
+            )
+            for document_id in source_plan.filters.get("allowed_document_ids", [])
+            if document_id in self.indexer.documents
+        ]
 
 
 class DeterministicBrowserMemoryUpdater:
@@ -63,14 +100,18 @@ _services: dict[str, ChatService] = {}
 
 def deterministic_chat_service(model_name: str) -> ChatService:
     if model_name not in _services:
+        indexer = DeterministicBrowserIndexer()
         service = ChatService(
             database=production_app.database,
             model=DeterministicBrowserModel(),
             raw_message_limit=8,
             memory_update_batch_size=6,
-            document_indexer=DeterministicBrowserIndexer(),
+            document_indexer=indexer,
         )
         service.memory.structured_memory = DeterministicBrowserMemoryUpdater()
+        service.coordinator.retriever_dispatcher.retrievers["document_memory"] = (
+            DeterministicBrowserDocumentRetriever(indexer)
+        )
         _services[model_name] = service
     return _services[model_name]
 

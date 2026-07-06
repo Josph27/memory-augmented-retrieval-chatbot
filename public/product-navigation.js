@@ -123,6 +123,20 @@
     });
   }
 
+  function synchronizeGlobalHeader() {
+    Array.from(document.querySelectorAll("body *"))
+      .filter(
+        (element) =>
+          element.children.length === 0 &&
+          (element.textContent || "").trim().toLowerCase() === "readme",
+      )
+      .forEach((label) => {
+        const control = label.closest("a, button") || label;
+        control.style.display = "none";
+        control.setAttribute("aria-hidden", "true");
+      });
+  }
+
   function synchronizeSidebarStatus() {
     document
       .querySelectorAll(
@@ -165,56 +179,53 @@
       });
   }
 
-  function setNativeHomeContentVisible(visible) {
-    const main = document.querySelector("main");
-    if (!main) return;
+  function setNativeHomeBrandingVisible(visible) {
     if (visible) {
-      main.querySelectorAll(":scope > [data-memory-home-hidden]").forEach((element) => {
-        element.style.display = element.dataset.previousDisplay || "";
-        delete element.dataset.previousDisplay;
-        delete element.dataset.memoryHomeHidden;
-      });
+      document
+        .querySelectorAll("[data-memory-native-home-brand]")
+        .forEach((element) => {
+          element.style.display = element.dataset.previousDisplay || "";
+          delete element.dataset.previousDisplay;
+          delete element.dataset.memoryNativeHomeBrand;
+        });
       return;
     }
-    Array.from(main.children).forEach((element) => {
-      const isProductHome = element.id === HOME_ID;
-      const isHeader =
-        element.tagName === "HEADER" ||
-        Boolean(element.querySelector("a[href*='readme']"));
-      if (isProductHome || isHeader || element.dataset.memoryHomeHidden) return;
-      element.dataset.previousDisplay = element.style.display || "";
-      element.dataset.memoryHomeHidden = "true";
-      element.style.display = "none";
-    });
+    const brandLabel = Array.from(document.querySelectorAll("main *")).find(
+      (element) =>
+        element.children.length === 0 &&
+        (element.textContent || "").trim() === "Chainlit",
+    );
+    const brand = brandLabel?.parentElement;
+    if (!brand || brand.dataset.memoryNativeHomeBrand) return;
+    brand.dataset.previousDisplay = brand.style.display || "";
+    brand.dataset.memoryNativeHomeBrand = "true";
+    brand.style.display = "none";
   }
 
   function renderHome(show) {
     removeElement(HOME_ID);
-    setNativeHomeContentVisible(!show);
+    setNativeHomeBrandingVisible(!show);
     if (!show) return;
     removeElement(TOOLBAR_ID);
     const home = document.createElement("section");
     home.id = HOME_ID;
     Object.assign(home.style, {
-      position: "relative",
+      position: "absolute",
+      inset: "18% 0 auto",
+      zIndex: "2",
       maxWidth: "720px",
-      margin: "18vh auto 0",
-      padding: "32px",
-      borderRadius: "18px",
+      margin: "0 auto",
+      padding: "16px",
       textAlign: "center",
-      background: "var(--background, rgba(20, 20, 20, 0.96))",
-      boxShadow: "0 8px 32px rgba(0, 0, 0, 0.16)",
+      pointerEvents: "none",
     });
     home.innerHTML =
       "<h1>Memory Retrieval Chatbot</h1>" +
-      "<p>Select a chat or start a new one.</p>" +
-      '<button id="new-chat-button" type="button">New Chat</button>';
-    home.querySelector("#new-chat-button").addEventListener("click", () => {
-      sendLifecycleAction("new");
-    });
+      "<p>Send a message to start a new chat.</p>";
     (document.querySelector("main") || document.body).appendChild(home);
-    setNativeHomeContentVisible(false);
+    setNativeHomeBrandingVisible(false);
     synchronizeNativeNewChat();
+    synchronizeGlobalHeader();
   }
 
   function applyProductState(data) {
@@ -240,6 +251,7 @@
     if (!data || data.source !== SOURCE) return;
     if (data.command === "product-state") applyProductState(data);
     if (data.command === "refresh-sidebar") window.location.reload();
+    if (data.command === "navigate-home") window.location.assign("/");
     if (data.command === "product-error" && data.message) {
       window.alert(String(data.message).slice(0, 240));
     }
@@ -248,6 +260,7 @@
   new MutationObserver(() => {
     setComposerEnabled(productState.active !== false);
     synchronizeNativeNewChat();
+    synchronizeGlobalHeader();
     synchronizeSidebarStatus();
     const toolbar = document.getElementById(TOOLBAR_ID);
     const composer = visibleComposer();
@@ -264,4 +277,5 @@
   }).observe(document.documentElement, { childList: true, subtree: true });
 
   synchronizeNativeNewChat();
+  synchronizeGlobalHeader();
 })();

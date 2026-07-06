@@ -143,7 +143,7 @@ The exact optional arguments are available with `--help`.
 ### Safe baseline
 
 ```env
-ORCHESTRATION_MODE=native
+ORCHESTRATION_MODE=langgraph_demo
 ROUTING_MODE=rule
 STRUCTURED_MEMORY_RETRIEVAL_MODE=sqlite
 RERANKER_MODE=deterministic
@@ -151,10 +151,11 @@ PREVIOUS_CHAT_GIST_GENERATION_ENABLED=0
 PREVIOUS_CHAT_GIST_RETRIEVAL_ENABLED=1
 ```
 
-### Orchestration selector
+### Orchestration mode
 
-Chainlit settings expose `Native`, `LangGraph Shadow`, and `LangGraph Demo`.
-Native remains authoritative by default. Shadow compares sources, selected
+The live UI does not expose orchestration selection. `LangGraph Demo` is
+authoritative by default, with Native retained as the internal fallback.
+Shadow compares sources, selected
 candidate IDs, token use, provenance, and latency without affecting the answer.
 Demo uses the graph-built ContextPacket and visibly falls back to native if the
 graph fails. Graph nodes do not save messages, update memories, index

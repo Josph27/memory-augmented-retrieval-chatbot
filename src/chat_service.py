@@ -241,6 +241,10 @@ class ChatService:
                 if existing is None:
                     raise RuntimeError("upload retry references a missing document record")
                 if existing.status == "Ready":
+                    self.database.associate_document_with_chat(
+                        chat_id,
+                        document_id,
+                    )
                     return DocumentFileIndexResult(
                         file_name=existing.file_name,
                         document_id=existing.id,
@@ -263,6 +267,10 @@ class ChatService:
                                 "upload retry references a missing document record"
                             )
                         if existing.status == "Ready":
+                            self.database.associate_document_with_chat(
+                                chat_id,
+                                document_id,
+                            )
                             return DocumentFileIndexResult(
                                 file_name=existing.file_name,
                                 document_id=existing.id,
@@ -275,7 +283,6 @@ class ChatService:
                         status="Uploading",
                         source=str(path),
                     )
-                    self.database.associate_document_with_chat(chat_id, document_id)
             self.database.update_document_status(document_id, "Indexing")
             try:
                 result = self.document_ingestion_agent.index_file(
@@ -289,12 +296,18 @@ class ChatService:
                     "Failed",
                     error=f"{type(error).__name__}: {error}",
                 )
+                self.database.associate_document_with_chat(chat_id, document_id)
                 raise
-            self.database.update_document_status(
-                document_id,
-                "Ready",
-                chunk_count=result.chunk_count,
-            )
+            try:
+                self.database.update_document_status(
+                    document_id,
+                    "Ready",
+                    chunk_count=result.chunk_count,
+                )
+            except Exception:
+                self.database.associate_document_with_chat(chat_id, document_id)
+                raise
+            self.database.associate_document_with_chat(chat_id, document_id)
             return DocumentFileIndexResult(
                 file_name=result.file_name,
                 document_id=result.document_id,
@@ -316,19 +329,60 @@ class ChatService:
         chat_id: str,
         content: str,
         orchestration_mode: str = "native",
+        task_context: str | None = None,
+        persisted_user_message_id: int | None = None,
         defer_post_answer_memory_update: bool = False,
     ) -> AgentTurnResult:
         """Run one user turn and return the agent-shaped result."""
         with guarded_chat_operation(self.database.path, chat_id):
             if not self.database.is_chat_active(chat_id):
                 raise RuntimeError(f"Chat is inactive: {chat_id}")
-            self.ensure_chat_title_from_message(chat_id=chat_id, content=content)
+            if persisted_user_message_id is None:
+                self.ensure_chat_title_from_message(chat_id=chat_id, content=content)
+            else:
+                self._validate_persisted_user_message(
+                    chat_id=chat_id,
+                    message_id=persisted_user_message_id,
+                    content=content,
+                )
             return self.coordinator.run_turn(
                 chat_id=chat_id,
                 content=content,
                 orchestration_mode=orchestration_mode,
+                task_context=task_context,
+                persisted_user_message_id=persisted_user_message_id,
                 perform_memory_update=not defer_post_answer_memory_update,
             )
+
+    def persist_user_message_for_turn(self, chat_id: str, content: str) -> int:
+        """Persist one user turn before synchronous attachment ingestion."""
+        with guarded_chat_operation(self.database.path, chat_id):
+            if not self.database.is_chat_active(chat_id):
+                raise RuntimeError(f"Chat is inactive: {chat_id}")
+            self.ensure_chat_title_from_message(chat_id=chat_id, content=content)
+            return self.database.save_message(
+                chat_id=chat_id,
+                role="user",
+                content=content,
+            )
+
+    def _validate_persisted_user_message(
+        self,
+        *,
+        chat_id: str,
+        message_id: int,
+        content: str,
+    ) -> None:
+        message = next(
+            (
+                item
+                for item in self.database.messages_for_chat(chat_id)
+                if item.id == message_id
+            ),
+            None,
+        )
+        if message is None or message.role != "user" or message.content != content:
+            raise RuntimeError("pre-persisted user message does not match this turn")
 
     def finalize_post_answer_memory_update(self, chat_id: str) -> bool:
         """Run the synchronous post-answer memory update after visible answer emission."""

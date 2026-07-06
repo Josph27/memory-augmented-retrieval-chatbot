@@ -855,15 +855,6 @@ class Database:
                 """,
                 (document_id, file_name, source, timestamp, timestamp),
             )
-            connection.execute(
-                """
-                INSERT INTO chat_documents (
-                    chat_id, document_id, selected, associated_at
-                )
-                VALUES (?, ?, 0, ?)
-                """,
-                (chat_id, document_id, timestamp),
-            )
         return True, document_id
 
     def get_operation_result(

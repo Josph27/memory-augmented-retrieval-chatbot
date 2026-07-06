@@ -7,7 +7,7 @@ The app uses Chainlit for the browser chat UI, Python for backend logic, SQLite 
 ## Features
 
 - Browser chat UI with Chainlit
-- Chainlit model profiles for selecting a model before a new chat
+- One configured application model from `MODEL_NAME`, without a redundant selector
 - SQLite-backed Chainlit thread history through `SQLiteChainlitDataLayer`
 - OpenAI-compatible model wrapper with one `chat(messages)` method
 - Local/free model defaults for Ollama-compatible endpoints
@@ -20,7 +20,7 @@ The app uses Chainlit for the browser chat UI, Python for backend logic, SQLite 
 - Production-shaped prompt assembly through `ContextPacket`, with legacy
   `ShortTermMemory` prompt fallback
 - Demo/debug memory tracing with `DEMO_MEMORY_TRACE=1`
-- Per-session Native, LangGraph Shadow, and LangGraph Demo orchestration modes
+- LangGraph Demo live orchestration with an internal Native fallback
 - Dockerfile with persistent `data/` mount support
 
 ## Local Model Defaults
@@ -53,6 +53,8 @@ uv run chainlit run app.py -w
 ```
 
 Open the local URL printed by Chainlit, usually `http://localhost:8000`.
+The application defaults to `ORCHESTRATION_MODE=langgraph_demo`; set the
+environment variable explicitly if you need a diagnostic alternative.
 
 The SQLite database is created at `data/chatbot.db` by default. The database file is ignored by git because it is runtime state.
 
@@ -86,14 +88,17 @@ coordinator falls back to the legacy `ShortTermMemory` prompt messages.
 
 ## Demo Orchestration Modes
 
-Chainlit exposes a per-session selector:
+The live UI does not expose an orchestration selector:
 
-- **Native** is the default and preserves the imperative Coordinator path.
+- **LangGraph Demo** is the application default. Its graph-built
+  `ContextPacket` is authoritative for the existing answer agent.
+- **Native** preserves the imperative Coordinator path and remains the internal
+  fallback when the graph fails.
 - **LangGraph Shadow** runs the read-only graph for comparison while the native
   ContextPacket remains authoritative.
-- **LangGraph Demo** uses the graph-built ContextPacket for the existing answer
-  agent. User/assistant persistence and structured-memory updates remain in the
-  outer Coordinator turn, not graph nodes.
+
+User/assistant persistence and structured-memory updates remain in the outer
+Coordinator turn, not graph nodes.
 
 The graph wraps the existing retrievers, gist expansion, reranker,
 `ContextManagerAgent`, and `ContextBuilder`. Semantic Router v2 emits typed
@@ -101,8 +106,8 @@ intent, temporal scope, source plans, and evidence contracts. Exact quote
 requests fail closed when no raw transcript span survives into ContextPacket.
 Graph failure in demo mode is visible in trace and falls back to native.
 
-Set `ORCHESTRATION_MODE=native|langgraph_shadow|langgraph_demo` to choose the
-initial Chainlit setting. `native` remains the default.
+Set `ORCHESTRATION_MODE=native|langgraph_shadow|langgraph_demo` before startup
+to choose a diagnostic mode. `langgraph_demo` is the default.
 
 The current schema for `chat_memory_state.memory_json` stores typed memory records:
 

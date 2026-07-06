@@ -51,7 +51,8 @@ ChatService
 → ShortTermMemory / LangMem update
 ```
 
-Native remains the default. Its router is conservative and does not
+LangGraph Demo is the live application default, with Native retained as the
+internal fallback. The Native router is conservative and does not
 automatically activate every span/gist source.
 
 ### Explicit Shadow/Demo path
@@ -183,7 +184,7 @@ not validate live-model grounding.
 
 ## What Cannot Be Claimed Yet
 
-- LangGraph is not the default orchestration path.
+- LangGraph Demo is the default live orchestration path.
 - Semantic Router v2 is used only in explicitly selected graph modes.
 - Mock answers do not prove final-answer correctness, faithfulness, or
   quotation behavior.
