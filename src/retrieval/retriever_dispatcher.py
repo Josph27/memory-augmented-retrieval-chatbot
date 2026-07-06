@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import os
+from dataclasses import replace
 from typing import Protocol
 
 from src.core.contracts import MemoryCandidate, RoutePlan, SourcePlan
 from src.database import Database
+from src.documents.registry import DocumentRegistry, DocumentScopeError
 from src.memory.constants import RECENT_MESSAGES_MAX_COUNT
 from src.retrieval.current_chat_gist_retriever import CurrentChatGistRetriever
 from src.retrieval.current_chat_span_retriever import CurrentChatSpanRetriever
@@ -35,6 +37,8 @@ class RetrieverDispatcher:
         gist_expander: GistRawSpanExpander | None = None,
         direct_raw_candidate_limit: int | None = None,
     ) -> None:
+        self.database = database
+        self.last_errors: list[dict[str, str]] = []
         self.gist_expander = gist_expander or GistRawSpanExpander(database)
         self.retrievers: dict[str, SourceRetriever] = retrievers or {
             "recent_messages": RecentMessagesRetriever(database, default_limit=raw_message_limit),
@@ -51,6 +55,7 @@ class RetrieverDispatcher:
 
     def retrieve(self, chat_id: str, route_plan: RoutePlan) -> list[MemoryCandidate]:
         """Retrieve candidates from enabled sources only."""
+        self.last_errors = []
         candidates: list[MemoryCandidate] = []
         for source_plan in route_plan.sources:
             if not source_plan.enabled:
@@ -60,11 +65,70 @@ class RetrieverDispatcher:
             if retriever is None:
                 continue
 
-            candidates.extend(retriever.retrieve(chat_id=chat_id, source_plan=source_plan))
+            plan = source_plan
+            if source_plan.source == "document_memory":
+                try:
+                    plan = self._document_scoped_plan(chat_id, source_plan)
+                except DocumentScopeError as error:
+                    self.last_errors.append(
+                        {
+                            "source": "document_memory",
+                            "type": type(error).__name__,
+                            "message": str(error),
+                        }
+                    )
+                    continue
+            try:
+                retrieved = retriever.retrieve(chat_id=chat_id, source_plan=plan)
+                if (
+                    source_plan.source == "document_memory"
+                    and not retrieved
+                    and plan.filters.get("allowed_document_ids")
+                ):
+                    fallback_query = " ".join(
+                        [
+                            source_plan.query or route_plan.query,
+                            *plan.filters.get("allowed_document_names", []),
+                        ]
+                    ).strip()
+                    retrieved = retriever.retrieve(
+                        chat_id=chat_id,
+                        source_plan=replace(plan, query=fallback_query),
+                    )
+                candidates.extend(retrieved)
+            except Exception as error:
+                self.last_errors.append(
+                    {
+                        "source": str(source_plan.source),
+                        "type": type(error).__name__,
+                        "message": str(error),
+                    }
+                )
         return candidates + self.gist_expander.expand(
             candidates,
             query=route_plan.query,
         )
+
+    def _document_scoped_plan(
+        self,
+        chat_id: str,
+        source_plan: SourcePlan,
+    ) -> SourcePlan:
+        if "allowed_document_ids" in source_plan.filters:
+            return source_plan
+        if self.database is None or self.database.get_chat(chat_id) is None:
+            return source_plan
+        resolution = DocumentRegistry(self.database).resolve(
+            chat_id,
+            source_plan.query or "",
+        )
+        filters = {
+            **source_plan.filters,
+            "allowed_document_ids": list(resolution.document_ids),
+            "allowed_document_names": list(resolution.file_names),
+            "document_resolution_reason": resolution.reason,
+        }
+        return replace(source_plan, filters=filters)
 
 
 def langchain_chroma_retriever_for_env(database: Database) -> SourceRetriever:

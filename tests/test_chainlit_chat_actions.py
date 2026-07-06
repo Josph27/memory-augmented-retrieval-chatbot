@@ -270,9 +270,9 @@ def test_chat_resume_restores_persisted_ended_state(monkeypatch) -> None:
     assert controls == ["ended-chat"]
 
 
-def test_chat_controls_are_ui_surface_not_chat_list(monkeypatch) -> None:
+def test_chat_controls_are_state_only_not_conversation_messages(monkeypatch) -> None:
     session = FakeUserSession({"chat_id": "ended-chat"})
-    install_chainlit_fakes(monkeypatch, session)
+    window_messages = install_chainlit_fakes(monkeypatch, session)
     monkeypatch.setattr(
         app.database,
         "get_chat",
@@ -281,15 +281,37 @@ def test_chat_controls_are_ui_surface_not_chat_list(monkeypatch) -> None:
 
     asyncio.run(app.send_chat_controls("ended-chat"))
 
-    message = FakeMessage.sent[-1]
-    assert message.content == "__MEMORY_CHATBOT_CONTROLS__"
-    assert message.metadata["ui_surface"] == "chat_controls"
-    assert {action.name for action in message.actions} == {
-        "fork_chat",
-        "new_chat",
-        "nav_home",
+    assert FakeMessage.sent == []
+    assert window_messages[-1] == {
+        "source": "memory-chatbot-ui",
+        "command": "product-state",
+        "view": "chat",
+        "chat_id": "ended-chat",
+        "active": False,
     }
-    assert "chat list" not in message.content.lower()
+
+
+def test_window_lifecycle_action_delegates_to_existing_handler(monkeypatch) -> None:
+    calls: list[object] = []
+
+    async def new_chat_handler(action: object) -> None:
+        calls.append(action)
+
+    monkeypatch.setattr(app, "new_chat_handler", new_chat_handler)
+
+    asyncio.run(
+        app.product_window_message(
+            {
+                "source": "memory-chatbot-ui",
+                "command": "lifecycle-action",
+                "action": "new",
+                "chat_id": None,
+            }
+        )
+    )
+
+    assert len(calls) == 1
+    assert app.action_payload(calls[0]) == {"chat_id": None}
 
 
 def test_orchestration_mode_selection_is_per_session(monkeypatch) -> None:

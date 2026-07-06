@@ -83,6 +83,10 @@ DOCUMENT_PATTERNS = (
     r"\baccording to (?:the )?(?:uploaded )?(?:document|file|report|paper)\b",
     r"\buploaded (?:document|file|report|paper)\b",
     r"\b(?:document|report|paper|pdf) says?\b",
+    r"\b(?:this|that) (?:document|report|file)\b",
+    r"\bthe file i uploaded\b",
+    r"\bsummarize it\b",
+    r"(?:这个报告|这个文档|刚才的文件|上传的文件|里面写了什么|根据它来说|总结一下它)",
 )
 SUMMARY_REQUEST_PATTERNS = (
     r"\bsummar(?:ize|y)\b",

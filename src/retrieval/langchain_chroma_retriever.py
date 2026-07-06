@@ -113,11 +113,27 @@ class LangChainChromaRetriever:
         del chat_id
         query = source_plan.query or ""
         limit = source_plan.limit or self.default_top_k
+        allowed_ids = source_plan.filters.get("allowed_document_ids")
+        if allowed_ids is not None and not allowed_ids:
+            return []
         try:
-            documents_with_scores = self._similarity_search(query=query, limit=limit)
+            if allowed_ids is None:
+                documents_with_scores = self._similarity_search(
+                    query=query,
+                    limit=limit,
+                )
+            else:
+                documents_with_scores = self._similarity_search(
+                    query=query,
+                    limit=limit,
+                    allowed_document_ids=allowed_ids,
+                )
             return [
                 langchain_document_to_memory_candidate(document, score)
                 for document, score in documents_with_scores
+                if allowed_ids is None
+                or str(getattr(document, "metadata", {}).get("document_id"))
+                in {str(value) for value in allowed_ids}
             ]
         except LangChainChromaUnavailable as error:
             print(f"langchain_chroma_unavailable reason={error}")
@@ -125,13 +141,51 @@ class LangChainChromaRetriever:
                 return []
             return self.fallback_retriever.retrieve(chat_id="", source_plan=source_plan)
 
-    def _similarity_search(self, query: str, limit: int):
+    def _similarity_search(
+        self,
+        query: str,
+        limit: int,
+        allowed_document_ids: list[str] | tuple[str, ...] | None = None,
+    ):
         vectorstore = self._vectorstore()
+        filter_value = None
+        if allowed_document_ids:
+            values = [str(value) for value in allowed_document_ids]
+            filter_value = (
+                {"document_id": values[0]}
+                if len(values) == 1
+                else {"document_id": {"$in": values}}
+            )
         if hasattr(vectorstore, "similarity_search_with_score"):
-            return vectorstore.similarity_search_with_score(query, k=limit)
+            try:
+                return vectorstore.similarity_search_with_score(
+                    query,
+                    k=limit,
+                    filter=filter_value,
+                )
+            except TypeError:
+                return vectorstore.similarity_search_with_score(query, k=limit)
         if hasattr(vectorstore, "similarity_search_with_relevance_scores"):
-            return vectorstore.similarity_search_with_relevance_scores(query, k=limit)
-        return [(document, None) for document in vectorstore.similarity_search(query, k=limit)]
+            try:
+                return vectorstore.similarity_search_with_relevance_scores(
+                    query,
+                    k=limit,
+                    filter=filter_value,
+                )
+            except TypeError:
+                return vectorstore.similarity_search_with_relevance_scores(query, k=limit)
+        try:
+            documents = vectorstore.similarity_search(
+                query,
+                k=limit,
+                filter=filter_value,
+            )
+        except TypeError:
+            documents = vectorstore.similarity_search(query, k=limit)
+        return [
+            (document, None)
+            for document in documents
+        ]
 
     def _vectorstore(self):
         if self._vector_store is not None:

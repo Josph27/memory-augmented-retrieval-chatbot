@@ -152,6 +152,29 @@ def test_clean_database_never_creates_legacy_document_tables(tmp_path: Path) -> 
     assert not LEGACY_DOCUMENT_TABLES & tables
 
 
+def test_repeated_stable_document_id_does_not_duplicate_logical_chunks(
+    tmp_path: Path,
+) -> None:
+    retriever = LocalChromaRetriever(
+        persist_dir=tmp_path / "chroma",
+        collection_name="document_memory",
+    )
+
+    first = retriever.index_text_document(
+        "Report",
+        "The stable marker is papaya-64217.",
+        metadata={"document_id": "stable-document", "file_name": "report.txt"},
+    )
+    second = retriever.index_text_document(
+        "Report",
+        "The stable marker is papaya-64217.",
+        metadata={"document_id": "stable-document", "file_name": "report.txt"},
+    )
+
+    assert first.document_id == second.document_id == "stable-document"
+    assert retriever._vectorstore()._collection.count() == 1
+
+
 def test_existing_database_drops_legacy_document_tables_and_preserves_live_rows(
     tmp_path: Path,
 ) -> None:

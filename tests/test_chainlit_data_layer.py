@@ -34,7 +34,8 @@ def test_chainlit_data_layer_lists_and_loads_threads(tmp_path) -> None:
     }
     listed = next(item for item in page.data if item["id"] == "chat-1")
     assert listed["name"] == "First chat"
-    assert listed["metadata"]["status"] == "active"
+    assert listed["metadata"]["active"] is True
+    assert "status" not in listed["metadata"]
     assert page.pageInfo.hasNextPage is False
     assert thread is not None
     assert [step["type"] for step in thread["steps"]] == [
@@ -77,7 +78,11 @@ def test_chainlit_data_layer_lists_active_and_ended_with_stable_pagination(
 
     assert [item["id"] for item in first.data] == ["chat-c", "chat-b"]
     assert [item["id"] for item in second.data] == ["chat-a"]
-    assert first.data[1]["metadata"]["status"] == "ended"
+    assert first.data[0]["name"] == "chat-c"
+    assert first.data[1]["name"] == "chat-b · Ended"
+    assert first.data[0]["metadata"]["active"] is True
+    assert "status" not in first.data[0]["metadata"]
+    assert first.data[1]["metadata"]["status"] == "Ended"
 
 
 def test_loading_ended_thread_returns_only_its_readable_history(tmp_path) -> None:
@@ -94,7 +99,7 @@ def test_loading_ended_thread_returns_only_its_readable_history(tmp_path) -> Non
     selected = run_async(data_layer.get_thread("selected"))
 
     assert selected is not None
-    assert selected["metadata"]["status"] == "ended"
+    assert selected["metadata"]["status"] == "Ended"
     assert [step["output"] for step in selected["steps"]] == [
         "selected question",
         "selected answer",

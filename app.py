@@ -1,11 +1,10 @@
 from __future__ import annotations
 
 import os
-from typing import NamedTuple
+from types import SimpleNamespace
 
 import chainlit as cl
 from chainlit.input_widget import Select
-from chainlit.types import ChatProfile
 from chainlit.user import User
 
 from src.actions.chat_end import ChatEndAction
@@ -39,44 +38,6 @@ config = AppConfig.from_env()
 database = Database(config.database_path)
 
 
-class ModelProfile(NamedTuple):
-    """A selectable chat model profile."""
-
-    key: str
-    display_name: str
-    model_name: str
-    description: str
-
-
-MODEL_PROFILES = [
-    ModelProfile(
-        key="gemma",
-        display_name="Gemma 4 31B",
-        model_name="google/gemma-4-31B-it",
-        description="Default TUM AIR AKG model.",
-    ),
-    ModelProfile(
-        key="qwen",
-        display_name="Qwen 3.5 122B A10B",
-        model_name="Qwen/Qwen3.5-122B-A10B",
-        description="Qwen large model profile.",
-    ),
-    ModelProfile(
-        key="gpt-oss",
-        display_name="GPT OSS 120B",
-        model_name="openai/gpt-oss-120b",
-        description="OpenAI GPT-OSS model profile.",
-    ),
-    ModelProfile(
-        key="mistral-medium",
-        display_name="Mistral Medium 3.5 128B",
-        model_name="mistralai/Mistral-Medium-3.5-128B",
-        description="Mistral model profile.",
-    ),
-]
-DEFAULT_MODEL_PROFILE_KEY = "gemma"
-MODEL_PROFILES_BY_KEY = {profile.key: profile for profile in MODEL_PROFILES}
-MODEL_PROFILES_BY_MODEL = {profile.model_name: profile for profile in MODEL_PROFILES}
 chat_services: dict[str, ChatService] = {}
 ORCHESTRATION_SETTING_ID = "orchestration_mode"
 ORCHESTRATION_LABELS = {
@@ -117,27 +78,6 @@ async def auth_callback(username: str, password: str) -> User | None:
 def data_layer() -> SQLiteChainlitDataLayer:
     """Expose existing SQLite chats/messages to Chainlit's history UI."""
     return SQLiteChainlitDataLayer(database)
-
-
-@cl.set_chat_profiles
-async def chat_profiles(
-    current_user: User | None,
-    language: str | None = None,
-) -> list[ChatProfile]:
-    """Declare model choices shown before starting a new chat."""
-    del current_user, language
-    return [
-        ChatProfile(
-            name=profile.key,
-            display_name=profile.display_name,
-            markdown_description=(
-                f"{profile.description}\n\nModel id: `{profile.model_name}`"
-            ),
-            icon="bot",
-            default=profile.key == DEFAULT_MODEL_PROFILE_KEY,
-        )
-        for profile in MODEL_PROFILES
-    ]
 
 
 @cl.on_chat_start
@@ -217,7 +157,7 @@ async def on_message(message: cl.Message) -> None:
     model_name = cl.user_session.get("model_name") or model_name_for_chat(chat_id)
     chat_service = chat_service_for_model(model_name)
 
-    upload_statuses = index_uploaded_files(message, chat_service)
+    upload_statuses = index_uploaded_files(message, chat_service, str(chat_id))
     if upload_statuses:
         await cl.Message(content="\n".join(upload_statuses)).send()
 
@@ -237,6 +177,10 @@ async def on_message(message: cl.Message) -> None:
         if retrieved_trace:
             await cl.Message(content=retrieved_trace).send()
 
+    if result.metadata.get("answer_status") == "failed":
+        await send_product_error(result.answer)
+        await send_chat_controls(str(chat_id))
+        return
     await cl.Message(content=result.answer).send()
     chat_service.finalize_post_answer_memory_update(chat_id)
     if orchestration_mode != NATIVE:
@@ -252,33 +196,10 @@ async def on_message(message: cl.Message) -> None:
 
 
 async def send_chat_controls(chat_id: str) -> None:
-    """Send non-persistent controls that custom JS moves outside the transcript."""
+    """Synchronize lifecycle controls from authoritative persisted chat state."""
     chat = database.get_chat(chat_id)
     if chat is None:
         return
-    actions = [
-        cl.Action(
-            name="fork_chat",
-            label="Fork Chat",
-            payload={"chat_id": chat_id},
-        ),
-        cl.Action(name="new_chat", label="New Chat", payload={"value": "new"}),
-        cl.Action(name="nav_home", label="Home", payload={"view": "home"}),
-    ]
-    if chat.active:
-        actions.insert(
-            0,
-            cl.Action(
-                name="end_chat",
-                label="End Chat",
-                payload={"chat_id": chat_id},
-            ),
-        )
-    await cl.Message(
-        content="__MEMORY_CHATBOT_CONTROLS__",
-        actions=actions,
-        metadata={"ui_surface": "chat_controls"},
-    ).send()
     await send_product_state(
         view="chat",
         chat_id=chat_id,
@@ -402,6 +323,28 @@ async def nav_home_handler(action: cl.Action) -> None:
     cl.user_session.set("chat_ended", False)
     cl.user_session.set("product_view", "home")
     await send_product_state(view="home", chat_id=None, active=None)
+
+
+@cl.on_window_message
+async def product_window_message(data: object) -> None:
+    """Route custom product-shell actions to existing authoritative handlers."""
+    if not isinstance(data, dict):
+        return
+    if data.get("source") != "memory-chatbot-ui":
+        return
+    if data.get("command") != "lifecycle-action":
+        return
+    action_name = data.get("action")
+    payload = {"chat_id": data.get("chat_id")}
+    action = SimpleNamespace(payload=payload)
+    if action_name == "new":
+        await new_chat_handler(action)
+    elif action_name == "end":
+        await end_chat_handler(action)
+    elif action_name == "fork":
+        await fork_chat_handler(action)
+    elif action_name == "home":
+        await nav_home_handler(action)
 
 
 def action_payload(action: object) -> dict:
@@ -598,7 +541,11 @@ def format_orchestration_trace_markdown(result: object) -> str:
     return "\n".join(lines)
 
 
-def index_uploaded_files(message: cl.Message, chat_service: ChatService) -> list[str]:
+def index_uploaded_files(
+    message: cl.Message,
+    chat_service: ChatService,
+    chat_id: str | None = None,
+) -> list[str]:
     """Index uploaded document files before running the chat turn."""
     statuses: list[str] = []
     for element in message.elements or []:
@@ -607,7 +554,12 @@ def index_uploaded_files(message: cl.Message, chat_service: ChatService) -> list
         if not path:
             continue
         try:
-            result = chat_service.index_document_file(path, display_name=name)
+            result = chat_service.index_document_file(
+                path,
+                display_name=name,
+                chat_id=chat_id,
+                operation_id=uploaded_file_operation_id(element, chat_id, path),
+            )
         except (DocumentLoaderError, LangChainChromaUnavailable) as error:
             statuses.append(f"Could not index {name}: {error}")
         except Exception as error:
@@ -642,6 +594,20 @@ def uploaded_file_name(element: object) -> str:
     return str(value)
 
 
+def uploaded_file_operation_id(
+    element: object,
+    chat_id: str | None,
+    path: str,
+) -> str:
+    """Return a stable upload operation id for one Chainlit file element."""
+    if isinstance(element, dict):
+        element_id = element.get("id")
+    else:
+        element_id = getattr(element, "id", None)
+    stable_file_id = str(element_id or path)
+    return f"document-upload:{chat_id or 'unscoped'}:{stable_file_id}"
+
+
 def current_chainlit_thread_id() -> str | None:
     """Return Chainlit's frontend thread id when running inside a session."""
     try:
@@ -651,20 +617,8 @@ def current_chainlit_thread_id() -> str | None:
 
 
 def selected_model_name() -> str:
-    """Return the model selected in Chainlit's new-chat profile picker."""
-    profile_key = selected_model_profile_key()
-    return MODEL_PROFILES_BY_KEY[profile_key].model_name
-
-
-def selected_model_profile_key() -> str:
-    """Return the selected profile key, falling back to Gemma."""
-    try:
-        profile_key = cl.context.session.chat_profile
-    except Exception:
-        profile_key = None
-    if profile_key in MODEL_PROFILES_BY_KEY:
-        return str(profile_key)
-    return DEFAULT_MODEL_PROFILE_KEY
+    """Return the single model configured for this application instance."""
+    return config.model_name
 
 
 def model_name_from_thread(thread: dict) -> str:
@@ -683,7 +637,7 @@ def model_name_for_chat(chat_id: str) -> str:
     chat = database.get_chat(chat_id)
     if chat and chat.model_name:
         return chat.model_name
-    return MODEL_PROFILES_BY_KEY[DEFAULT_MODEL_PROFILE_KEY].model_name
+    return config.model_name
 
 
 def chat_service_for_model(model_name: str) -> ChatService:

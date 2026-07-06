@@ -34,6 +34,7 @@ from src.routing.retrieval_query import retrieval_query_for_reranking
 
 
 TERMINATION_RESPONSE_SAVED = "response_generated_and_messages_saved"
+TERMINATION_ANSWER_FAILED = "answer_generation_failed"
 
 
 class CoordinatorAgent:
@@ -96,6 +97,9 @@ class CoordinatorAgent:
         retrieved_candidates = self.retriever_dispatcher.retrieve(
             chat_id=chat_id,
             route_plan=route_plan,
+        )
+        retrieval_errors = list(
+            getattr(self.retriever_dispatcher, "last_errors", [])
         )
         timings["retrieval"] = elapsed_ms(stage_started)
         stage_started = perf_counter()
@@ -231,9 +235,14 @@ class CoordinatorAgent:
         errors: list[str] = []
         if orchestration_error:
             errors.append(orchestration_error)
+        errors.extend(
+            f"{item.get('source')}: {item.get('type')}: {item.get('message')}"
+            for item in retrieval_errors
+        )
         insufficient_evidence = bool(
             authoritative_trace.metadata.get("insufficient_evidence")
         )
+        answer_failed = False
         if authoritative_orchestration.mode == LANGGRAPH_DEMO and insufficient_evidence:
             reason = authoritative_trace.metadata.get(
                 "insufficient_evidence_reason"
@@ -245,21 +254,23 @@ class CoordinatorAgent:
                 stage_started = perf_counter()
                 response = self.chat_agent.generate(final_model_messages)
                 timings["main_model_call"] = elapsed_ms(stage_started)
-            except OpenAIError as error:
+            except (OpenAIError, TimeoutError) as error:
                 timings["main_model_call"] = elapsed_ms(stage_started)
                 errors.append(str(error))
+                answer_failed = True
                 response = (
-                    "I could not reach the configured OpenAI-compatible model endpoint. "
-                    "Check OPENAI_BASE_URL, MODEL_NAME, and whether the local model server is running.\n\n"
-                    f"Model error: {error}"
+                    "The answer could not be generated. Your message was saved and "
+                    "you can retry this turn."
                 )
 
         stage_started = perf_counter()
-        assistant_message_id = self.database.save_message(
-            chat_id=chat_id,
-            role="assistant",
-            content=response,
-        )
+        assistant_message_id = None
+        if not answer_failed:
+            assistant_message_id = self.database.save_message(
+                chat_id=chat_id,
+                role="assistant",
+                content=response,
+            )
         timings["save_assistant_message"] = elapsed_ms(stage_started)
         if perform_memory_update:
             try:
@@ -299,6 +310,9 @@ class CoordinatorAgent:
             "task_context": task_context,
         }
 
+        termination_reason = (
+            TERMINATION_ANSWER_FAILED if answer_failed else TERMINATION_RESPONSE_SAVED
+        )
         trace = WorkflowTrace(
             trace_id=trace_id,
             chat_id=chat_id,
@@ -307,7 +321,7 @@ class CoordinatorAgent:
             ranked_candidates=ranked_candidates,
             context_budget=context_budget,
             context_packet=trace_context_packet,
-            termination_reason=TERMINATION_RESPONSE_SAVED,
+            termination_reason=termination_reason,
             errors=errors,
             metadata={
                 "context_comparison": context_comparison.to_dict(),
@@ -338,6 +352,7 @@ class CoordinatorAgent:
                 "saved_memory_rows": saved_memory_rows,
                 "retrieved_memory_rows": retrieved_memory_rows,
                 "retrieved_document_rows": retrieved_document_rows,
+                "retrieval_errors": retrieval_errors,
             },
         )
         self._log_trace(trace)
@@ -345,7 +360,7 @@ class CoordinatorAgent:
             answer=response,
             chat_id=chat_id,
             trace_id=trace_id,
-            termination_reason=TERMINATION_RESPONSE_SAVED,
+            termination_reason=termination_reason,
             trace=trace,
             assistant_message_id=assistant_message_id,
             metadata={
@@ -356,6 +371,7 @@ class CoordinatorAgent:
                 "reranker": reranker_metadata,
                 "context_manager": context_manager_metadata,
                 "orchestration": orchestration_metadata,
+                "answer_status": "failed" if answer_failed else "completed",
             },
         )
 

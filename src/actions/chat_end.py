@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from typing import Protocol
 
 from src.database import Database
+from src.lifecycle.operation_guard import guarded_chat_operation
 from src.memory.previous_chat_gist import (
     DeterministicPreviousChatGistExtractor,
     PreviousChatGistFinalizationResult,
@@ -69,6 +70,11 @@ class ChatEndAction:
 
     def execute(self, chat_id: str) -> ChatEndResult:
         """Process pending messages, then transition the chat to inactive."""
+        with guarded_chat_operation(self.database.path, chat_id):
+            return self._execute_locked(chat_id)
+
+    def _execute_locked(self, chat_id: str) -> ChatEndResult:
+        """Finalize one chat while its shared operation lock is held."""
         try:
             memory_result = self.memory.process_all_for_chat_end(chat_id)
         except Exception:

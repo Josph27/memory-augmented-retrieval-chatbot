@@ -38,19 +38,23 @@ class DocumentIngestionAgent:
         self,
         path: str | Path,
         display_name: str | None = None,
+        *,
+        document_id: str | None = None,
     ) -> DocumentIngestionResult:
         """Load a local file and index it through the configured document backend."""
         loaded = load_document_file(path, display_name=display_name)
+        if document_id:
+            loaded.metadata["document_id"] = document_id
         indexer = self.indexer or LangChainChromaRetriever.from_env()
         raw_result = index_loaded_document(loaded, indexer)
 
-        document_id = result_value(raw_result, "document_id", "")
+        indexed_document_id = result_value(raw_result, "document_id", "")
         chunk_count = int(result_value(raw_result, "chunk_count", 0) or 0)
         file_name = str(loaded.metadata.get("file_name", display_name or Path(path).name))
         file_extension = str(loaded.metadata.get("file_extension", Path(file_name).suffix.lower()))
 
         return DocumentIngestionResult(
-            document_id=str(document_id),
+            document_id=str(document_id or indexed_document_id),
             file_name=file_name,
             file_extension=file_extension,
             chunk_count=chunk_count,
