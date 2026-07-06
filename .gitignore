@@ -2,6 +2,7 @@
 __pycache__/
 *.py[codz]
 *$py.class
+.DS_Store
 
 # C extensions
 *.so
@@ -16,6 +17,8 @@ eggs/
 .eggs/
 lib/
 lib64/
+!scripts/lib/
+!scripts/lib/load_eval_env.sh
 parts/
 sdist/
 var/
@@ -70,6 +73,7 @@ instance/
 
 # Sphinx documentation
 docs/_build/
+docs/project_knowledge_base/
 
 # PyBuilder
 .pybuilder/
@@ -99,6 +103,18 @@ ipython_config.py
 #   This is especially recommended for binary packages to ensure reproducibility, and is more
 #   commonly ignored for libraries.
 # uv.lock
+.uv-cache/
+.chainlit/translations/
+data/memories.json
+data/chroma/
+data/*.db
+data/*.db-*
+evals/document_qa/outputs/
+reports/longmemeval_pilot_*.json
+reports/*.jsonl
+.env
+artifacts/eval_runs/
+artifacts/evals/
 
 # poetry
 #   Similar to Pipfile.lock, it is generally recommended to include poetry.lock in version control.
@@ -216,3 +232,4 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+evals/document_qa/datasets/nq_subset.jsonl

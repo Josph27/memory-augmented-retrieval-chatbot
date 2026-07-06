@@ -1,0 +1,150 @@
+{
+  "active_judge_endpoint": "https://api.deepseek.com",
+  "active_judge_model": "deepseek-v4-pro",
+  "cases": [
+    {
+      "agreement": false,
+      "case_id": "Accurate_Retrieval:ruler_qa2_421K:row-1:q1",
+      "current_complete": false,
+      "current_correct": false,
+      "current_judge_endpoint": "https://api.deepseek.com",
+      "current_judge_model": "deepseek-v4-pro",
+      "current_parse_status": "valid",
+      "current_status": "completed",
+      "previous_correct": null,
+      "previous_judge_model": null
+    },
+    {
+      "agreement": false,
+      "case_id": "Accurate_Retrieval:ruler_qa2_421K:row-1:q2",
+      "current_complete": false,
+      "current_correct": false,
+      "current_judge_endpoint": "https://api.deepseek.com",
+      "current_judge_model": "deepseek-v4-pro",
+      "current_parse_status": "valid",
+      "current_status": "completed",
+      "previous_correct": null,
+      "previous_judge_model": null
+    },
+    {
+      "agreement": false,
+      "case_id": "Accurate_Retrieval:ruler_qa2_421K:row-1:q3",
+      "current_complete": false,
+      "current_correct": false,
+      "current_judge_endpoint": "https://api.deepseek.com",
+      "current_judge_model": "deepseek-v4-pro",
+      "current_parse_status": "valid",
+      "current_status": "completed",
+      "previous_correct": null,
+      "previous_judge_model": null
+    },
+    {
+      "agreement": false,
+      "case_id": "Conflict_Resolution:factconsolidation_sh_6k:row-4:q0",
+      "current_complete": true,
+      "current_correct": true,
+      "current_judge_endpoint": "https://api.deepseek.com",
+      "current_judge_model": "deepseek-v4-pro",
+      "current_parse_status": "valid",
+      "current_status": "completed",
+      "previous_correct": null,
+      "previous_judge_model": null
+    },
+    {
+      "agreement": false,
+      "case_id": "Conflict_Resolution:factconsolidation_sh_6k:row-4:q1",
+      "current_complete": true,
+      "current_correct": true,
+      "current_judge_endpoint": "https://api.deepseek.com",
+      "current_judge_model": "deepseek-v4-pro",
+      "current_parse_status": "valid",
+      "current_status": "completed",
+      "previous_correct": null,
+      "previous_judge_model": null
+    },
+    {
+      "agreement": false,
+      "case_id": "Conflict_Resolution:factconsolidation_mh_6k:row-0:q1",
+      "current_complete": false,
+      "current_correct": false,
+      "current_judge_endpoint": "https://api.deepseek.com",
+      "current_judge_model": "deepseek-v4-pro",
+      "current_parse_status": "valid",
+      "current_status": "completed",
+      "previous_correct": null,
+      "previous_judge_model": null
+    },
+    {
+      "agreement": false,
+      "case_id": "Conflict_Resolution:factconsolidation_mh_6k:row-0:q2",
+      "current_complete": false,
+      "current_correct": false,
+      "current_judge_endpoint": "https://api.deepseek.com",
+      "current_judge_model": "deepseek-v4-pro",
+      "current_parse_status": "valid",
+      "current_status": "completed",
+      "previous_correct": null,
+      "previous_judge_model": null
+    },
+    {
+      "agreement": false,
+      "case_id": "Long_Range_Understanding:detective_qa:row-100:q1",
+      "current_complete": false,
+      "current_correct": false,
+      "current_judge_endpoint": "https://api.deepseek.com",
+      "current_judge_model": "deepseek-v4-pro",
+      "current_parse_status": "valid",
+      "current_status": "completed",
+      "previous_correct": null,
+      "previous_judge_model": null
+    },
+    {
+      "agreement": false,
+      "case_id": "Long_Range_Understanding:detective_qa:row-100:q2",
+      "current_complete": false,
+      "current_correct": false,
+      "current_judge_endpoint": "https://api.deepseek.com",
+      "current_judge_model": "deepseek-v4-pro",
+      "current_parse_status": "valid",
+      "current_status": "completed",
+      "previous_correct": null,
+      "previous_judge_model": null
+    },
+    {
+      "agreement": false,
+      "case_id": "Long_Range_Understanding:detective_qa:row-100:q3",
+      "current_complete": true,
+      "current_correct": true,
+      "current_judge_endpoint": "https://api.deepseek.com",
+      "current_judge_model": "deepseek-v4-pro",
+      "current_parse_status": "valid",
+      "current_status": "completed",
+      "previous_correct": null,
+      "previous_judge_model": null
+    },
+    {
+      "agreement": false,
+      "case_id": "Accurate_Retrieval:eventqa_full:row-2:q0",
+      "current_complete": false,
+      "current_correct": false,
+      "current_judge_endpoint": "https://api.deepseek.com",
+      "current_judge_model": "deepseek-v4-pro",
+      "current_parse_status": "valid",
+      "current_status": "completed",
+      "previous_correct": null,
+      "previous_judge_model": null
+    },
+    {
+      "agreement": false,
+      "case_id": "Accurate_Retrieval:eventqa_full:row-2:q1",
+      "current_complete": false,
+      "current_correct": false,
+      "current_judge_endpoint": "https://api.deepseek.com",
+      "current_judge_model": "deepseek-v4-pro",
+      "current_parse_status": "valid",
+      "current_status": "completed",
+      "previous_correct": null,
+      "previous_judge_model": null
+    }
+  ]
+}

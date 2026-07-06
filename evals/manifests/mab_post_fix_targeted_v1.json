@@ -1,0 +1,149 @@
+{
+  "name": "mab_post_fix_targeted_v1",
+  "version": 1,
+  "seed": 20260704,
+  "execution_mode": "graph",
+  "dataset_id": "ai-hyz/MemoryAgentBench",
+  "cases": [
+    {
+      "dataset": "infbench_summarization",
+      "split": "Long_Range_Understanding",
+      "source_dataset": "infbench_sum_eng_shots2",
+      "row_index": 0,
+      "question_index": 0,
+      "case_id": "Long_Range_Understanding:infbench_sum_eng_shots2:row-0:q0",
+      "question_type": "summarization",
+      "official_metric": "normalized_token_f1"
+    },
+    {
+      "dataset": "infbench_summarization",
+      "split": "Long_Range_Understanding",
+      "source_dataset": "infbench_sum_eng_shots2",
+      "row_index": 1,
+      "question_index": 0,
+      "case_id": "Long_Range_Understanding:infbench_sum_eng_shots2:row-1:q0",
+      "question_type": "summarization",
+      "official_metric": "normalized_token_f1"
+    },
+    {
+      "dataset": "infbench_summarization",
+      "split": "Long_Range_Understanding",
+      "source_dataset": "infbench_sum_eng_shots2",
+      "row_index": 2,
+      "question_index": 0,
+      "case_id": "Long_Range_Understanding:infbench_sum_eng_shots2:row-2:q0",
+      "question_type": "summarization",
+      "official_metric": "normalized_token_f1"
+    },
+    {
+      "dataset": "infbench_summarization",
+      "split": "Long_Range_Understanding",
+      "source_dataset": "infbench_sum_eng_shots2",
+      "row_index": 3,
+      "question_index": 0,
+      "case_id": "Long_Range_Understanding:infbench_sum_eng_shots2:row-3:q0",
+      "question_type": "summarization",
+      "official_metric": "normalized_token_f1"
+    },
+    {
+      "dataset": "infbench_summarization",
+      "split": "Long_Range_Understanding",
+      "source_dataset": "infbench_sum_eng_shots2",
+      "row_index": 4,
+      "question_index": 0,
+      "case_id": "Long_Range_Understanding:infbench_sum_eng_shots2:row-4:q0",
+      "question_type": "summarization",
+      "official_metric": "normalized_token_f1"
+    },
+    {
+      "dataset": "fact_consolidation_sh",
+      "split": "Conflict_Resolution",
+      "source_dataset": "factconsolidation_sh_6k",
+      "row_index": 4,
+      "question_index": 4,
+      "case_id": "Conflict_Resolution:factconsolidation_sh_6k:row-4:q4",
+      "question_type": "knowledge_update",
+      "official_metric": "normalized_substring"
+    },
+    {
+      "dataset": "fact_consolidation_mh",
+      "split": "Conflict_Resolution",
+      "source_dataset": "factconsolidation_mh_6k",
+      "row_index": 0,
+      "question_index": 3,
+      "case_id": "Conflict_Resolution:factconsolidation_mh_6k:row-0:q3",
+      "question_type": "knowledge_update",
+      "official_metric": "normalized_substring"
+    },
+    {
+      "dataset": "fact_consolidation_mh",
+      "split": "Conflict_Resolution",
+      "source_dataset": "factconsolidation_mh_6k",
+      "row_index": 0,
+      "question_index": 4,
+      "case_id": "Conflict_Resolution:factconsolidation_mh_6k:row-0:q4",
+      "question_type": "knowledge_update",
+      "official_metric": "normalized_substring"
+    },
+    {
+      "dataset": "fact_consolidation_mh",
+      "split": "Conflict_Resolution",
+      "source_dataset": "factconsolidation_mh_6k",
+      "row_index": 0,
+      "question_index": 5,
+      "case_id": "Conflict_Resolution:factconsolidation_mh_6k:row-0:q5",
+      "question_type": "knowledge_update",
+      "official_metric": "normalized_substring"
+    },
+    {
+      "dataset": "ruler_qa2",
+      "split": "Accurate_Retrieval",
+      "source_dataset": "ruler_qa2_421K",
+      "row_index": 1,
+      "question_index": 8,
+      "case_id": "Accurate_Retrieval:ruler_qa2_421K:row-1:q8",
+      "question_type": "short_answer_retrieval",
+      "official_metric": "normalized_substring"
+    },
+    {
+      "dataset": "ruler_qa2",
+      "split": "Accurate_Retrieval",
+      "source_dataset": "ruler_qa2_421K",
+      "row_index": 1,
+      "question_index": 7,
+      "case_id": "Accurate_Retrieval:ruler_qa2_421K:row-1:q7",
+      "question_type": "short_answer_retrieval",
+      "official_metric": "normalized_substring"
+    },
+    {
+      "dataset": "ruler_qa2",
+      "split": "Accurate_Retrieval",
+      "source_dataset": "ruler_qa2_421K",
+      "row_index": 1,
+      "question_index": 6,
+      "case_id": "Accurate_Retrieval:ruler_qa2_421K:row-1:q6",
+      "question_type": "short_answer_retrieval",
+      "official_metric": "normalized_substring"
+    },
+    {
+      "dataset": "icl_banking77",
+      "split": "Test_Time_Learning",
+      "source_dataset": "icl_banking77_5900shot_balance",
+      "row_index": 1,
+      "question_index": 3,
+      "case_id": "Test_Time_Learning:icl_banking77_5900shot_balance:row-1:q3",
+      "question_type": "in_context_classification",
+      "official_metric": "normalized_exact_match"
+    },
+    {
+      "dataset": "detective_qa",
+      "split": "Long_Range_Understanding",
+      "source_dataset": "detective_qa",
+      "row_index": 100,
+      "question_index": 4,
+      "case_id": "Long_Range_Understanding:detective_qa:row-100:q4",
+      "question_type": "natural_language_reasoning",
+      "official_metric": "normalized_exact_match"
+    }
+  ]
+}
