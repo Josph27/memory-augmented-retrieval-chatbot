@@ -385,3 +385,114 @@ def test_pb_doc_002_indexing_finishes_before_answer(
     messages = browser_harness.database.messages_for_chat(created.id)
     assert [message.role for message in messages] == ["user", "assistant"]
     assert [message.content for message in messages].count(query) == 1
+    browser_harness.page.get_by_role("button", name="Inspect answer").click()
+    inspector = browser_harness.page.get_by_role("dialog", name="Answer Inspector")
+    inspector.wait_for(state="visible")
+    assert inspector.get_by_text(upload.name, exact=True).count() >= 1
+    assert inspector.get_by_text("Ready", exact=False).count() >= 1
+    assert inspector.get_by_text("Document memory", exact=True).count() >= 1
+
+
+def test_answer_inspector_is_read_only_message_local_and_survives_reload(
+    browser_harness: BrowserHarness,
+) -> None:
+    page = browser_harness.page
+    before_messages = sum(
+        browser_harness.database.message_count(chat.id)
+        for chat in browser_harness.database.list_chats(limit=100)
+    )
+    composer = page.locator("textarea")
+    composer.fill("Explain this answer trace")
+    composer.press("Enter")
+    page.get_by_text(
+        "Deterministic answer: Explain this answer trace",
+        exact=True,
+    ).wait_for(state="visible")
+    button = page.get_by_role("button", name="Inspect answer")
+    button.wait_for(state="visible")
+    model_calls_before_open = len(
+        browser_harness.model_events.read_text(encoding="utf-8").splitlines()
+    )
+    button.click()
+    inspector = page.get_by_role("dialog", name="Answer Inspector")
+    inspector.wait_for(state="visible")
+    assert inspector.get_by_text("langgraph_demo", exact=True).count() >= 1
+    assert inspector.get_by_text("LangGraph", exact=True).count() >= 1
+    assert inspector.get_by_text("Native fallback used:", exact=False).count() == 1
+    assert page.get_by_role("dialog", name="Answer Inspector").count() == 1
+    inspector_box = inspector.bounding_box()
+    composer_box = page.locator("#message-composer").bounding_box()
+    toolbar_box = page.get_by_role(
+        "toolbar", name="Chat lifecycle controls"
+    ).bounding_box()
+    assert inspector_box is not None
+    assert composer_box is not None
+    assert toolbar_box is not None
+    assert inspector_box["y"] + inspector_box["height"] <= toolbar_box["y"]
+    inspector.get_by_role("button", name="Close Answer Inspector").click()
+    assert page.get_by_role("dialog", name="Answer Inspector").count() == 0
+    button.click()
+    assert page.get_by_role("dialog", name="Answer Inspector").count() == 1
+    page.get_by_role("button", name="Close Answer Inspector").click()
+    assert (
+        len(browser_harness.model_events.read_text(encoding="utf-8").splitlines())
+        == model_calls_before_open
+    )
+    after_open_messages = sum(
+        browser_harness.database.message_count(chat.id)
+        for chat in browser_harness.database.list_chats(limit=100)
+    )
+    assert after_open_messages == before_messages + 2
+
+    created = next(
+        chat
+        for chat in browser_harness.database.list_chats(limit=100)
+        if chat.title == "Explain this answer trace"
+    )
+    browser_harness.database.mark_chat_inactive(created.id)
+    page.reload(wait_until="domcontentloaded")
+    page.get_by_text(
+        "Deterministic answer: Explain this answer trace",
+        exact=True,
+    ).wait_for(state="visible")
+    page.locator("body[data-memory-chat-active='false']").wait_for(state="attached")
+    assert page.get_by_role("button", name="Inspect answer").count() == 1
+    page.get_by_role("button", name="Inspect answer").click()
+    page.get_by_role("dialog", name="Answer Inspector").wait_for(state="visible")
+
+
+def test_answer_inspector_reports_forced_native_fallback(
+    browser_harness: BrowserHarness,
+) -> None:
+    page = browser_harness.page
+    composer = page.locator("textarea")
+    composer.fill("Force the local graph fallback")
+    composer.press("Enter")
+    page.get_by_text(
+        "Deterministic answer: Force the local graph fallback",
+        exact=True,
+    ).wait_for(state="visible")
+    page.get_by_role("button", name="Inspect answer").click()
+    inspector = page.get_by_role("dialog", name="Answer Inspector")
+    inspector.wait_for(state="visible")
+    assert inspector.get_by_text("Native fallback", exact=True).count() >= 1
+    assert inspector.get_by_text("Native fallback used: Yes", exact=False).count() == 1
+
+
+def test_answer_inspector_shows_cross_chat_provenance(
+    browser_harness: BrowserHarness,
+) -> None:
+    page = browser_harness.page
+    query = "What did we discuss before about the cross-chat inspector source?"
+    composer = page.locator("textarea")
+    composer.fill(query)
+    composer.press("Enter")
+    page.get_by_text(f"Deterministic answer: {query}", exact=True).wait_for(
+        state="visible"
+    )
+    page.get_by_role("button", name="Inspect answer").click()
+    inspector = page.get_by_role("dialog", name="Answer Inspector")
+    inspector.wait_for(state="visible")
+    assert inspector.get_by_text("Raw-message span", exact=True).count() >= 1
+    assert inspector.get_by_text("Ended Alpha", exact=True).count() >= 1
+    assert inspector.get_by_text("Ended Alpha answer", exact=True).count() >= 1

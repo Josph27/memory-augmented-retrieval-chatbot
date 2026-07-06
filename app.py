@@ -14,6 +14,7 @@ from src.chat_service import ChatService
 from src.config import AppConfig
 from src.database import Database
 from src.documents.loaders import DocumentLoaderError
+from src.inspection.answer_inspector import inspection_rows_for_ui
 from src.memory.memory_trace import (
     demo_memory_trace_enabled,
     format_retrieved_memories_markdown,
@@ -88,6 +89,7 @@ async def on_chat_resume(thread: dict) -> None:
     cl.user_session.set("lifecycle_action_in_progress", None)
     if chat_id:
         await send_chat_controls(str(chat_id))
+        await send_answer_inspections(str(chat_id))
 
 
 @cl.on_message
@@ -163,7 +165,11 @@ async def on_message(message: cl.Message) -> None:
         await send_product_error(result.answer)
         await send_chat_controls(str(chat_id))
         return
-    await cl.Message(content=result.answer).send()
+    await cl.Message(
+        id=f"message:{result.assistant_message_id}",
+        content=result.answer,
+    ).send()
+    await send_answer_inspections(str(chat_id))
     chat_service.finalize_post_answer_memory_update(chat_id)
     if orchestration_mode != NATIVE:
         await cl.Message(content=format_orchestration_trace_markdown(result)).send()
@@ -381,6 +387,22 @@ async def send_product_state(
                 "view": view,
                 "chat_id": chat_id,
                 "active": active,
+            }
+        )
+    except Exception:
+        return
+
+
+async def send_answer_inspections(chat_id: str) -> None:
+    """Send persisted, bounded answer diagnostics to the read-only browser panel."""
+    try:
+        inspections = inspection_rows_for_ui(database, chat_id)
+        await cl.send_window_message(
+            {
+                "source": "memory-chatbot-ui",
+                "command": "answer-inspections",
+                "chat_id": chat_id,
+                "inspections": inspections,
             }
         )
     except Exception:

@@ -16,6 +16,7 @@ from src.core.contracts import AgentTurnResult
 from src.context.model_profile import DEFAULT_GEMMA_APPLICATION_CONTEXT_CAP
 from src.context.dynamic_budget import MemoryBudgetPolicy
 from src.database import Database
+from src.inspection.answer_inspector import persist_answer_inspection
 from src.lifecycle.operation_guard import guarded_chat_operation
 from src.memory.previous_chat_gist import PreviousChatGistGenerator
 from src.memory.short_term import ShortTermMemory
@@ -345,7 +346,7 @@ class ChatService:
                     message_id=persisted_user_message_id,
                     content=content,
                 )
-            return self.coordinator.run_turn(
+            result = self.coordinator.run_turn(
                 chat_id=chat_id,
                 content=content,
                 orchestration_mode=orchestration_mode,
@@ -353,6 +354,8 @@ class ChatService:
                 persisted_user_message_id=persisted_user_message_id,
                 perform_memory_update=not defer_post_answer_memory_update,
             )
+            persist_answer_inspection(result, self.database)
+            return result
 
     def persist_user_message_for_turn(self, chat_id: str, content: str) -> int:
         """Persist one user turn before synchronous attachment ingestion."""

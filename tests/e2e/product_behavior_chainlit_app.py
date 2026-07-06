@@ -7,6 +7,7 @@ import json
 import os
 from pathlib import Path
 
+import src.agents.coordinator_agent as coordinator_module
 from src.chat_service import ChatService
 from src.core.contracts import MemoryCandidate
 from src.memory.structured_state import MemoryUpdateResult
@@ -95,7 +96,43 @@ class DeterministicBrowserMemoryUpdater:
         )
 
 
+class DeterministicBrowserCrossChatRetriever:
+    def __init__(self, original) -> None:  # type: ignore[no-untyped-def]
+        self.original = original
+
+    def retrieve(self, chat_id, source_plan):  # type: ignore[no-untyped-def]
+        query = str(source_plan.query or "").lower()
+        if "cross-chat inspector source" not in query:
+            return self.original.retrieve(chat_id=chat_id, source_plan=source_plan)
+        source_messages = production_app.database.messages_for_chat("ended-a")
+        source = next(message for message in source_messages if message.role == "assistant")
+        return [
+            MemoryCandidate(
+                source="raw_message_span",
+                content=source.content,
+                score=0.95,
+                record_id="browser-cross-chat-memory",
+                chat_id="ended-a",
+                source_message_ids=[source.id],
+                metadata={"source_chat_id": "ended-a"},
+            )
+        ]
+
+
 _services: dict[str, ChatService] = {}
+_real_langgraph_orchestration = coordinator_module.run_read_only_langgraph_orchestration
+
+
+def deterministic_langgraph_orchestration(**kwargs):  # type: ignore[no-untyped-def]
+    """Allow one explicit browser fixture to exercise truthful Native fallback."""
+    if kwargs.get("query") == "Force the local graph fallback":
+        raise RuntimeError("forced local browser graph failure")
+    return _real_langgraph_orchestration(**kwargs)
+
+
+coordinator_module.run_read_only_langgraph_orchestration = (
+    deterministic_langgraph_orchestration
+)
 
 
 def deterministic_chat_service(model_name: str) -> ChatService:
@@ -111,6 +148,12 @@ def deterministic_chat_service(model_name: str) -> ChatService:
         service.memory.structured_memory = DeterministicBrowserMemoryUpdater()
         service.coordinator.retriever_dispatcher.retrievers["document_memory"] = (
             DeterministicBrowserDocumentRetriever(indexer)
+        )
+        dispatcher = service.coordinator.retriever_dispatcher
+        dispatcher.retrievers["raw_message_span"] = (
+            DeterministicBrowserCrossChatRetriever(
+                dispatcher.retrievers["raw_message_span"]
+            )
         )
         _services[model_name] = service
     return _services[model_name]

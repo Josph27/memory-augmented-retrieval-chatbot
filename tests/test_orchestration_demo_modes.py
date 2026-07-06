@@ -107,6 +107,9 @@ def test_langgraph_demo_context_packet_is_used_for_model_answer(tmp_path: Path) 
         if candidate.source == "current_chat_span"
     )
     assert target_id in span.source_message_ids
+    inspections = database.answer_inspections_for_chat(chat_id)
+    assert len(inspections) == 1
+    assert inspections[0].assistant_message_id == result.assistant_message_id
 
 
 def test_langgraph_shadow_keeps_native_context_authoritative(tmp_path: Path) -> None:

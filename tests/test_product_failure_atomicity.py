@@ -67,6 +67,7 @@ def test_answer_timeout_preserves_user_without_fake_assistant(
     assert result.assistant_message_id is None
     assert result.metadata["answer_status"] == "failed"
     assert database.is_chat_active("chat") is True
+    assert database.answer_inspections_for_chat("chat") == []
 
 
 def test_send_and_end_share_one_atomic_chat_guard(tmp_path: Path) -> None:

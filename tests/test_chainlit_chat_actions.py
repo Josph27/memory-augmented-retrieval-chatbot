@@ -25,10 +25,12 @@ class FakeMessage:
         content: str,
         actions: list[object] | None = None,
         metadata: dict | None = None,
+        id: str | None = None,
     ) -> None:
         self.content = content
         self.actions = actions or []
         self.metadata = metadata or {}
+        self.id = id
 
     async def send(self) -> None:
         self.sent.append(self)
@@ -284,6 +286,53 @@ def test_chat_controls_are_state_only_not_conversation_messages(monkeypatch) -> 
     }
 
 
+def test_answer_inspector_state_is_window_only_and_scoped_to_chat(monkeypatch) -> None:
+    session = FakeUserSession({"chat_id": "chat-1"})
+    window_messages = install_chainlit_fakes(monkeypatch, session)
+    monkeypatch.setattr(
+        app,
+        "inspection_rows_for_ui",
+        lambda database, chat_id: [
+            {
+                "assistant_message_id": 7,
+                "chat_id": chat_id,
+                "overview": {"requested_mode": "langgraph_demo"},
+            }
+        ],
+    )
+
+    asyncio.run(app.send_answer_inspections("chat-1"))
+
+    assert FakeMessage.sent == []
+    assert window_messages[-1] == {
+        "source": "memory-chatbot-ui",
+        "command": "answer-inspections",
+        "chat_id": "chat-1",
+        "inspections": [
+            {
+                "assistant_message_id": 7,
+                "chat_id": "chat-1",
+                "overview": {"requested_mode": "langgraph_demo"},
+            }
+        ],
+    }
+
+
+def test_inspector_serialization_failure_is_non_blocking(monkeypatch) -> None:
+    session = FakeUserSession({"chat_id": "chat-1"})
+    window_messages = install_chainlit_fakes(monkeypatch, session)
+    monkeypatch.setattr(
+        app,
+        "inspection_rows_for_ui",
+        lambda database, chat_id: (_ for _ in ()).throw(RuntimeError("bad trace")),
+    )
+
+    asyncio.run(app.send_answer_inspections("chat-1"))
+
+    assert FakeMessage.sent == []
+    assert window_messages == []
+
+
 def test_window_lifecycle_action_delegates_to_existing_handler(monkeypatch) -> None:
     calls: list[object] = []
 
@@ -353,6 +402,7 @@ def test_same_turn_upload_persists_user_before_index_and_answers_once(
             events.append(("answer", kwargs))
             return SimpleNamespace(
                 answer="The key finding is scoped retrieval.",
+                assistant_message_id=18,
                 metadata={"answer_status": "completed"},
                 trace=None,
             )
@@ -388,3 +438,4 @@ def test_same_turn_upload_persists_user_before_index_and_answers_once(
         "Indexed report.md into document memory (7 chunks).",
         "The key finding is scoped retrieval.",
     ]
+    assert FakeMessage.sent[-1].id == "message:18"

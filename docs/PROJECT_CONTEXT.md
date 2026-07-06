@@ -47,6 +47,7 @@ Current storage:
 SQLite
 ├── chats
 ├── messages
+├── answer_inspections
 ├── long_term_memories
 ├── chat_memory_state
 └── chat_gists
@@ -62,6 +63,17 @@ Chainlit integration:
 
 SQLiteChainlitDataLayer
 └── exposes SQLite chats/messages to Chainlit thread history
+
+Answer inspection:
+
+```text
+WorkflowTrace + ContextPacket
+-> bounded answer_inspections row keyed by assistant message
+-> read-only Chainlit Inspector panel
+```
+
+The row contains selected evidence excerpts and recorded provenance only. It
+does not store prompts, hidden reasoning, embeddings, or mutable controls.
 
 Model profiles:
 

@@ -216,6 +216,12 @@ remains the source of truth and fallback.
 
 ## 4. What to Show
 
+Every completed assistant answer has a small **Inspect answer** action. Its
+read-only panel shows the authoritative orchestration mode, route, context
+profile, bounded evidence counts, selected source excerpts, and recorded
+provenance. Opening it never reruns retrieval or generation, and the persisted
+record remains available after ending or reloading a chat.
+
 ### A. Document question
 
 1. Index a small `.txt` or `.md` document with a distinctive fact.

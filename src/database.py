@@ -81,6 +81,17 @@ class StoredOperationResult:
     created_at: str
 
 
+@dataclass(frozen=True)
+class StoredAnswerInspection:
+    """Bounded persisted diagnostics for one assistant answer."""
+
+    assistant_message_id: int
+    chat_id: str
+    trace_id: str
+    payload_json: str
+    created_at: str
+
+
 class Database:
     """Small SQLite adapter for chats, messages, and structured memory."""
 
@@ -218,6 +229,20 @@ class Database:
                     result_ref TEXT,
                     created_at TEXT NOT NULL
                 );
+
+                CREATE TABLE IF NOT EXISTS answer_inspections (
+                    assistant_message_id INTEGER PRIMARY KEY,
+                    chat_id TEXT NOT NULL,
+                    trace_id TEXT NOT NULL,
+                    payload_json TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    FOREIGN KEY (assistant_message_id) REFERENCES messages(id)
+                        ON DELETE CASCADE,
+                    FOREIGN KEY (chat_id) REFERENCES chats(id) ON DELETE CASCADE
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_answer_inspections_chat
+                ON answer_inspections(chat_id, assistant_message_id);
 
                 """
             )
@@ -598,6 +623,44 @@ class Database:
                     ),
                 )
 
+            inspections = connection.execute(
+                """
+                SELECT assistant_message_id, trace_id, payload_json, created_at
+                FROM answer_inspections
+                WHERE chat_id = ?
+                ORDER BY assistant_message_id ASC
+                """,
+                (chat_id,),
+            ).fetchall()
+            for inspection in inspections:
+                assistant_message_id = message_id_map.get(
+                    int(inspection["assistant_message_id"])
+                )
+                if assistant_message_id is None:
+                    continue
+                payload_json = remap_chat_local_json(
+                    inspection["payload_json"],
+                    message_id_map=message_id_map,
+                    source_chat_id=chat_id,
+                    new_chat_id=new_chat_id,
+                )
+                connection.execute(
+                    """
+                    INSERT INTO answer_inspections (
+                        assistant_message_id, chat_id, trace_id,
+                        payload_json, created_at
+                    )
+                    VALUES (?, ?, ?, ?, ?)
+                    """,
+                    (
+                        assistant_message_id,
+                        new_chat_id,
+                        inspection["trace_id"],
+                        payload_json,
+                        inspection["created_at"],
+                    ),
+                )
+
     def message_count(self, chat_id: str) -> int:
         """Return the number of persisted messages for a chat."""
         with self.connect() as connection:
@@ -658,6 +721,63 @@ class Database:
                 (chat_id,),
             )
             connection.execute("DELETE FROM chats WHERE id = ?", (chat_id,))
+
+    def save_answer_inspection(
+        self,
+        *,
+        assistant_message_id: int,
+        chat_id: str,
+        trace_id: str,
+        payload: dict[str, Any],
+    ) -> None:
+        """Persist one bounded answer trace without changing the chat transcript."""
+        with self.connect() as connection:
+            connection.execute(
+                """
+                INSERT INTO answer_inspections (
+                    assistant_message_id, chat_id, trace_id,
+                    payload_json, created_at
+                )
+                VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(assistant_message_id) DO UPDATE SET
+                    trace_id = excluded.trace_id,
+                    payload_json = excluded.payload_json
+                """,
+                (
+                    assistant_message_id,
+                    chat_id,
+                    trace_id,
+                    json.dumps(payload, ensure_ascii=True, sort_keys=True),
+                    utc_now(),
+                ),
+            )
+
+    def answer_inspections_for_chat(
+        self,
+        chat_id: str,
+    ) -> list[StoredAnswerInspection]:
+        """Load answer diagnostics only for the requested persisted chat."""
+        with self.connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT assistant_message_id, chat_id, trace_id,
+                       payload_json, created_at
+                FROM answer_inspections
+                WHERE chat_id = ?
+                ORDER BY assistant_message_id ASC
+                """,
+                (chat_id,),
+            ).fetchall()
+        return [
+            StoredAnswerInspection(
+                assistant_message_id=int(row["assistant_message_id"]),
+                chat_id=str(row["chat_id"]),
+                trace_id=str(row["trace_id"]),
+                payload_json=str(row["payload_json"]),
+                created_at=str(row["created_at"]),
+            )
+            for row in rows
+        ]
 
     def create_document_record(
         self,
@@ -1278,12 +1398,14 @@ class Database:
 
 
 MESSAGE_ID_METADATA_KEYS = {
+    "assistant_message_id",
     "start_message_id",
     "end_message_id",
     "message_start_id",
     "message_end_id",
     "last_summarized_message_id",
 }
+MESSAGE_ID_LIST_METADATA_KEYS = {"source_message_ids", "message_ids", "message_range"}
 CHAT_ID_METADATA_KEYS = {"chat_id", "source_chat_id"}
 
 
@@ -1344,9 +1466,9 @@ def remap_chat_local_provenance(
 
     remapped: dict[str, Any] = {}
     for key, item in value.items():
-        if key == "source_message_ids":
+        if key in MESSAGE_ID_LIST_METADATA_KEYS:
             if not isinstance(item, list):
-                raise ValueError("source_message_ids must be a list")
+                raise ValueError(f"{key} must be a list")
             remapped[key] = [
                 remap_message_id(message_id, message_id_map)
                 for message_id in item

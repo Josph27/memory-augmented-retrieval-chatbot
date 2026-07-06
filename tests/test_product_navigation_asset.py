@@ -16,7 +16,10 @@ def test_chainlit_loads_product_navigation_asset() -> None:
     assert "window.location.reload()" in script
     assert 'document.querySelector("main")' in script
     assert 'element.dataset.mount = "composer"' in script
-    assert 'position: "fixed"' not in script
+    assert 'position: "fixed"' in script
+    assert '"Answer Inspector"' in script
+    assert '"Inspect answer"' in script
+    assert '"answer-inspections"' in script
     assert "document.body.appendChild(toolbar)" not in script
 
 
@@ -27,3 +30,5 @@ def test_product_navigation_has_no_backend_or_model_calls() -> None:
     assert "XMLHttpRequest" not in script
     assert "OPENAI" not in script
     assert "api_key" not in script.lower()
+    assert "delete memory" not in script.lower()
+    assert "edit memory" not in script.lower()
