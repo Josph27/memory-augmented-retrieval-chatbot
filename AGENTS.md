@@ -128,8 +128,8 @@ Build a reliable and explainable multi-agent typed-memory system with:
 
 Before major implementation work, read:
 
-* `docs/PROJECT_CONTEXT.md`
-* `docs/ARCHITECTURE_DECISION.md`
-* `docs/AGENT_CONTRACTS.md`
-* `docs/IMPLEMENTATION_PLAN_2W.md`
-* `docs/EVALUATION_PLAN.md`
+* `docs/ARCHITECTURE.md`
+* `docs/DATA_LIFECYCLE.md`
+* `docs/EVALUATION.md`
+* `docs/DEMO_RUNBOOK.md`
+* `docs/KNOWN_LIMITATIONS.md`

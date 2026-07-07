@@ -5,13 +5,13 @@ LongMemEval. It measures navigation, lifecycle, persistence, document product
 behavior, failure handling, races, and idempotency.
 
 The case files use JSON syntax inside `.yaml` files so they remain valid YAML
-without adding a YAML parser dependency. Production behavior is never patched
-by this benchmark.
+without adding a YAML parser dependency. Production behavior is never patched by
+this benchmark.
 
 ## Inventory
 
 | Category | Cases |
-|---|---:|
+| --- | ---: |
 | Navigation | 8 |
 | Lifecycle | 10 |
 | Persistence | 7 |
@@ -19,36 +19,53 @@ by this benchmark.
 | Failures/races/idempotency | 10 |
 | **Total** | **50** |
 
-Eight scenarios are explicitly browser E2E. When no browser run is available,
-they are reported as `not_executed`, never replaced with passing mocks.
+Eight scenarios are browser E2E. They execute when the local environment can
+bind a localhost port and launch Chrome. Restricted sandboxes may fail before
+app startup.
 
-The document store is currently global by design. The benchmark expectation is
-stricter: a document associated with one chat should not leak into another chat.
-Until a persisted association/scope model exists, that case remains a failed,
-explicit product gap.
+## Current expected result
+
+In a full local environment the expected result is:
+
+```text
+48 passed
+2 documented failures
+0 errors
+0 not executed
+```
+
+Expected remaining failures:
+
+- `PB-PERSIST-005`: multi-user isolation is outside the current fixed-local-user
+  scope.
+- `PB-FAIL-010`: cross-operation idempotency beyond upload remains documented
+  future work.
 
 ## Commands
 
 ```bash
 # All 50 cases
+ORCHESTRATION_MODE=langgraph_demo \
 uv run python -m evals.product_behavior.runner
 
 # Fast deterministic, non-browser cases
+ORCHESTRATION_MODE=langgraph_demo \
 uv run python -m evals.product_behavior.runner \
   --layer repository/service \
   --layer "Chainlit handler/data-layer"
 
 # Document cases
+ORCHESTRATION_MODE=langgraph_demo \
 uv run python -m evals.product_behavior.runner --category documents
 
 # Lifecycle cases
+ORCHESTRATION_MODE=langgraph_demo \
 uv run python -m evals.product_behavior.runner --category lifecycle
 
-# Browser E2E inventory/results (not executed unless browser support is added)
-uv run python -m evals.product_behavior.runner --layer "browser E2E"
-
-# Full repository regression
-uv run pytest
+# Browser E2E tests
+ORCHESTRATION_MODE=langgraph_demo \
+PRODUCT_E2E_HEADED=0 \
+uv run pytest -q tests/e2e
 
 # Regenerate reports from an existing result file
 uv run python -m evals.product_behavior.report \
@@ -67,6 +84,5 @@ artifacts/product_behavior/<run_id>/failures.jsonl
 artifacts/product_behavior/<run_id>/run_metadata.json
 ```
 
-After the first baseline, case definitions and expectations are frozen.
-Production fixes must not edit benchmark expectations in the same change.
-
+These outputs are generated artifacts and should not be committed as canonical
+documentation.
