@@ -94,6 +94,17 @@ def test_chroma_is_persistent_global_document_store_without_sqlite_side_effects(
     assert result.chunk_count == 1
     assert not LEGACY_DOCUMENT_TABLES & sqlite_tables(sqlite_path)
     assert first_retriever._vectorstore()._collection.count() == 1
+    database.create_chat("graph-document-chat")
+    database.create_document_record(
+        result.document_id,
+        "papaya.txt",
+        status="Ready",
+        source=str(source_path),
+    )
+    database.associate_document_with_chat(
+        "graph-document-chat",
+        result.document_id,
+    )
 
     def fail_on_sqlite_access(self):  # type: ignore[no-untyped-def]
         raise AssertionError("document retrieval must not access SQLite")
@@ -122,6 +133,7 @@ def test_chroma_is_persistent_global_document_store_without_sqlite_side_effects(
     assert candidate.metadata["file_name"] == "papaya.txt"
     assert candidate.metadata["retrieval_backend"] == "langchain_chroma"
 
+    monkeypatch.undo()
     count_before_graph = recreated._vectorstore()._collection.count()
     graph_result = run_read_only_langgraph_orchestration(
         chat_id="graph-document-chat",

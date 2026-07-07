@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from time import perf_counter
 from uuid import uuid4
 
@@ -13,7 +14,12 @@ from src.context.context_budget_allocator import ContextBudgetAllocator
 from src.context.context_builder import ContextBuilder as TraceContextBuilder
 from src.context.context_comparator import ContextComparator
 from src.context.prompt_messages import context_packet_to_model_messages
-from src.core.contracts import AgentTurnResult, OrchestrationResult, WorkflowTrace
+from src.core.contracts import (
+    AgentTurnResult,
+    OrchestrationResult,
+    SourcePlan,
+    WorkflowTrace,
+)
 from src.database import Database
 from src.memory.memory_trace import (
     document_memory_candidate_trace_rows,
@@ -29,7 +35,7 @@ from src.orchestration.demo_orchestration import (
 from src.retrieval.reranker import MemoryReranker
 from src.retrieval.retriever_dispatcher import RetrieverDispatcher
 from src.routing.route_planner import RoutePlanner
-from src.routing.routing_agent import RoutingAgent
+from src.routing.routing_agent import RoutingAgent, RoutingDecision
 from src.routing.retrieval_query import retrieval_query_for_reranking
 
 
@@ -75,6 +81,7 @@ class CoordinatorAgent:
         content: str,
         orchestration_mode: str = NATIVE,
         task_context: str | None = None,
+        persisted_user_message_id: int | None = None,
         perform_memory_update: bool = True,
     ) -> AgentTurnResult:
         """Run one user turn while preserving the existing runtime behavior."""
@@ -84,14 +91,18 @@ class CoordinatorAgent:
         trace_id = str(uuid4())
         stage_started = perf_counter()
         routing_decision = self.routing_agent.route(content)
+        if task_context == "document_qa":
+            routing_decision = require_document_memory(routing_decision)
         route_plan = routing_decision.route_plan
         timings["route_planning"] = elapsed_ms(stage_started)
         stage_started = perf_counter()
-        user_message_id = self.database.save_message(
-            chat_id=chat_id,
-            role="user",
-            content=content,
-        )
+        user_message_id = persisted_user_message_id
+        if user_message_id is None:
+            user_message_id = self.database.save_message(
+                chat_id=chat_id,
+                role="user",
+                content=content,
+            )
         timings["save_user_message"] = elapsed_ms(stage_started)
         stage_started = perf_counter()
         retrieved_candidates = self.retriever_dispatcher.retrieve(
@@ -374,7 +385,6 @@ class CoordinatorAgent:
                 "answer_status": "failed" if answer_failed else "completed",
             },
         )
-
     def _log_trace(self, trace: WorkflowTrace) -> None:
         """Emit a compact console trace until trace persistence exists."""
         recent_ids = []
@@ -452,6 +462,61 @@ class CoordinatorAgent:
                 f"update_memory_if_needed_ms={timings.get('update_memory_if_needed')} "
                 f"total_turn_ms={timings.get('total_turn')}"
             )
+
+
+def require_document_memory(decision: RoutingDecision) -> RoutingDecision:
+    """Enable scoped document retrieval when the current turn uploaded a document."""
+    route_plan = decision.route_plan
+    document_found = False
+    sources: list[SourcePlan] = []
+    for source in route_plan.sources:
+        if source.source != "document_memory":
+            sources.append(source)
+            continue
+        document_found = True
+        sources.append(
+            replace(
+                source,
+                enabled=True,
+                reason="Same-turn attachment requires scoped document retrieval.",
+                query=source.query or route_plan.query,
+                filters={
+                    **source.filters,
+                    "same_turn_attachment": True,
+                },
+            )
+        )
+    if not document_found:
+        sources.append(
+            SourcePlan(
+                source="document_memory",
+                enabled=True,
+                reason="Same-turn attachment requires scoped document retrieval.",
+                query=route_plan.query,
+                filters={"same_turn_attachment": True},
+            )
+        )
+    updated_plan = replace(
+        route_plan,
+        intent="document_question",
+        requires_retrieval=True,
+        sources=sources,
+        context_profile="document_question",
+        metadata={
+            **route_plan.metadata,
+            "same_turn_attachment": True,
+        },
+    )
+    return replace(
+        decision,
+        route_plan=updated_plan,
+        use_document_memory=True,
+        reason="Same-turn attachment requires scoped document retrieval.",
+        metadata={
+            **(decision.metadata or {}),
+            "same_turn_attachment": True,
+        },
+    )
 
 
 def elapsed_ms(started: float) -> float:

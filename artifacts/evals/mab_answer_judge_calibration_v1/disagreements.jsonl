@@ -1,2 +1,0 @@
-{"case_id": "Accurate_Retrieval:ruler_qa2_421K:row-1:q3", "dataset": "ruler_qa2", "judge": {"brief_reason": "Generated answer says 'I don't know' while the correct answer is 'no'.", "correct": false}, "official_metric": {"name": "normalized_substring", "passed": true, "score": 1.0}}
-{"case_id": "Long_Range_Understanding:detective_qa:row-100:q3", "dataset": "detective_qa", "judge": {"brief_reason": "The generated answer matches the reference exactly.", "correct": true}, "official_metric": {"name": "normalized_exact_match", "passed": false, "score": 0.0}}

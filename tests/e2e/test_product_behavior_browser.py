@@ -33,6 +33,16 @@ def _free_port() -> int:
         return int(sock.getsockname()[1])
 
 
+def _browser_headless() -> bool:
+    """Keep routine E2E invisible unless headed mode is explicitly requested."""
+    return os.getenv("PRODUCT_E2E_HEADED", "0").strip().lower() not in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+
+
 def _wait_for_server(url: str, process: subprocess.Popen[str]) -> None:
     deadline = time.monotonic() + 20
     while time.monotonic() < deadline:
@@ -115,7 +125,7 @@ def browser_harness(tmp_path: Path, request: pytest.FixtureRequest):
         _wait_for_server(url, process)
         browser = playwright.chromium.launch(
             executable_path=str(CHROME),
-            headless=True,
+            headless=_browser_headless(),
         )
         context = browser.new_context()
         context.tracing.start(screenshots=True, snapshots=True)
@@ -140,6 +150,17 @@ def browser_harness(tmp_path: Path, request: pytest.FixtureRequest):
         except subprocess.TimeoutExpired:
             process.kill()
             process.wait(timeout=5)
+
+
+def test_product_e2e_is_headless_unless_explicitly_opted_in(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("PRODUCT_E2E_HEADED", raising=False)
+    assert _browser_headless() is True
+    monkeypatch.setenv("PRODUCT_E2E_HEADED", "0")
+    assert _browser_headless() is True
+    monkeypatch.setenv("PRODUCT_E2E_HEADED", "1")
+    assert _browser_headless() is False
 
 
 def _open_thread(page: Page, title: str) -> None:
@@ -203,8 +224,13 @@ def test_pb_life_001_new_chat_persists_and_opens(
     browser_harness: BrowserHarness,
 ) -> None:
     before = len(browser_harness.database.list_chats(limit=100))
-    new_chat_button = browser_harness.page.locator("#new-chat-button")
-    new_chat_button.click()
+    composer = browser_harness.page.locator("textarea")
+    composer.fill("Start from the empty root composer")
+    composer.press("Enter")
+    browser_harness.page.get_by_text(
+        "Deterministic answer: Start from the empty root composer",
+        exact=True,
+    ).wait_for(state="visible")
     browser_harness.page.get_by_role(
         "toolbar",
         name="Chat lifecycle controls",
@@ -261,7 +287,11 @@ def test_product_shell_visual_cleanup_and_toolbar_state(
     page = browser_harness.page
     home = page.locator("#memory-chatbot-home")
     assert home.get_by_role("heading", name="Memory Retrieval Chatbot").is_visible()
-    assert home.get_by_text("Select a chat or start a new one.", exact=True).is_visible()
+    assert home.get_by_text("Send a message to start a new chat.", exact=True).is_visible()
+    assert page.locator("textarea").is_visible()
+    assert page.locator("#new-chat-button").count() == 0
+    assert not page.get_by_text("Readme", exact=True).is_visible()
+    assert not page.get_by_text("Orchestration", exact=True).is_visible()
     assert not page.get_by_text("Gemma 4 31B", exact=True).is_visible()
     assert not page.get_by_text("Default TUM AIR AKG model", exact=False).is_visible()
     assert not page.get_by_text("google/gemma-4-31B-it", exact=False).is_visible()
@@ -326,19 +356,22 @@ def test_pb_doc_002_indexing_finishes_before_answer(
     browser_harness: BrowserHarness,
     tmp_path: Path,
 ) -> None:
-    browser_harness.page.locator("#new-chat-button").click()
-    browser_harness.page.get_by_role(
-        "toolbar",
-        name="Chat lifecycle controls",
-    ).wait_for(state="visible")
-    upload = tmp_path / "report.txt"
-    upload.write_text("The result is deterministic.", encoding="utf-8")
+    configured_fixture = os.getenv("PRODUCT_BEHAVIOR_DOCUMENT_FIXTURE")
+    if configured_fixture:
+        upload = Path(configured_fixture)
+        query = "what are the key findings"
+        expected_evidence = "19 frozen answer rows validated."
+    else:
+        upload = tmp_path / "report.txt"
+        upload.write_text("The result is deterministic.", encoding="utf-8")
+        query = "What is the result?"
+        expected_evidence = "The result is deterministic."
     browser_harness.page.locator("#upload-button-input").set_input_files(str(upload))
     composer = browser_harness.page.locator("textarea")
-    composer.fill("What is the result?")
+    composer.fill(query)
     composer.press("Enter")
     browser_harness.page.get_by_text(
-        "Deterministic answer: What is the result?",
+        f"Deterministic answer: {query}",
         exact=True,
     ).wait_for(state="visible")
     events = [
@@ -346,3 +379,120 @@ def test_pb_doc_002_indexing_finishes_before_answer(
         for line in browser_harness.model_events.read_text(encoding="utf-8").splitlines()
     ]
     assert events[-1]["document_statuses"] == ["Ready"]
+    assert expected_evidence in events[-1]["prompt"]
+    chats = browser_harness.database.list_chats(limit=100)
+    created = next(chat for chat in chats if chat.title == query)
+    messages = browser_harness.database.messages_for_chat(created.id)
+    assert [message.role for message in messages] == ["user", "assistant"]
+    assert [message.content for message in messages].count(query) == 1
+    browser_harness.page.get_by_role("button", name="Inspect answer").click()
+    inspector = browser_harness.page.get_by_role("dialog", name="Answer Inspector")
+    inspector.wait_for(state="visible")
+    assert inspector.get_by_text(upload.name, exact=True).count() >= 1
+    assert inspector.get_by_text("Ready", exact=False).count() >= 1
+    assert inspector.get_by_text("Document memory", exact=True).count() >= 1
+
+
+def test_answer_inspector_is_read_only_message_local_and_survives_reload(
+    browser_harness: BrowserHarness,
+) -> None:
+    page = browser_harness.page
+    before_messages = sum(
+        browser_harness.database.message_count(chat.id)
+        for chat in browser_harness.database.list_chats(limit=100)
+    )
+    composer = page.locator("textarea")
+    composer.fill("Explain this answer trace")
+    composer.press("Enter")
+    page.get_by_text(
+        "Deterministic answer: Explain this answer trace",
+        exact=True,
+    ).wait_for(state="visible")
+    button = page.get_by_role("button", name="Inspect answer")
+    button.wait_for(state="visible")
+    model_calls_before_open = len(
+        browser_harness.model_events.read_text(encoding="utf-8").splitlines()
+    )
+    button.click()
+    inspector = page.get_by_role("dialog", name="Answer Inspector")
+    inspector.wait_for(state="visible")
+    assert inspector.get_by_text("langgraph_demo", exact=True).count() >= 1
+    assert inspector.get_by_text("LangGraph", exact=True).count() >= 1
+    assert inspector.get_by_text("Native fallback used:", exact=False).count() == 1
+    assert page.get_by_role("dialog", name="Answer Inspector").count() == 1
+    inspector_box = inspector.bounding_box()
+    composer_box = page.locator("#message-composer").bounding_box()
+    toolbar_box = page.get_by_role(
+        "toolbar", name="Chat lifecycle controls"
+    ).bounding_box()
+    assert inspector_box is not None
+    assert composer_box is not None
+    assert toolbar_box is not None
+    assert inspector_box["y"] + inspector_box["height"] <= toolbar_box["y"]
+    inspector.get_by_role("button", name="Close Answer Inspector").click()
+    assert page.get_by_role("dialog", name="Answer Inspector").count() == 0
+    button.click()
+    assert page.get_by_role("dialog", name="Answer Inspector").count() == 1
+    page.get_by_role("button", name="Close Answer Inspector").click()
+    assert (
+        len(browser_harness.model_events.read_text(encoding="utf-8").splitlines())
+        == model_calls_before_open
+    )
+    after_open_messages = sum(
+        browser_harness.database.message_count(chat.id)
+        for chat in browser_harness.database.list_chats(limit=100)
+    )
+    assert after_open_messages == before_messages + 2
+
+    created = next(
+        chat
+        for chat in browser_harness.database.list_chats(limit=100)
+        if chat.title == "Explain this answer trace"
+    )
+    browser_harness.database.mark_chat_inactive(created.id)
+    page.reload(wait_until="domcontentloaded")
+    page.get_by_text(
+        "Deterministic answer: Explain this answer trace",
+        exact=True,
+    ).wait_for(state="visible")
+    page.locator("body[data-memory-chat-active='false']").wait_for(state="attached")
+    assert page.get_by_role("button", name="Inspect answer").count() == 1
+    page.get_by_role("button", name="Inspect answer").click()
+    page.get_by_role("dialog", name="Answer Inspector").wait_for(state="visible")
+
+
+def test_answer_inspector_reports_forced_native_fallback(
+    browser_harness: BrowserHarness,
+) -> None:
+    page = browser_harness.page
+    composer = page.locator("textarea")
+    composer.fill("Force the local graph fallback")
+    composer.press("Enter")
+    page.get_by_text(
+        "Deterministic answer: Force the local graph fallback",
+        exact=True,
+    ).wait_for(state="visible")
+    page.get_by_role("button", name="Inspect answer").click()
+    inspector = page.get_by_role("dialog", name="Answer Inspector")
+    inspector.wait_for(state="visible")
+    assert inspector.get_by_text("Native fallback", exact=True).count() >= 1
+    assert inspector.get_by_text("Native fallback used: Yes", exact=False).count() == 1
+
+
+def test_answer_inspector_shows_cross_chat_provenance(
+    browser_harness: BrowserHarness,
+) -> None:
+    page = browser_harness.page
+    query = "What did we discuss before about the cross-chat inspector source?"
+    composer = page.locator("textarea")
+    composer.fill(query)
+    composer.press("Enter")
+    page.get_by_text(f"Deterministic answer: {query}", exact=True).wait_for(
+        state="visible"
+    )
+    page.get_by_role("button", name="Inspect answer").click()
+    inspector = page.get_by_role("dialog", name="Answer Inspector")
+    inspector.wait_for(state="visible")
+    assert inspector.get_by_text("Raw-message span", exact=True).count() >= 1
+    assert inspector.get_by_text("Ended Alpha", exact=True).count() >= 1
+    assert inspector.get_by_text("Ended Alpha answer", exact=True).count() >= 1

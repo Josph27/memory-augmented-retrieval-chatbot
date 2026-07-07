@@ -55,6 +55,17 @@ def test_document_question_requires_document_citation() -> None:
     assert plan.required_scopes == frozenset({SCOPE_DOCUMENT})
 
 
+def test_same_turn_document_context_routes_generic_question_to_document_memory() -> None:
+    plan = SemanticRouter().route(
+        "what are the key findings",
+        task_context="document_qa",
+    )
+
+    assert plan.intents[0].intent == DOCUMENT_QA
+    assert plan.enabled_sources == ("recent_messages", "document_memory")
+    assert plan.task_context == "document_qa"
+
+
 def test_current_chat_question_remains_current_chat_scoped() -> None:
     plan = SemanticRouter().route(
         "What did I say earlier in this chat about the deployment constraint?"

@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 import os
+from dataclasses import dataclass
 from types import SimpleNamespace
 
 import chainlit as cl
-from chainlit.input_widget import Select
 from chainlit.user import User
 
 from src.actions.chat_end import ChatEndAction
@@ -14,6 +14,7 @@ from src.chat_service import ChatService
 from src.config import AppConfig
 from src.database import Database
 from src.documents.loaders import DocumentLoaderError
+from src.inspection.answer_inspector import inspection_rows_for_ui
 from src.memory.memory_trace import (
     demo_memory_trace_enabled,
     format_retrieved_memories_markdown,
@@ -21,8 +22,6 @@ from src.memory.memory_trace import (
 )
 from src.model_wrapper import ModelWrapper
 from src.orchestration.demo_orchestration import (
-    LANGGRAPH_DEMO,
-    LANGGRAPH_SHADOW,
     NATIVE,
     normalize_orchestration_mode,
 )
@@ -40,28 +39,11 @@ database = Database(config.database_path)
 
 chat_services: dict[str, ChatService] = {}
 ORCHESTRATION_SETTING_ID = "orchestration_mode"
-ORCHESTRATION_LABELS = {
-    "Native": NATIVE,
-    "LangGraph Shadow": LANGGRAPH_SHADOW,
-    "LangGraph Demo": LANGGRAPH_DEMO,
-}
 
 
 def configured_orchestration_mode() -> str:
     """Return the configured demo initial mode; native is always the fallback."""
     return normalize_orchestration_mode(config.orchestration_mode)
-
-
-def orchestration_label(mode: str) -> str:
-    """Return the Chainlit display label for one normalized mode."""
-    return next(
-        (
-            label
-            for label, value in ORCHESTRATION_LABELS.items()
-            if value == mode
-        ),
-        "Native",
-    )
 
 
 @cl.password_auth_callback
@@ -90,7 +72,6 @@ async def on_chat_start() -> None:
     cl.user_session.set(ORCHESTRATION_SETTING_ID, configured_orchestration_mode())
     cl.user_session.set("product_view", "home")
     cl.user_session.set("lifecycle_action_in_progress", None)
-    await send_orchestration_settings()
     await send_product_state(view="home", chat_id=None, active=None)
 
 
@@ -106,17 +87,9 @@ async def on_chat_resume(thread: dict) -> None:
     cl.user_session.set(ORCHESTRATION_SETTING_ID, configured_orchestration_mode())
     cl.user_session.set("product_view", "chat")
     cl.user_session.set("lifecycle_action_in_progress", None)
-    await send_orchestration_settings()
     if chat_id:
         await send_chat_controls(str(chat_id))
-
-
-@cl.on_settings_update
-async def on_settings_update(settings: dict) -> None:
-    """Store orchestration selection for this browser session only."""
-    value = settings.get(ORCHESTRATION_SETTING_ID)
-    mode = ORCHESTRATION_LABELS.get(str(value), str(value or NATIVE))
-    cl.user_session.set(ORCHESTRATION_SETTING_ID, normalize_orchestration_mode(mode))
+        await send_answer_inspections(str(chat_id))
 
 
 @cl.on_message
@@ -156,12 +129,17 @@ async def on_message(message: cl.Message) -> None:
 
     model_name = cl.user_session.get("model_name") or model_name_for_chat(chat_id)
     chat_service = chat_service_for_model(model_name)
-
-    upload_statuses = index_uploaded_files(message, chat_service, str(chat_id))
-    if upload_statuses:
-        await cl.Message(content="\n".join(upload_statuses)).send()
-
     content = (message.content or "").strip()
+    persisted_user_message_id = (
+        chat_service.persist_user_message_for_turn(str(chat_id), content)
+        if content
+        else None
+    )
+
+    upload_result = index_uploaded_files(message, chat_service, str(chat_id))
+    if upload_result.statuses:
+        await cl.Message(content="\n".join(upload_result.statuses)).send()
+
     if not content:
         return
 
@@ -170,6 +148,12 @@ async def on_message(message: cl.Message) -> None:
         chat_id=chat_id,
         content=content,
         orchestration_mode=orchestration_mode,
+        task_context=(
+            "document_qa"
+            if upload_result.ready_document_ids
+            else None
+        ),
+        persisted_user_message_id=persisted_user_message_id,
         defer_post_answer_memory_update=True,
     )
     if demo_memory_trace_enabled():
@@ -181,7 +165,11 @@ async def on_message(message: cl.Message) -> None:
         await send_product_error(result.answer)
         await send_chat_controls(str(chat_id))
         return
-    await cl.Message(content=result.answer).send()
+    await cl.Message(
+        id=f"message:{result.assistant_message_id}",
+        content=result.answer,
+    ).send()
+    await send_answer_inspections(str(chat_id))
     chat_service.finalize_post_answer_memory_update(chat_id)
     if orchestration_mode != NATIVE:
         await cl.Message(content=format_orchestration_trace_markdown(result)).send()
@@ -205,21 +193,6 @@ async def send_chat_controls(chat_id: str) -> None:
         chat_id=chat_id,
         active=chat.active,
     )
-
-
-async def send_orchestration_settings() -> None:
-    """Show the per-session orchestration selector with Native as default."""
-    await cl.ChatSettings(
-        [
-            Select(
-                id=ORCHESTRATION_SETTING_ID,
-                label="Orchestration",
-                values=list(ORCHESTRATION_LABELS),
-                initial=orchestration_label(current_orchestration_mode()),
-                tooltip="Native answers normally; Shadow compares; Demo uses graph context.",
-            )
-        ]
-    ).send()
 
 
 @cl.action_callback("end_chat")
@@ -323,6 +296,7 @@ async def nav_home_handler(action: cl.Action) -> None:
     cl.user_session.set("chat_ended", False)
     cl.user_session.set("product_view", "home")
     await send_product_state(view="home", chat_id=None, active=None)
+    await navigate_frontend_home()
 
 
 @cl.on_window_message
@@ -419,6 +393,22 @@ async def send_product_state(
         return
 
 
+async def send_answer_inspections(chat_id: str) -> None:
+    """Send persisted, bounded answer diagnostics to the read-only browser panel."""
+    try:
+        inspections = inspection_rows_for_ui(database, chat_id)
+        await cl.send_window_message(
+            {
+                "source": "memory-chatbot-ui",
+                "command": "answer-inspections",
+                "chat_id": chat_id,
+                "inspections": inspections,
+            }
+        )
+    except Exception:
+        return
+
+
 async def refresh_sidebar() -> None:
     """Reload native thread history after a persisted lifecycle transition."""
     try:
@@ -426,6 +416,19 @@ async def refresh_sidebar() -> None:
             {
                 "source": "memory-chatbot-ui",
                 "command": "refresh-sidebar",
+            }
+        )
+    except Exception:
+        return
+
+
+async def navigate_frontend_home() -> None:
+    """Ask the browser to open the unsaved root composer."""
+    try:
+        await cl.send_window_message(
+            {
+                "source": "memory-chatbot-ui",
+                "command": "navigate-home",
             }
         )
     except Exception:
@@ -541,13 +544,22 @@ def format_orchestration_trace_markdown(result: object) -> str:
     return "\n".join(lines)
 
 
+@dataclass(frozen=True)
+class UploadedFilesResult:
+    """Compact result for one synchronous Chainlit upload batch."""
+
+    statuses: tuple[str, ...]
+    ready_document_ids: tuple[str, ...]
+
+
 def index_uploaded_files(
     message: cl.Message,
     chat_service: ChatService,
     chat_id: str | None = None,
-) -> list[str]:
+) -> UploadedFilesResult:
     """Index uploaded document files before running the chat turn."""
     statuses: list[str] = []
+    ready_document_ids: list[str] = []
     for element in message.elements or []:
         path = uploaded_file_path(element)
         name = uploaded_file_name(element)
@@ -565,11 +577,15 @@ def index_uploaded_files(
         except Exception as error:
             statuses.append(f"Could not index {name}: {type(error).__name__}: {error}")
         else:
+            ready_document_ids.append(result.document_id)
             statuses.append(
                 f"Indexed {result.file_name} into document memory "
                 f"({result.chunk_count} chunks)."
             )
-    return statuses
+    return UploadedFilesResult(
+        statuses=tuple(statuses),
+        ready_document_ids=tuple(ready_document_ids),
+    )
 
 
 def uploaded_file_path(element: object) -> str | None:

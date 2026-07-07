@@ -25,10 +25,12 @@ class FakeMessage:
         content: str,
         actions: list[object] | None = None,
         metadata: dict | None = None,
+        id: str | None = None,
     ) -> None:
         self.content = content
         self.actions = actions or []
         self.metadata = metadata or {}
+        self.id = id
 
     async def send(self) -> None:
         self.sent.append(self)
@@ -209,10 +211,6 @@ def test_chat_start_is_home_and_does_not_create_message_or_chat(monkeypatch) -> 
     session = FakeUserSession()
     install_chainlit_fakes(monkeypatch, session)
 
-    async def send_orchestration_settings() -> None:
-        return None
-
-    monkeypatch.setattr(app, "send_orchestration_settings", send_orchestration_settings)
     monkeypatch.setattr(
         app,
         "chat_service_for_model",
@@ -237,7 +235,8 @@ def test_home_navigation_does_not_create_conversation_message(monkeypatch) -> No
     assert session.get("chat_id") is None
     assert session.get("product_view") == "home"
     assert FakeMessage.sent == []
-    assert window_messages[-1]["view"] == "home"
+    assert window_messages[-2]["view"] == "home"
+    assert window_messages[-1]["command"] == "navigate-home"
 
 
 def test_chat_resume_restores_persisted_ended_state(monkeypatch) -> None:
@@ -246,13 +245,9 @@ def test_chat_resume_restores_persisted_ended_state(monkeypatch) -> None:
     monkeypatch.setattr(app.database, "is_chat_active", lambda chat_id: False)
     controls: list[str] = []
 
-    async def send_settings() -> None:
-        return None
-
     async def send_chat_controls(chat_id: str) -> None:
         controls.append(chat_id)
 
-    monkeypatch.setattr(app, "send_orchestration_settings", send_settings)
     monkeypatch.setattr(app, "send_chat_controls", send_chat_controls)
 
     asyncio.run(
@@ -291,6 +286,53 @@ def test_chat_controls_are_state_only_not_conversation_messages(monkeypatch) -> 
     }
 
 
+def test_answer_inspector_state_is_window_only_and_scoped_to_chat(monkeypatch) -> None:
+    session = FakeUserSession({"chat_id": "chat-1"})
+    window_messages = install_chainlit_fakes(monkeypatch, session)
+    monkeypatch.setattr(
+        app,
+        "inspection_rows_for_ui",
+        lambda database, chat_id: [
+            {
+                "assistant_message_id": 7,
+                "chat_id": chat_id,
+                "overview": {"requested_mode": "langgraph_demo"},
+            }
+        ],
+    )
+
+    asyncio.run(app.send_answer_inspections("chat-1"))
+
+    assert FakeMessage.sent == []
+    assert window_messages[-1] == {
+        "source": "memory-chatbot-ui",
+        "command": "answer-inspections",
+        "chat_id": "chat-1",
+        "inspections": [
+            {
+                "assistant_message_id": 7,
+                "chat_id": "chat-1",
+                "overview": {"requested_mode": "langgraph_demo"},
+            }
+        ],
+    }
+
+
+def test_inspector_serialization_failure_is_non_blocking(monkeypatch) -> None:
+    session = FakeUserSession({"chat_id": "chat-1"})
+    window_messages = install_chainlit_fakes(monkeypatch, session)
+    monkeypatch.setattr(
+        app,
+        "inspection_rows_for_ui",
+        lambda database, chat_id: (_ for _ in ()).throw(RuntimeError("bad trace")),
+    )
+
+    asyncio.run(app.send_answer_inspections("chat-1"))
+
+    assert FakeMessage.sent == []
+    assert window_messages == []
+
+
 def test_window_lifecycle_action_delegates_to_existing_handler(monkeypatch) -> None:
     calls: list[object] = []
 
@@ -314,20 +356,86 @@ def test_window_lifecycle_action_delegates_to_existing_handler(monkeypatch) -> N
     assert app.action_payload(calls[0]) == {"chat_id": None}
 
 
-def test_orchestration_mode_selection_is_per_session(monkeypatch) -> None:
-    first = FakeUserSession({"chat_id": "chat-1"})
-    install_chainlit_fakes(monkeypatch, first)
+def test_live_orchestration_mode_is_configured_without_ui_selector(monkeypatch) -> None:
+    session = FakeUserSession({"chat_id": "chat-1"})
+    install_chainlit_fakes(monkeypatch, session)
+    session.set(app.ORCHESTRATION_SETTING_ID, app.configured_orchestration_mode())
 
-    asyncio.run(
-        app.on_settings_update(
-            {app.ORCHESTRATION_SETTING_ID: "LangGraph Demo"}
-        )
+    assert app.current_orchestration_mode() == app.configured_orchestration_mode()
+    assert not hasattr(app, "send_orchestration_settings")
+    assert not hasattr(app, "on_settings_update")
+
+
+def test_same_turn_upload_persists_user_before_index_and_answers_once(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    session = FakeUserSession(
+        {
+            "chat_id": "chat-1",
+            "model_name": "model-1",
+            app.ORCHESTRATION_SETTING_ID: "native",
+        }
+    )
+    install_chainlit_fakes(monkeypatch, session)
+    monkeypatch.setattr(app.database, "is_chat_active", lambda chat_id: True)
+    events: list[object] = []
+    upload = tmp_path / "report.md"
+    upload.write_text("Key finding: scoped retrieval works.", encoding="utf-8")
+
+    class FakeService:
+        memory = SimpleNamespace(last_saved_memory_rows=[])
+
+        def persist_user_message_for_turn(self, chat_id: str, content: str) -> int:
+            events.append(("persist_user", chat_id, content))
+            return 17
+
+        def index_document_file(self, path, display_name, chat_id, operation_id):  # type: ignore[no-untyped-def]
+            events.append(("index", chat_id, display_name, operation_id))
+            return SimpleNamespace(
+                file_name=display_name,
+                document_id="doc-1",
+                chunk_count=7,
+            )
+
+        def handle_user_turn(self, **kwargs):  # type: ignore[no-untyped-def]
+            events.append(("answer", kwargs))
+            return SimpleNamespace(
+                answer="The key finding is scoped retrieval.",
+                assistant_message_id=18,
+                metadata={"answer_status": "completed"},
+                trace=None,
+            )
+
+        def finalize_post_answer_memory_update(self, chat_id: str) -> bool:
+            events.append(("memory_update", chat_id))
+            return False
+
+    monkeypatch.setattr(app, "chat_service_for_model", lambda model_name: FakeService())
+    message = SimpleNamespace(
+        content="what are the key findings",
+        elements=[
+            SimpleNamespace(
+                id="upload-1",
+                name="report.md",
+                path=str(upload),
+            )
+        ],
     )
 
-    assert first.get("chat_id") == "chat-1"
-    assert first.get(app.ORCHESTRATION_SETTING_ID) == "langgraph_demo"
+    asyncio.run(app.on_message(message))
 
-    second = FakeUserSession({"chat_id": "chat-2"})
-    monkeypatch.setattr(app.cl, "user_session", second)
-    assert app.current_orchestration_mode() == "native"
-    assert second.get("chat_id") == "chat-2"
+    assert [event[0] for event in events] == [
+        "persist_user",
+        "index",
+        "answer",
+        "memory_update",
+    ]
+    answer_kwargs = events[2][1]
+    assert answer_kwargs["persisted_user_message_id"] == 17
+    assert answer_kwargs["task_context"] == "document_qa"
+    assert [item.content for item in FakeMessage.sent] == [
+        "Indexed report.md into document memory (7 chunks).",
+        "The key finding is scoped retrieval.",
+    ]
+    assert FakeMessage.sent[-1].id == "message:18"

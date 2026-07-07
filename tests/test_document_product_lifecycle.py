@@ -97,6 +97,98 @@ def test_document_lifecycle_and_chat_association_survive_reload(tmp_path: Path) 
     ]
 
 
+def test_document_association_is_persisted_after_indexing_reaches_ready(
+    tmp_path: Path,
+) -> None:
+    database = Database(tmp_path / "chatbot.db")
+    database.create_chat("chat")
+    observed: list[tuple[str, int]] = []
+
+    class InspectingIndexer(CapturingIndexer):
+        def index_text_document(self, title, text, source="manual", metadata=None):  # type: ignore[no-untyped-def]
+            document_id = str((metadata or {})["document_id"])
+            document = database.get_document(document_id)
+            observed.append(
+                (
+                    document.status if document is not None else "missing",
+                    len(database.documents_for_chat("chat")),
+                )
+            )
+            return super().index_text_document(
+                title,
+                text,
+                source=source,
+                metadata=metadata,
+            )
+
+    document_id = upload(
+        tmp_path,
+        database,
+        "chat",
+        "ordered.txt",
+        indexer=InspectingIndexer(),
+    )
+
+    assert observed == [("Indexing", 0)]
+    associated = database.documents_for_chat("chat")
+    assert [(item.id, item.status) for item in associated] == [
+        (document_id, "Ready")
+    ]
+
+
+def test_same_turn_attachment_forces_scoped_retrieval_without_duplicate_user_message(
+    tmp_path: Path,
+) -> None:
+    database = Database(tmp_path / "chatbot.db")
+    chat_service = service(database, CapturingIndexer())
+    chat_id = chat_service.start_chat("chat")
+    user_message_id = chat_service.persist_user_message_for_turn(
+        chat_id,
+        "what are the key findings",
+    )
+    document_id = upload(
+        tmp_path,
+        database,
+        chat_id,
+        "findings.md",
+        indexer=CapturingIndexer(),
+    )
+    retriever = ScopedRetriever()
+    chat_service.coordinator.retriever_dispatcher.retrievers["document_memory"] = (
+        retriever
+    )
+
+    result = chat_service.handle_user_turn(
+        chat_id,
+        "what are the key findings",
+        task_context="document_qa",
+        persisted_user_message_id=user_message_id,
+    )
+
+    assert result.trace.route_plan is not None
+    document_source = next(
+        source
+        for source in result.trace.route_plan.sources
+        if source.source == "document_memory"
+    )
+    assert document_source.enabled is True
+    assert document_source.filters["same_turn_attachment"] is True
+    assert retriever.calls[0].filters["allowed_document_ids"] == [document_id]
+    assert any(
+        candidate.metadata.get("document_id") == document_id
+        for candidate in result.trace.retrieved_candidates
+    )
+    assert any(
+        candidate.metadata.get("document_id") == document_id
+        for candidate in result.trace.context_packet.candidates
+    )
+    messages = database.messages_for_chat(chat_id)
+    assert [message.role for message in messages] == ["user", "assistant"]
+    assert [message.content for message in messages].count(
+        "what are the key findings"
+    ) == 1
+
+
 def test_index_failure_persists_failed_state_and_never_ready(tmp_path: Path) -> None:
     database = Database(tmp_path / "chatbot.db")
     database.create_chat("chat-a")

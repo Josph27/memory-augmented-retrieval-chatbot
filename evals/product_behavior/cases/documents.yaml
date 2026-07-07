@@ -123,16 +123,16 @@
     {
       "id": "PB-DOC-009",
       "category": "documents",
-      "description": "Chinese implicit references resolve to the one active document.",
+      "description": "Implicit English document references resolve to the one active document.",
       "initial_state": {"active_documents": 1},
-      "actions": ["query:这个报告", "query:这个文档", "query:刚才的文件", "query:里面写了什么", "query:根据它来说"],
-      "expected_state": {"resolved_queries": 5},
-      "required_events": ["multilingual_reference_resolution"],
+      "actions": ["query:this file", "query:this document", "query:that document", "query:the uploaded document", "query:this report", "query:the previous document"],
+      "expected_state": {"resolved_queries": 6},
+      "required_events": ["implicit_document_reference_resolution"],
       "forbidden_events": ["unscoped_document_search"],
       "deterministic": true,
       "execution_layer": "repository/service",
       "repetitions": 1,
-      "oracle": "unsupported_chinese_document_references",
+      "oracle": "implicit_english_document_references",
       "tags": ["documents"]
     },
     {
