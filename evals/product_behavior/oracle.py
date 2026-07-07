@@ -888,7 +888,7 @@ def document_reference_resolution(
         temporary.cleanup()
 
 
-def chinese_document_references(
+def implicit_english_document_references(
     case: ProductBehaviorCase,
     root: Path,
 ) -> OracleObservation:
@@ -897,7 +897,14 @@ def chinese_document_references(
     try:
         database.create_chat("chat")
         _ready_document(database, "chat", "doc", "report.txt")
-        queries = ("这个报告", "这个文档", "刚才的文件", "里面写了什么", "根据它来说")
+        queries = (
+            "this file",
+            "this document",
+            "that document",
+            "the uploaded document",
+            "this report",
+            "the previous document",
+        )
         resolved = [
             DocumentRegistry(database).resolve("chat", query).document_ids
             for query in queries
@@ -1269,7 +1276,7 @@ ORACLES: dict[str, Oracle] = {
     "failure_retry_idempotency": failure_retry_idempotency,
     "unsupported_document_association": document_association,
     "unsupported_document_reference_resolution": document_reference_resolution,
-    "unsupported_chinese_document_references": chinese_document_references,
+    "implicit_english_document_references": implicit_english_document_references,
     "unsupported_document_disambiguation": document_disambiguation,
     "unsupported_document_scope_filter": document_scope_filter,
     "unsupported_document_zero_result_fallback": document_zero_result_fallback,

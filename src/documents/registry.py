@@ -10,21 +10,20 @@ from src.database import Database, StoredDocument
 IMPLICIT_DOCUMENT_REFERENCES = (
     "this report",
     "this document",
+    "this file",
+    "that document",
+    "that file",
+    "that report",
     "the document",
     "the file",
     "the uploaded file",
     "the file i uploaded",
     "the uploaded document",
+    "the previous document",
+    "the file from before",
     "summarize it",
     "look at that report",
     "according to this report",
-    "这个报告",
-    "这个文档",
-    "刚才的文件",
-    "上传的文件",
-    "里面写了什么",
-    "根据它来说",
-    "总结一下它",
 )
 
 
