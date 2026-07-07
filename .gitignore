@@ -53,6 +53,12 @@ coverage.xml
 .hypothesis/
 .pytest_cache/
 cover/
+playwright-report/
+test-results/
+browser-failures/
+*.webm
+*.har
+*.trace.zip
 
 # Translations
 *.mo
@@ -105,6 +111,7 @@ ipython_config.py
 # uv.lock
 .uv-cache/
 .chainlit/translations/
+.chainlit/*cache*/
 data/memories.json
 data/chroma/
 data/*.db
@@ -115,6 +122,8 @@ reports/*.jsonl
 .env
 artifacts/eval_runs/
 artifacts/evals/
+artifacts/product_behavior/
+.files/
 
 # poetry
 #   Similar to Pipfile.lock, it is generally recommended to include poetry.lock in version control.
