@@ -34,6 +34,31 @@ current and intentional unless otherwise noted.
 - MAB and LongMemEval runs show quality weaknesses in retrieval, context
   selection, and answer use on hard held-out cases.
 - LongMemEval support is a pilot adapter, not an official leaderboard scorer.
+- MAB and LongMemEval mainly test conversational memory over replayed histories.
+  They should not be used as evidence that uploaded-document RAG is strong or
+  weak.
+- The current document QA evidence is a smaller subsystem/regression signal,
+  not a full broad RAG benchmark.
+
+## Advanced configuration
+
+- `DOCUMENT_RETRIEVAL_MODE` is documented as a config surface, but
+  `langchain_chroma` is the only canonical document backend. Other values are
+  not a supported product mode.
+- Some configuration names are retained as compatibility seams rather than
+  polished public API. Examples include `SUMMARY_BATCH_SIZE`,
+  `LANGCHAIN_CHUNK_SIZE`, and `LANGCHAIN_CHUNK_OVERLAP`. They should be
+  deprecated or folded into the canonical names in a later cleanup pass after
+  affected scripts/tests are updated.
+- `STRUCTURED_MEMORY_RETRIEVAL_MODE=vector` and `hybrid` are advanced paths.
+  The default `sqlite` path remains the reliable, canonical structured-memory
+  retrieval behavior.
+- `RERANKER_MODE=cross_encoder`, `hybrid`, and `llm` are ablation/diagnostic
+  modes. CrossEncoder reranking improved context inclusion in a small ablation
+  but did not improve first-stage candidate recall and was much slower, so it is
+  not enabled by default.
+- `ORCHESTRATION_MODE=native` and `langgraph_shadow` remain useful diagnostics,
+  but `langgraph_demo` is the documented live mode.
 
 ## Evaluation
 

@@ -91,26 +91,38 @@ to `data/chroma/`. Both are ignored local runtime state.
 
 ## Configuration
 
-Required application variables:
+The app loads `.env` through the Python configuration layer. For a normal
+local demo, keep the canonical defaults below unless you are deliberately
+running an ablation or diagnostic mode.
+
+Required runtime variables:
 
 | Variable | Purpose |
 | --- | --- |
 | `OPENAI_API_KEY` | Credential for the OpenAI-compatible endpoint. Use `dummy` for local endpoints that do not require a key. |
 | `OPENAI_BASE_URL` | OpenAI-compatible chat-completions endpoint. |
 | `MODEL_NAME` | Model ID sent to the endpoint. |
-| `ORCHESTRATION_MODE` | `langgraph_demo` by default. `native` and `langgraph_shadow` are diagnostic alternatives. |
 
-Important optional variables:
+Canonical defaults:
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
+| `ORCHESTRATION_MODE` | `langgraph_demo` | Live app mode. LangGraph builds the authoritative `ContextPacket`; Native remains the internal fallback. |
 | `DATABASE_PATH` | `data/chatbot.db` | SQLite path. |
-| `DOCUMENT_RETRIEVAL_MODE` | `langchain_chroma` | Document retrieval backend. |
 | `LANGCHAIN_CHROMA_PERSIST_DIR` | `data/chroma` | Chroma document index. |
 | `EMBEDDING_MODEL_NAME` | `sentence-transformers/all-MiniLM-L6-v2` | Embedding model for vector-backed paths. |
-| `STRUCTURED_MEMORY_RETRIEVAL_MODE` | `sqlite` | Structured-memory retrieval mode: `sqlite`, `vector`, or `hybrid`. |
-| `RERANKER_MODE` | `deterministic` | Reranking mode. |
+| `STRUCTURED_MEMORY_RETRIEVAL_MODE` | `sqlite` | Canonical structured-memory retrieval mode. |
+| `RERANKER_MODE` | `deterministic` | Canonical reranker. |
 | `DEMO_MEMORY_TRACE` | `0` | Optional message-level trace display. |
+
+Advanced and diagnostic options:
+
+| Variable | Legal values | Status |
+| --- | --- | --- |
+| `ORCHESTRATION_MODE` | `langgraph_demo`, `native`, `langgraph_shadow` | `langgraph_demo` is the live default. `native` is fallback/diagnostic. `langgraph_shadow` compares graph output while Native remains authoritative. |
+| `DOCUMENT_RETRIEVAL_MODE` | effectively `langchain_chroma` | Compatibility seam with one real product backend. It is not a normal tuning knob. |
+| `STRUCTURED_MEMORY_RETRIEVAL_MODE` | `sqlite`, `vector`, `hybrid` | `sqlite` is canonical. `vector` and `hybrid` are advanced retrieval experiments over the long-term-memory vector index with SQLite fallback behavior. |
+| `RERANKER_MODE` | `deterministic`, `cross_encoder`, `hybrid`, `llm` | `deterministic` is canonical. CrossEncoder/LLM/hybrid are explicit ablation paths and are not recommended as defaults. |
 
 See [.env.example](.env.example) for the current runnable defaults.
 
@@ -173,10 +185,14 @@ browser. Some restricted sandboxes block that setup before the app starts.
   lifecycle, persistence, document behavior, failure handling, races, and
   idempotency. The intended current result is 48 passed, 2 documented failures.
 - MAB answer-level evaluation: fixed held-out manifests exercise answer quality
-  through the production-shaped memory pipeline.
+  through the production-shaped conversational-memory pipeline. It is not an
+  uploaded-document RAG benchmark.
 - LongMemEval answer-level pilot: evaluates long-memory behavior with the
-  project adapter and documents pilot limitations.
-- Document QA and structured-memory evals provide smaller subsystem checks.
+  project adapter and documents pilot limitations. It is also focused on
+  conversation/session memory rather than uploaded documents.
+- Document QA and structured-memory evals provide smaller subsystem checks. The
+  current document QA evidence is useful for regression checks, but it is not
+  yet a broad, leaderboard-style RAG benchmark.
 
 See [docs/EVALUATION.md](docs/EVALUATION.md) for commands, caveats, and result
 interpretation.

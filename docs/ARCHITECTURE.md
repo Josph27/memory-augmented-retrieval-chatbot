@@ -35,6 +35,34 @@ In `langgraph_demo`, Native preparation still happens first so the app has a
 safe fallback if graph execution or packet validation fails. Graph failure is
 recorded in trace metadata and the Native packet is used instead.
 
+Configuration surface:
+
+| Variable | Default | Legal values | Role |
+| --- | --- | --- | --- |
+| `ORCHESTRATION_MODE` | `langgraph_demo` | `langgraph_demo`, `native`, `langgraph_shadow` | Live orchestration selector. `langgraph_demo` is canonical; the others are diagnostics/fallbacks. |
+| `DOCUMENT_RETRIEVAL_MODE` | `langchain_chroma` | effectively `langchain_chroma` | Document backend selector. Unsupported values are logged and fall back to LangChain-Chroma. |
+| `STRUCTURED_MEMORY_RETRIEVAL_MODE` | `sqlite` | `sqlite`, `vector`, `hybrid` | Structured-memory retrieval selector. `sqlite` is canonical; vector/hybrid are advanced paths. |
+| `RERANKER_MODE` | `deterministic` | `deterministic`, `cross_encoder`, `hybrid`, `llm` | Candidate reranker selector. `deterministic` is canonical; other modes are ablations. |
+
+Other environment variables are narrower implementation controls:
+
+- endpoint and local-state variables: `OPENAI_API_KEY`, `OPENAI_BASE_URL`,
+  `MODEL_NAME`, `DATABASE_PATH`, `LANGCHAIN_CHROMA_PERSIST_DIR`;
+- document indexing controls: `DOCUMENT_CHUNKER`, `DOCUMENT_CHUNK_SIZE`,
+  `DOCUMENT_CHUNK_OVERLAP`, `DOCUMENT_TOP_K`, `EMBEDDING_MODEL_NAME`;
+- context and retrieval tuning: memory budgets, source candidate limits,
+  overlap thresholds, and retrieval-query simplification;
+- memory scheduling controls: online/replay token thresholds and message caps;
+- trace and evaluation controls: `DEMO_MEMORY_TRACE`, judge variables, and
+  Product Behavior browser flags.
+
+`DOCUMENT_RETRIEVAL_MODE` is currently a compatibility seam with one real
+product implementation. It exists so the dispatcher has an explicit backend
+selection point, but the only canonical backend is LangChain-Chroma.
+`SUMMARY_BATCH_SIZE`, `LANGCHAIN_CHUNK_SIZE`, and `LANGCHAIN_CHUNK_OVERLAP`
+remain compatibility aliases for older scripts/paths and should not be treated
+as preferred public configuration.
+
 ## Typed memory sources
 
 All retrievers return `MemoryCandidate` objects. Source semantics remain
@@ -61,6 +89,11 @@ deterministic where reliability matters. Optional LLM routing exists behind the
 routing agent but falls back to deterministic routing when unavailable or
 invalid.
 
+Semantic Router v2 is a typed policy router, not an embedding-similarity router.
+It decides which memory sources are allowed, what scope they should use, what
+context profile applies, and whether evidence is required. The optional LLM
+routing path is intentionally not the canonical/default path.
+
 ## Retrieval and expansion
 
 Retrieval is source-specific:
@@ -80,6 +113,13 @@ Candidates preserve typed provenance and retrieval-path metadata.
 
 The default reranker is deterministic. CrossEncoder, LLM, and hybrid modes are
 available as explicit configuration, not defaults.
+
+CrossEncoder support is present for controlled ablations. The configured model
+default is `BAAI/bge-reranker-v2-m3`, but it is loaded only when a CrossEncoder
+mode is explicitly selected. Existing ablation evidence showed candidate recall
+unchanged, context inclusion improved by two selected cases, and runtime much
+higher. For the live app and normal tests, deterministic reranking remains the
+recommended default.
 
 `ContextManagerAgent` applies dynamic budget profiles and builds a validated
 `ContextPacket`. Context selection is evidence-constrained, overlap-aware, and

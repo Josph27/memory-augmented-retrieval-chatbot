@@ -84,7 +84,6 @@ class AppConfig:
     structured_memory_retrieval_mode: str
     long_term_memory_chroma_persist_dir: Path
     long_term_memory_collection: str
-    current_chat_gist_generation_enabled: bool
     previous_chat_gist_generation_enabled: bool
     previous_chat_gist_retrieval_enabled: bool
 
@@ -270,10 +269,6 @@ class AppConfig:
             long_term_memory_collection=os.getenv(
                 "LONG_TERM_MEMORY_COLLECTION",
                 "long_term_memory",
-            ),
-            current_chat_gist_generation_enabled=env_bool(
-                "CURRENT_CHAT_GIST_GENERATION_ENABLED",
-                default=False,
             ),
             previous_chat_gist_generation_enabled=env_bool(
                 "PREVIOUS_CHAT_GIST_GENERATION_ENABLED",
