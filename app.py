@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
 from types import SimpleNamespace
+from typing import NamedTuple
 
 import chainlit as cl
 from chainlit.user import User
@@ -111,11 +111,7 @@ async def on_message(message: cl.Message) -> None:
             return
         model_name = selected_model_name()
         chat_service = chat_service_for_model(model_name)
-        thread_id = (
-            None
-            if cl.user_session.get("chat_ended")
-            else current_chainlit_thread_id()
-        )
+        thread_id = None if cl.user_session.get("chat_ended") else current_chainlit_thread_id()
         chat_id = chat_service.start_chat(chat_id=thread_id)
         cl.user_session.set("chat_id", chat_id)
         cl.user_session.set("chat_ended", False)
@@ -131,9 +127,7 @@ async def on_message(message: cl.Message) -> None:
     chat_service = chat_service_for_model(model_name)
     content = (message.content or "").strip()
     persisted_user_message_id = (
-        chat_service.persist_user_message_for_turn(str(chat_id), content)
-        if content
-        else None
+        chat_service.persist_user_message_for_turn(str(chat_id), content) if content else None
     )
 
     upload_result = index_uploaded_files(message, chat_service, str(chat_id))
@@ -148,11 +142,7 @@ async def on_message(message: cl.Message) -> None:
         chat_id=chat_id,
         content=content,
         orchestration_mode=orchestration_mode,
-        task_context=(
-            "document_qa"
-            if upload_result.ready_document_ids
-            else None
-        ),
+        task_context=("document_qa" if upload_result.ready_document_ids else None),
         persisted_user_message_id=persisted_user_message_id,
         defer_post_answer_memory_update=True,
     )
@@ -491,11 +481,7 @@ def format_orchestration_trace_markdown(result: object) -> str:
     """Render a compact trace without prompts, secrets, or candidate contents."""
     trace = getattr(result, "trace", None)
     metadata = getattr(trace, "metadata", None)
-    orchestration = (
-        metadata.get("orchestration")
-        if isinstance(metadata, dict)
-        else None
-    )
+    orchestration = metadata.get("orchestration") if isinstance(metadata, dict) else None
     if not isinstance(orchestration, dict):
         return "**Orchestration trace unavailable.**"
     graph = orchestration.get("langgraph_trace")
@@ -535,8 +521,7 @@ def format_orchestration_trace_markdown(result: object) -> str:
             [
                 f"- Native-only sources: `{comparison.get('native_only_sources', [])}`",
                 f"- Graph-only sources: `{comparison.get('langgraph_only_sources', [])}`",
-                "- Selected candidate overlap: "
-                f"`{comparison.get('selected_candidate_overlap')}`",
+                f"- Selected candidate overlap: `{comparison.get('selected_candidate_overlap')}`",
                 f"- Token difference: `{comparison.get('token_difference')}`",
             ]
         )
@@ -544,8 +529,7 @@ def format_orchestration_trace_markdown(result: object) -> str:
     return "\n".join(lines)
 
 
-@dataclass(frozen=True)
-class UploadedFilesResult:
+class UploadedFilesResult(NamedTuple):
     """Compact result for one synchronous Chainlit upload batch."""
 
     statuses: tuple[str, ...]
@@ -579,8 +563,7 @@ def index_uploaded_files(
         else:
             ready_document_ids.append(result.document_id)
             statuses.append(
-                f"Indexed {result.file_name} into document memory "
-                f"({result.chunk_count} chunks)."
+                f"Indexed {result.file_name} into document memory ({result.chunk_count} chunks)."
             )
     return UploadedFilesResult(
         statuses=tuple(statuses),
@@ -602,11 +585,7 @@ def uploaded_file_name(element: object) -> str:
     if isinstance(element, dict):
         value = element.get("name") or element.get("path") or "uploaded file"
     else:
-        value = (
-            getattr(element, "name", None)
-            or getattr(element, "path", None)
-            or "uploaded file"
-        )
+        value = getattr(element, "name", None) or getattr(element, "path", None) or "uploaded file"
     return str(value)
 
 
@@ -682,19 +661,11 @@ def chat_service_for_model(model_name: str) -> ChatService:
             multi_scope_memory_cap=config.multi_scope_memory_cap,
             long_document_memory_cap=config.long_document_memory_cap,
             global_summary_budget_tokens=config.global_summary_budget_tokens,
-            global_summary_max_budget_tokens=(
-                config.global_summary_max_budget_tokens
-            ),
+            global_summary_max_budget_tokens=(config.global_summary_max_budget_tokens),
             global_summary_reserved_tokens=config.global_summary_reserved_tokens,
-            required_evidence_headroom_ratio=(
-                config.required_evidence_headroom_ratio
-            ),
-            minimum_optional_candidate_utility=(
-                config.minimum_optional_candidate_utility
-            ),
-            direct_raw_retrieval_candidates=(
-                config.direct_raw_retrieval_candidates
-            ),
+            required_evidence_headroom_ratio=(config.required_evidence_headroom_ratio),
+            minimum_optional_candidate_utility=(config.minimum_optional_candidate_utility),
+            direct_raw_retrieval_candidates=(config.direct_raw_retrieval_candidates),
             raw_span_overlap_threshold=config.raw_span_overlap_threshold,
             routing_mode=config.routing_mode,
             reranker_mode=config.reranker_mode,
@@ -709,8 +680,6 @@ def chat_service_for_model(model_name: str) -> ChatService:
                 config.reranker_llm_require_cross_source_conflict
             ),
             reranker_llm_provenance_queries=config.reranker_llm_provenance_queries,
-            previous_chat_gist_generation_enabled=(
-                config.previous_chat_gist_generation_enabled
-            ),
+            previous_chat_gist_generation_enabled=(config.previous_chat_gist_generation_enabled),
         )
     return chat_services[model_name]
