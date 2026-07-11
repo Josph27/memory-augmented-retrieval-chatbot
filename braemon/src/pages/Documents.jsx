@@ -1,31 +1,33 @@
-const docs = [
-	{
-		title: "arch_diagram_v3.pdf",
-		size: "2.4 MB",
-		time: "2 hours ago",
-		color: "bg-primary",
-	},
-	{
-		title: "meeting_notes_q3.txt",
-		size: "14 KB",
-		time: "Yesterday",
-		color: "bg-secondary",
-	},
-	{
-		title: "user_data_export.csv",
-		size: "8.1 MB",
-		time: "Oct 12",
-		color: "bg-tertiary",
-	},
-	{
-		title: "ui_mockup_final.png",
-		size: "1.2 MB",
-		time: "Oct 10",
-		color: "bg-primary-fixed-dim",
-	},
-];
+import { useState, useEffect } from "react";
+import { fetchDocuments } from "../api";
 
 function Documents() {
+	const [docs, setDocs] = useState([]);
+	const [loading, setLoading] = useState(true);
+	const [error, setError] = useState(null);
+
+	useEffect(() => {
+		fetchDocuments()
+			.then((data) => {
+				setDocs(data);
+				setLoading(false);
+			})
+			.catch((err) => {
+				console.error(err);
+				setError("Failed to load documents.");
+				setLoading(false);
+			});
+	}, []);
+
+	const formatDate = (ds) => {
+		if (!ds) return "";
+		return new Date(ds).toLocaleString(undefined, {
+			month: "short",
+			day: "numeric",
+			hour: "2-digit",
+			minute: "2-digit",
+		});
+	};
 	return (
 		<div className="pt-xl pb-xl px-margin max-w-[1200px] mx-auto w-full">
 			{/* Header */}
@@ -61,39 +63,61 @@ function Documents() {
 					Quick Stats:
 				</span>
 				<span className="font-body-md text-body-md text-on-secondary-container">
-					Total Documents: 124
+					Total Documents: {loading ? "..." : docs.length}
 				</span>
 			</div>
 
 			{/* Document List */}
-			<div className="flex flex-col">
-				{docs.map((doc, i) => (
-					<div
-						key={i}
-						className="h-10 group flex items-center justify-between px-sm hover:bg-surface-container-high transition-colors border-b border-outline-variant/10 cursor-pointer"
-					>
-						<div className="flex items-center gap-md flex-1 min-w-0">
-							<div className={`w-[2px] h-4 ${doc.color}`} />
-							<span className="font-label-md text-label-md text-primary w-48 truncate">
-								{doc.title}
-							</span>
-							<span className="font-body-sm text-body-sm text-on-surface-variant truncate">
-								{doc.size}
-							</span>
+			{loading && <div className="text-on-surface-variant">Loading...</div>}
+			{error && <div className="text-red-400">{error}</div>}
+			{!loading && !error && (
+				<div className="flex flex-col">
+					{docs.length === 0 ? (
+						<div className="px-sm text-on-surface-variant italic">
+							No documents found.
 						</div>
-						<div className="flex items-center gap-md opacity-0 group-hover:opacity-100 transition-opacity">
-							<span className="font-label-sm text-label-sm text-on-surface-variant">
-								{doc.time}
-							</span>
-							<button className="text-on-surface-variant hover:text-error transition-colors p-1">
-								<span className="material-symbols-outlined text-[18px]">
-									delete
-								</span>
-							</button>
-						</div>
-					</div>
-				))}
-			</div>
+					) : (
+						docs.map((doc, i) => (
+							<div
+								key={i}
+								className="h-10 group flex items-center justify-between px-sm hover:bg-surface-container-high transition-colors border-b border-outline-variant/10 cursor-pointer"
+							>
+								<div className="flex items-center gap-md flex-1 min-w-0">
+									<div
+										className={`w-[2px] h-4 ${doc.status === "Ready" ? "bg-primary" : "bg-secondary"}`}
+									/>
+									<span
+										className="font-label-md text-label-md text-primary w-48 truncate"
+										title={doc.file_name}
+									>
+										{doc.file_name}
+									</span>
+									<span className="font-body-sm text-body-sm text-on-surface-variant truncate">
+										Chunks: {doc.chunk_count}
+									</span>
+									<span className="font-body-sm text-body-sm text-on-surface-variant truncate">
+										Status: {doc.status}
+									</span>
+								</div>
+								<div className="flex items-center gap-md opacity-0 group-hover:opacity-100 transition-opacity">
+									<span className="font-label-sm text-label-sm text-on-surface-variant">
+										{formatDate(doc.updated_at || doc.created_at)}
+									</span>
+									<button
+										className="text-on-surface-variant p-1 opacity-50 cursor-not-allowed"
+										title="Document deletion coming soon."
+										disabled
+									>
+										<span className="material-symbols-outlined text-[18px]">
+											delete
+										</span>
+									</button>
+								</div>
+							</div>
+						))
+					)}
+				</div>
+			)}
 		</div>
 	);
 }

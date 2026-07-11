@@ -1,34 +1,50 @@
-import { useState } from "react";
-
-const memories = [
-	{
-		title: "Project Phoenix Specs",
-		text: "Initial architecture definitions for the new routing module. The system will use a dual-path approach: native Chainlit routing for simple queries with known intent patterns, and an experimental LangGraph orchestration path for complex multi-hop retrieval. Both paths share the same typed-memory infrastructure — Chroma for document vectors, SQLite for structured memories via LangMem, and a gisting pipeline for conversation compression.",
-		time: "2 hours ago",
-		color: "bg-primary",
-	},
-	{
-		title: "Client Meeting Notes - Acme",
-		text: "Key takeaways regarding the Q3 delivery schedule and expected SLAs. Acme requires 99.9% uptime for the production deployment with a maximum latency of 200ms p95 on retrieval queries. They also requested audit logging for all memory write operations and a rollback mechanism for accidental memory deletions. The initial deployment target is August 2026 with a beta preview in late July.",
-		time: "Yesterday",
-		color: "bg-secondary",
-	},
-	{
-		title: "User Persona V2",
-		text: "Updated demographics focusing on technical power users in the enterprise sector. Primary persona 'DevOps Diana' — senior infrastructure engineer, 8+ years experience, prefers CLI and keyboard shortcuts over mouse interaction, values response latency over explanation verbosity. Secondary persona 'Architect Alex' — system architect, needs deep trace explanations for retrieval decisions, wants to inspect source candidates and reranking scores.",
-		time: "Oct 12",
-		color: "bg-tertiary",
-	},
-	{
-		title: "API Key Configurations",
-		text: "Draft settings for staging environment authentication flows. All API keys must be rotated every 90 days. The staging environment uses a separate keyring from production with reduced rate limits (100 req/min vs 1000 req/min). Third-party integrations (Stitch, GitHub, Slack) use OAuth2 with refresh token rotation enabled. Service-to-service auth uses mTLS with certificate pinning.",
-		time: "Oct 10",
-		color: "bg-primary-fixed-dim",
-	},
-];
+import { useState, useEffect } from "react";
+import { fetchMemories, deleteMemory } from "../api";
 
 export default function Memories() {
 	const [expanded, setExpanded] = useState(null);
+	const [memories, setMemories] = useState([]);
+	const [loading, setLoading] = useState(true);
+	const [error, setError] = useState(null);
+
+	const loadMemories = () => {
+		fetchMemories()
+			.then((data) => {
+				setMemories(data);
+				setLoading(false);
+			})
+			.catch((err) => {
+				console.error(err);
+				setError("Failed to load memories.");
+				setLoading(false);
+			});
+	};
+
+	useEffect(() => {
+		loadMemories();
+	}, []);
+
+	const handleDelete = async (memoryId, e) => {
+		e.stopPropagation();
+		if (!confirm("Are you sure you want to delete this memory?")) return;
+		try {
+			await deleteMemory(memoryId);
+			loadMemories(); // Refresh after delete
+		} catch (err) {
+			console.error(err);
+			alert("Failed to delete memory.");
+		}
+	};
+
+	const formatDate = (ds) => {
+		if (!ds) return "";
+		return new Date(ds).toLocaleString(undefined, {
+			month: "short",
+			day: "numeric",
+			hour: "2-digit",
+			minute: "2-digit",
+		});
+	};
 
 	return (
 		<div className="pt-xl pb-xl px-margin max-w-[1200px] mx-auto w-full">
@@ -55,65 +71,81 @@ export default function Memories() {
 					Quick Stats:
 				</span>
 				<span className="font-body-md text-body-md text-on-secondary-container">
-					Total Memories: {memories.length}
+					Total Memories: {loading ? "..." : memories.length}
 				</span>
 			</div>
 
-			<div className="flex flex-col">
-				{memories.map((mem, i) => {
-					const isExpanded = expanded === i;
-					return (
-						<div key={i}>
-							{/* Summary row — always visible */}
-							<div
-								onClick={() => setExpanded(isExpanded ? null : i)}
-								className={`group flex items-center justify-between px-sm hover:bg-surface-container-high transition-colors border-b border-outline-variant/10 cursor-pointer ${isExpanded ? "h-10" : "h-10"}`}
-							>
-								<div className="flex items-center gap-md flex-1 min-w-0">
-									<div className={`w-[2px] h-4 shrink-0 ${mem.color}`} />
-									<span
-										className={`font-label-md text-label-md text-primary w-48 ${isExpanded ? "" : "truncate"}`}
-									>
-										{mem.title}
-									</span>
-									<span
-										className={`font-body-sm text-body-sm text-on-surface-variant ${isExpanded ? "hidden" : "truncate"}`}
-									>
-										{mem.text.slice(0, 80)}...
-									</span>
-								</div>
-								<div className="flex items-center gap-md opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
-									<span className="font-label-sm text-label-sm text-on-surface-variant">
-										{mem.time}
-									</span>
-									<span
-										className={`material-symbols-outlined text-[18px] text-on-surface-variant transition-transform ${isExpanded ? "rotate-180" : ""}`}
-									>
-										expand_more
-									</span>
-									<button
-										className="text-on-surface-variant hover:text-error transition-colors p-1"
-										onClick={(e) => e.stopPropagation()}
-									>
-										<span className="material-symbols-outlined text-[18px]">
-											delete
-										</span>
-									</button>
-								</div>
-							</div>
+			{loading && <div className="text-on-surface-variant">Loading...</div>}
+			{error && <div className="text-red-400">{error}</div>}
 
-							{/* Expanded detail — only shown when clicked */}
-							{isExpanded && (
-								<div className="px-8 py-md border-b border-outline-variant/10 bg-surface-container-low/30">
-									<p className="font-body-md text-body-md text-on-surface leading-relaxed whitespace-pre-wrap">
-										{mem.text}
-									</p>
-								</div>
-							)}
+			{!loading && !error && (
+				<div className="flex flex-col">
+					{memories.length === 0 ? (
+						<div className="px-sm text-on-surface-variant italic">
+							No memories found.
 						</div>
-					);
-				})}
-			</div>
+					) : (
+						memories.map((mem, i) => {
+							const isExpanded = expanded === i;
+							return (
+								<div key={mem.memory_id || i}>
+									{/* Summary row — always visible */}
+									<div
+										onClick={() => setExpanded(isExpanded ? null : i)}
+										className={`group flex items-center justify-between px-sm hover:bg-surface-container-high transition-colors border-b border-outline-variant/10 cursor-pointer ${isExpanded ? "h-10" : "h-10"}`}
+									>
+										<div className="flex items-center gap-md flex-1 min-w-0">
+											<div className={`w-[2px] h-4 shrink-0 bg-primary`} />
+											<span
+												className={`font-label-md text-label-md text-primary w-48 ${isExpanded ? "" : "truncate"}`}
+											>
+												{mem.category || mem.key}
+											</span>
+											<span
+												className={`font-body-sm text-body-sm text-on-surface-variant ${isExpanded ? "hidden" : "truncate"}`}
+											>
+												{mem.value ? mem.value.slice(0, 80) + "..." : ""}
+											</span>
+										</div>
+										<div className="flex items-center gap-md opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+											<span className="font-label-sm text-label-sm text-on-surface-variant">
+												{formatDate(mem.updated_at || mem.created_at)}
+											</span>
+											<span
+												className={`material-symbols-outlined text-[18px] text-on-surface-variant transition-transform ${isExpanded ? "rotate-180" : ""}`}
+											>
+												expand_more
+											</span>
+											<button
+												className="text-on-surface-variant hover:text-error transition-colors p-1"
+												onClick={(e) => handleDelete(mem.memory_id, e)}
+											>
+												<span className="material-symbols-outlined text-[18px]">
+													delete
+												</span>
+											</button>
+										</div>
+									</div>
+
+									{/* Expanded detail — only shown when clicked */}
+									{isExpanded && (
+										<div className="px-8 py-md border-b border-outline-variant/10 bg-surface-container-low/30">
+											<p className="font-body-md text-body-md text-on-surface leading-relaxed whitespace-pre-wrap">
+												{mem.value}
+											</p>
+											<div className="mt-sm pt-sm border-t border-outline-variant/10 text-on-surface-variant font-code text-[12px]">
+												<p>Confidence: {mem.confidence}</p>
+												<p>Key: {mem.key}</p>
+												<p>ID: {mem.memory_id}</p>
+											</div>
+										</div>
+									)}
+								</div>
+							);
+						})
+					)}
+				</div>
+			)}
 		</div>
 	);
 }

@@ -683,3 +683,10 @@ def chat_service_for_model(model_name: str) -> ChatService:
             previous_chat_gist_generation_enabled=(config.previous_chat_gist_generation_enabled),
         )
     return chat_services[model_name]
+
+
+from src.api_routes import register_api_routes
+
+register_api_routes(
+    database=database, chat_service_getter=lambda: chat_service_for_model(config.model_name)
+)

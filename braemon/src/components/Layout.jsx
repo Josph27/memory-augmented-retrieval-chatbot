@@ -1,4 +1,6 @@
 import { Outlet, NavLink } from "react-router-dom";
+import { useState, useEffect } from "react";
+import { fetchStats } from "../api";
 
 const CubeLogo = () => (
 	<svg
@@ -22,6 +24,16 @@ function Layout() {
 		{ to: "/documents", label: "Documents" },
 		{ to: "/memories", label: "Memories" },
 	];
+
+	const [stats, setStats] = useState(null);
+
+	useEffect(() => {
+		fetchStats().then(setStats).catch(console.error);
+		const interval = setInterval(() => {
+			fetchStats().then(setStats).catch(console.error);
+		}, 30000);
+		return () => clearInterval(interval);
+	}, []);
 
 	return (
 		<div className="min-h-screen bg-gradient-animate overflow-x-hidden flex flex-col">
@@ -49,9 +61,25 @@ function Layout() {
 			</nav>
 
 			{/* Main Content */}
-			<main className="flex-1 mt-12 w-full">
+			<main className="flex-1 mt-12 w-full mb-8">
 				<Outlet />
 			</main>
+
+			{/* Bottom Status Bar */}
+			<footer className="fixed bottom-0 w-full h-8 border-t border-outline-variant/20 bg-surface-container flex items-center px-margin justify-between text-[11px] font-code text-on-surface-variant z-50">
+				<div className="flex gap-md">
+					<span>Active Chats: {stats?.active_chats ?? "..."}</span>
+					<span>Memories: {stats?.total_memories ?? "..."}</span>
+					<span>Docs: {stats?.ready_documents ?? "..."}</span>
+				</div>
+				<NavLink
+					to="/diagnostics"
+					className="hover:text-primary transition-colors flex items-center gap-xs"
+				>
+					<span className="w-2 h-2 rounded-full bg-emerald-500 inline-block"></span>
+					{stats?.version ?? "Connecting..."}
+				</NavLink>
+			</footer>
 		</div>
 	);
 }

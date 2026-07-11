@@ -1,3 +1,6 @@
+import { useState, useEffect } from "react";
+import { fetchStats } from "../api";
+
 function Row({ label, value }) {
 	return (
 		<div className="flex justify-between px-lg py-sm border-b border-outline-variant/10 font-body-md text-body-md items-start">
@@ -10,6 +13,21 @@ function Row({ label, value }) {
 }
 
 export default function Diagnostics() {
+	const [stats, setStats] = useState(null);
+	const [loading, setLoading] = useState(true);
+
+	useEffect(() => {
+		fetchStats()
+			.then((data) => {
+				setStats(data);
+				setLoading(false);
+			})
+			.catch((err) => {
+				console.error(err);
+				setLoading(false);
+			});
+	}, []);
+
 	return (
 		<div className="pt-xl pb-xl px-margin max-w-4xl mx-auto">
 			<h1 className="font-headline-lg text-headline-lg text-primary mb-lg">
@@ -21,10 +39,23 @@ export default function Diagnostics() {
 					System
 				</h2>
 				<div className="bg-surface-container-low border border-outline-variant/20 rounded overflow-hidden">
-					<Row label="Daemon" value="Running" />
-					<Row label="Version" value="v2.4.1" />
-					<Row label="Sync" value="Complete" />
-					<Row label="Node" value="Connected to Node 04" />
+					{loading ? (
+						<Row label="Status" value="Loading stats..." />
+					) : (
+						<>
+							<Row label="Daemon" value="Running" />
+							<Row label="Version" value={stats?.version ?? "v2.4.1"} />
+							<Row label="Active Chats" value={stats?.active_chats ?? "0"} />
+							<Row
+								label="Total Memories"
+								value={stats?.total_memories ?? "0"}
+							/>
+							<Row
+								label="Ready Documents"
+								value={stats?.ready_documents ?? "0"}
+							/>
+						</>
+					)}
 				</div>
 			</section>
 

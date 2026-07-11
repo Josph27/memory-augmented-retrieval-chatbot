@@ -1,27 +1,34 @@
-import { Link } from "react-router-dom";
-
-const chats = [
-	{ label: "System Architecture Review v2", active: true },
-	{ label: "Debug Stream: Auth Module Error", active: true },
-	{ label: "Query Log Optimization", active: false },
-	{ label: "Database Migration Plan Assessment", inactive: true },
-	{ label: "API Rate Limiting Logic Review", inactive: true },
-	{ label: "Frontend Performance Audit 2024", inactive: true },
-	{ label: "React Router V6 Integration Strategy", inactive: true },
-	{ label: "Tailwind Custom Config Setup", inactive: true },
-	{ label: "Redis Cache Implementation Details", inactive: true },
-	{ label: "Kubernetes Deployment Scripts Issue", inactive: true },
-	{ label: "User Authentication Flow Analysis", inactive: true },
-	{ label: "Payment Gateway Webhooks Debugging", inactive: true },
-	{ label: "Serverless Functions Config Updates", inactive: true },
-	{ label: "GraphQL Schema Definition Check", inactive: true },
-	{ label: "End-to-End Testing Setup Guide", inactive: true },
-	{ label: "CI/CD Pipeline Configuration Steps", inactive: true },
-	{ label: "Websocket Connection Dropping Issue", inactive: true },
-	{ label: "Image Optimization Pipeline Review", inactive: true },
-];
+import { Link, useNavigate } from "react-router-dom";
+import { useState, useEffect } from "react";
+import { fetchChats, createChat } from "../api";
 
 function Home() {
+	const navigate = useNavigate();
+	const [chats, setChats] = useState([]);
+	const [loading, setLoading] = useState(true);
+
+	useEffect(() => {
+		fetchChats({ limit: 20 })
+			.then((data) => {
+				setChats(data);
+				setLoading(false);
+			})
+			.catch((err) => {
+				console.error(err);
+				setLoading(false);
+			});
+	}, []);
+
+	const handleNewChat = async (e) => {
+		e.preventDefault();
+		try {
+			const { chat_id } = await createChat();
+			navigate(`/chat/${chat_id}`);
+		} catch (err) {
+			console.error(err);
+			alert("Failed to create chat");
+		}
+	};
 	return (
 		<div className="px-margin py-lg max-w-7xl mx-auto flex flex-col gap-lg lg:h-[calc(100vh-3rem)] lg:overflow-hidden">
 			{/* Hero */}
@@ -34,6 +41,7 @@ function Home() {
 				<div className="mt-md">
 					<Link
 						to="/chat"
+						onClick={handleNewChat}
 						className="group relative overflow-hidden rounded-lg bg-almond-silk text-primary-container font-headline-md text-headline-md px-xl py-lg flex items-center justify-center gap-md hover:bg-[#d2c2cf] transition-all duration-300 mx-auto min-w-[200px]"
 					>
 						<span className="material-symbols-outlined">add_circle</span>
@@ -60,22 +68,25 @@ function Home() {
 							</span>
 						</div>
 						<ul className="space-y-sm font-body-sm text-body-sm text-on-surface-variant overflow-y-auto custom-scrollbar pr-2 flex-1 min-h-0">
-							{chats.map((chat, i) => {
-								const activeStyle = chat.active
-									? "border-l-2 border-almond-silk"
-									: chat.inactive
-										? "border-l-2 border-outline-variant"
-										: "border-l-2 border-lilac-ash";
-								return (
-									<Link
-										key={i}
-										to="/chat"
-										className={`flex items-center gap-sm ${activeStyle} pl-sm py-xs hover:bg-surface-container transition-colors rounded-r no-underline text-on-surface-variant`}
-									>
-										<span className="truncate">{chat.label}</span>
-									</Link>
-								);
-							})}
+							{loading && <li>Loading...</li>}
+							{!loading && chats.length === 0 && <li>No recent chats.</li>}
+							{!loading &&
+								chats.map((chat) => {
+									const activeStyle = chat.active
+										? "border-l-2 border-almond-silk"
+										: "border-l-2 border-outline-variant";
+									return (
+										<Link
+											key={chat.id}
+											to={`/chat/${chat.id}`}
+											className={`flex items-center gap-sm ${activeStyle} pl-sm py-xs hover:bg-surface-container transition-colors rounded-r no-underline text-on-surface-variant`}
+										>
+											<span className="truncate">
+												{chat.title || "Untitled"}
+											</span>
+										</Link>
+									);
+								})}
 						</ul>
 					</div>
 				</div>
