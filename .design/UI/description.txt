@@ -1,0 +1,40 @@
+## Technical decisions:
+    - Chat: Embed headless chainlit react client and customize it's appearance.
+    - Rest of the website: Static CSS / HTML / JS
+    - New Chat / Memories / Document / Chat pages backend interactions & Database dependant data such as showing memories and documents lists.
+        @ASK-RESEARCHER: can headless chainlit and other straight forward tools handle them without having to write Fast API?
+
+## Implementation progression proposal:
+    ### Agentic Loops:
+        1. Planning loop:
+        ... Planner -> Oracle -> Planner -> Oracle ...
+            - Until the plan has no obvious flaws, if oracle uncovers some problems that pose architecture decisions, ask user for feedback before continuint the loop.
+        2. Implementation loop:
+        ... (... Worker -> Reviewer -> Worker -> Reviewer ...) -> Oracle ...
+            - Worker / reviewer implement the plan, when the implementation is finished, oracle assess the situation and compares to original plans, defines required reworks, decides whether another planning loop is required or whether the fixes are simple enough to be fixed in a single pass. Repeats evaluation until there are no problems.
+
+    ### Proposal:
+    0.A. Scaffold first: npm create vite@latest braemon -- --template react + install @chainlit/react-client + react-router-dom + configure Vite proxy to Chainlit port 8000
+        - Make sure user confirms it works before proceeding further.
+
+
+    1.A. Create the HTML / CSS / JS / React webpage, no Chat feature so far, just visuals based on the provided Google Stitch design through it's MCP. Make sure to isolate all CSS used through prefix (--breamon-*)
+        - User must verify quality.
+
+    1.B. Create the dumbest possible most minimalistic and simple chat window page, install the required npm packages, try to hook part (the chat interface) of the current back-end into this minimal page.
+        - User must verify functionality.
+
+    2. Take the created visuals from step 1.A. and stitch the chainlit inside since we've confirmed in step 1.B the process works no problem this should be relatively simple.
+
+    3. Connect the remaining functionalities outside of the chat itself - other page features, memories, documents, etc.
+
+    4. Production build: Document where dist/ gets served (Chainlit's public/ dir or separate port). Write complete UI documentation into @.design/UI/documentation.md - explain the tools utilized, how things connect together and through what practices and tools, how to operate and adjust the app correctly without breaking anything.
+
+
+    Notes: 1.A and 1.B must share the same project from Step 0. If you build them independently and merge in Phase 2, it's a headache. If they share a project, Phase 2 is just "drop the Chat component into the Braemon layout."
+
+TODO:
+- IDENTIFY WHAT'S MISSING / DIVERGING FROM THE ORIGINAL DESIGN / PLAN.
+- REDESIGN THE CHAT PAGE TO LOOK LIKE THE SOURCE
+- DEBUG BECAUSE IT'S SHIT
+- CONNECT MEMORIES AND REAL BACKEND, VERIFY EVERYTHING WORKS.
