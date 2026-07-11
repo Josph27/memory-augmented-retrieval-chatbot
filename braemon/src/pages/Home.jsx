@@ -23,17 +23,13 @@ const chats = [
 
 function Home() {
 	return (
-		<div className="px-margin py-xl max-w-7xl mx-auto flex flex-col gap-xl">
+		<div className="px-margin py-lg max-w-7xl mx-auto flex flex-col gap-lg lg:h-[calc(100vh-3rem)] lg:overflow-hidden">
 			{/* Hero */}
-			<div className="flex flex-col items-center justify-center gap-md text-center max-w-3xl mx-auto py-lg">
+			<div className="flex flex-col items-center justify-center gap-md text-center max-w-3xl mx-auto py-sm shrink-0">
 				<header className="space-y-sm">
 					<h1 className="font-display text-display text-on-surface">
 						Technical Retrieval Workspace
 					</h1>
-					<p className="font-body-lg text-body-lg text-on-surface-variant">
-						Secure, high-density environment for navigating system architecture,
-						query logs, and contextual memory threads.
-					</p>
 				</header>
 				<div className="mt-md">
 					<Link
@@ -48,11 +44,11 @@ function Home() {
 			</div>
 
 			{/* Bottom Section: Two Columns */}
-			<div className="grid grid-cols-1 lg:grid-cols-12 gap-xl mt-md">
+			<div className="grid grid-cols-1 lg:grid-cols-12 gap-lg flex-1 min-h-0">
 				{/* Left: Continue Chat */}
-				<div className="lg:col-span-8 flex flex-col gap-md">
-					<div className="glass-panel p-lg rounded-lg flex flex-col gap-md h-[500px]">
-						<div className="flex items-center justify-between border-b border-outline-variant/20 pb-sm">
+				<div className="lg:col-span-8 flex flex-col gap-md min-h-0">
+					<div className="glass-panel p-lg rounded-lg flex flex-col gap-md flex-1 min-h-0">
+						<div className="flex items-center justify-between border-b border-outline-variant/20 pb-sm shrink-0">
 							<h3 className="font-label-md text-label-md text-on-surface uppercase tracking-wider flex items-center gap-2">
 								<span className="material-symbols-outlined text-on-surface-variant text-sm">
 									history
@@ -63,7 +59,7 @@ function Home() {
 								Last 30 Days
 							</span>
 						</div>
-						<ul className="space-y-sm font-body-sm text-body-sm text-on-surface-variant overflow-y-auto custom-scrollbar pr-2 flex-1">
+						<ul className="space-y-sm font-body-sm text-body-sm text-on-surface-variant overflow-y-auto custom-scrollbar pr-2 flex-1 min-h-0">
 							{chats.map((chat, i) => {
 								const activeStyle = chat.active
 									? "border-l-2 border-almond-silk"
@@ -71,12 +67,13 @@ function Home() {
 										? "border-l-2 border-outline-variant"
 										: "border-l-2 border-lilac-ash";
 								return (
-									<li
+									<Link
 										key={i}
-										className={`flex items-center gap-sm ${activeStyle} pl-sm py-xs hover:bg-surface-container transition-colors cursor-pointer rounded-r`}
+										to="/chat"
+										className={`flex items-center gap-sm ${activeStyle} pl-sm py-xs hover:bg-surface-container transition-colors rounded-r no-underline text-on-surface-variant`}
 									>
 										<span className="truncate">{chat.label}</span>
-									</li>
+									</Link>
 								);
 							})}
 						</ul>

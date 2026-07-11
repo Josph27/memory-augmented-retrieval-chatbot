@@ -52,24 +52,6 @@ function Layout() {
 			<main className="flex-1 mt-12 w-full">
 				<Outlet />
 			</main>
-
-			{/* Bottom Status Bar */}
-			<footer className="fixed bottom-0 w-full h-8 bg-surface-container-lowest border-t border-outline-variant/20 flex items-center px-margin justify-between font-label-sm text-label-sm text-on-surface-variant z-50">
-				<div className="flex items-center gap-md">
-					<span className="flex items-center gap-xs">
-						<span
-							className="material-symbols-outlined"
-							style={{ fontSize: 14 }}
-						>
-							terminal
-						</span>
-						Daemon Running
-					</span>
-					<span className="text-outline">|</span>
-					<span>v2.4.1</span>
-				</div>
-				<div>Sync: Complete</div>
-			</footer>
 		</div>
 	);
 }

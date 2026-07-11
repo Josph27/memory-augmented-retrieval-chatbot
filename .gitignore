@@ -2,6 +2,7 @@
 **/.pi-subagents/
 **/.agent
 **.mcp.json
+**/.pi/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

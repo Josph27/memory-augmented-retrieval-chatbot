@@ -1,5 +1,9 @@
 @import "tailwindcss";
 
+html, body {
+  overscroll-behavior: none;
+}
+
 @theme {
   /* === Braemon Colors — from Stitch Design System === */
   --color-on-secondary-fixed: #161a32;
