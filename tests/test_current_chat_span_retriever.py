@@ -121,9 +121,7 @@ def test_exact_quote_comes_from_raw_current_chat_messages(
 
     assert len(candidates) == 1
     assert candidates[0].source == "current_chat_span"
-    assert candidates[0].content == (
-        "user: Ship slowly, measure twice, and preserve rollback."
-    )
+    assert candidates[0].content == ("user: Ship slowly, measure twice, and preserve rollback.")
     assert candidates[0].source_message_ids == [exact_id]
     assert candidates[0].metadata["span_kind"] == "current_chat_exact_raw"
     assert "gist" not in candidates[0].metadata["retrieval_mode"]
@@ -169,19 +167,26 @@ def test_current_user_query_is_excluded_from_span_and_context(
     )
     candidates = span_dispatcher(database).retrieve("chat", route_plan)
 
-    packet = ContextManagerAgent().build_context_packet(
-        system_prompt="Use exact evidence.",
-        latest_user_message={"role": "user", "content": query},
-        ranked_candidates=candidates,
-        route_plan=route_plan,
-    ).context_packet
+    packet = (
+        ContextManagerAgent()
+        .build_context_packet(
+            system_prompt="Use exact evidence.",
+            latest_user_message={"role": "user", "content": query},
+            ranked_candidates=candidates,
+            route_plan=route_plan,
+        )
+        .context_packet
+    )
 
     assert all(current_id not in candidate.source_message_ids for candidate in candidates)
     assert all(query not in candidate.content for candidate in candidates)
-    assert sum(
-        message["role"] == "user" and message["content"] == query
-        for message in packet.model_messages
-    ) == 1
+    assert (
+        sum(
+            message["role"] == "user" and query in message["content"]
+            for message in packet.model_messages
+        )
+        == 1
+    )
 
 
 def test_span_expands_around_hit_in_chronological_order(tmp_path: Path) -> None:
@@ -259,11 +264,7 @@ def test_current_chat_span_is_disabled_by_default_but_works_when_enabled(
         enabled_span_plan(query, filters={"window_messages": 0}),
     )
 
-    source = next(
-        source
-        for source in default_plan.sources
-        if source.source == "current_chat_span"
-    )
+    source = next(source for source in default_plan.sources if source.source == "current_chat_span")
     assert source.enabled is False
     assert default_candidates == []
     assert len(enabled_candidates) == 1
@@ -304,19 +305,19 @@ def test_oversized_span_is_dropped_without_exceeding_context_budget(
 
     assert len(candidates) == 1
     assert all(
-        candidate.source != "current_chat_span"
-        for candidate in result.context_packet.candidates
+        candidate.source != "current_chat_span" for candidate in result.context_packet.candidates
     )
     assert any(
-        item["source"] == "current_chat_span"
-        and item["reason"] == "global_budget_exceeded"
+        item["source"] == "current_chat_span" and item["reason"] == "global_budget_exceeded"
         for item in result.context_packet.metadata["dropped_candidates"]
     )
-    assert result.context_packet.metadata["selected_memory_tokens"] <= (
-        result.context_packet.metadata["working_memory_budget"]
+    assert (
+        result.context_packet.metadata["selected_memory_tokens"]
+        <= (result.context_packet.metadata["working_memory_budget"])
     )
-    assert result.context_packet.metadata["final_prompt_tokens"] <= (
-        result.context_packet.metadata["hard_input_budget"]
+    assert (
+        result.context_packet.metadata["final_prompt_tokens"]
+        <= (result.context_packet.metadata["hard_input_budget"])
     )
     assert sum(result.context_budget.source_token_budgets.values()) <= int(
         result.context_budget.metadata["allocatable_tokens"]

@@ -148,13 +148,18 @@ async def on_message(message: cl.Message) -> None:
         return
 
     orchestration_mode = current_orchestration_mode()
-    result = chat_service.handle_user_turn(
-        chat_id=chat_id,
-        content=content,
-        orchestration_mode=orchestration_mode,
-        task_context=("document_qa" if upload_result.ready_document_ids else None),
-        persisted_user_message_id=persisted_user_message_id,
-        defer_post_answer_memory_update=True,
+    import asyncio as _asyncio
+
+    loop = _asyncio.get_event_loop()
+    result = await loop.run_in_executor(
+        None,
+        chat_service.handle_user_turn,
+        chat_id,
+        content,
+        orchestration_mode,
+        ("document_qa" if upload_result.ready_document_ids else None),
+        persisted_user_message_id,
+        True,  # defer_post_answer_memory_update
     )
     if demo_memory_trace_enabled():
         retrieved_trace = format_retrieved_memories_markdown(retrieved_memory_rows(result))

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+
 from openai import OpenAI
 
 from src.config import AppConfig
@@ -17,6 +19,7 @@ class ModelWrapper:
         self.client = OpenAI(
             api_key=config.openai_api_key,
             base_url=config.openai_base_url,
+            timeout=float(os.environ.get("MODEL_REQUEST_TIMEOUT", "120")),
         )
 
     def chat(

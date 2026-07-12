@@ -54,6 +54,7 @@ def validate_model_messages(
     if first.get("role") != "system" or not first.get("content", "").strip():
         return "system_prompt_missing"
 
+    latest_user_content = latest_user_message.get("content", "")
     latest_count = 0
     for message in messages:
         role = message.get("role")
@@ -62,9 +63,13 @@ def validate_model_messages(
             return "invalid_message_role"
         if not isinstance(content, str) or not content.strip():
             return "empty_message_content"
-        if (
-            role == latest_user_message.get("role")
-            and content == latest_user_message.get("content")
+        if role == latest_user_message.get("role") and (
+            content == latest_user_content
+            or (
+                latest_user_content
+                and latest_user_content in content
+                and len(latest_user_content) < len(content)
+            )
         ):
             latest_count += 1
 
@@ -74,9 +79,14 @@ def validate_model_messages(
         return "latest_user_message_duplicated"
 
     last = messages[-1]
-    if (
-        last.get("role") != latest_user_message.get("role")
-        or last.get("content") != latest_user_message.get("content")
+    last_content = last.get("content", "")
+    if last.get("role") != latest_user_message.get("role") or (
+        last_content != latest_user_content
+        and not (
+            latest_user_content
+            and latest_user_content in last_content
+            and len(latest_user_content) < len(last_content)
+        )
     ):
         return "latest_user_message_not_final"
 

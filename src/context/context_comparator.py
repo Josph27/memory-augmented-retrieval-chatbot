@@ -89,10 +89,8 @@ class ContextComparator:
             estimated_tokens=shape.estimated_tokens,
             message_count=shape.message_count,
             section_order=shape.section_order,
-            has_structured_memory=shape.has_structured_memory
-            or bool(packet.structured_memory),
-            has_recent_messages=shape.has_recent_messages
-            or bool(packet.recent_message_ids),
+            has_structured_memory=shape.has_structured_memory or bool(packet.structured_memory),
+            has_recent_messages=shape.has_recent_messages or bool(packet.recent_message_ids),
             has_latest_user_message=shape.has_latest_user_message,
         )
 
@@ -138,9 +136,7 @@ class ContextComparator:
         if old_shape.has_structured_memory and not new_shape.has_structured_memory:
             warnings.append("missing_structured_memory")
 
-        absolute_difference = abs(
-            new_shape.estimated_tokens - old_shape.estimated_tokens
-        )
+        absolute_difference = abs(new_shape.estimated_tokens - old_shape.estimated_tokens)
         if (
             token_difference_ratio >= TOKEN_DIFFERENCE_RATIO_WARNING
             and absolute_difference >= TOKEN_DIFFERENCE_ABSOLUTE_WARNING
@@ -154,11 +150,17 @@ def latest_message_index(
     latest_user_message: dict[str, str],
 ) -> int | None:
     """Return the index of the latest user message, preferring the final match."""
+    latest_content = latest_user_message.get("content", "")
     for index in range(len(messages) - 1, -1, -1):
         message = messages[index]
-        if (
-            message.get("role") == latest_user_message.get("role")
-            and message.get("content") == latest_user_message.get("content")
+        msg_content = message.get("content", "")
+        if message.get("role") == latest_user_message.get("role") and (
+            msg_content == latest_content
+            or (
+                latest_content
+                and latest_content in msg_content
+                and len(latest_content) < len(msg_content)
+            )
         ):
             return index
     return None
@@ -177,9 +179,7 @@ def classify_message_section(
     role = message.get("role", "")
     if index == 0 and role == "system":
         return "system"
-    if content.startswith("Current structured memory:") or content.startswith(
-        "Structured Memory:"
-    ):
+    if content.startswith("Current structured memory:") or content.startswith("Structured Memory:"):
         return "structured_memory"
     if content.startswith(
         (
