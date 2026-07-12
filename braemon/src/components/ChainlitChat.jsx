@@ -14,24 +14,9 @@ import { v4 as uuidv4 } from "uuid";
 function Message({ msg }) {
 	const isUser = msg.type === "user_message";
 	return (
-		<div className="w-full max-w-4xl mx-auto flex flex-col">
-			<div className="text-label-sm text-on-surface-variant mb-1 flex items-center gap-xs">
-				{isUser ? (
-					<>
-						USER_CMD{" "}
-						<span className="material-symbols-outlined text-[14px]">
-							person
-						</span>
-					</>
-				) : (
-					<>
-						<span className="material-symbols-outlined text-[14px]">
-							smart_toy
-						</span>{" "}
-						@RETRIEVAL_AGENT
-					</>
-				)}
-			</div>
+		<div
+			className={`w-full max-w-4xl mx-auto flex flex-col ${isUser ? "translate-x-[20px]" : "-translate-x-[20px]"}`}
+		>
 			<div
 				className={
 					isUser
@@ -207,7 +192,10 @@ export default function ChainlitChat({ chatId }) {
 	const flatMessages = [];
 	const flatten = (msgs) => {
 		msgs.forEach((m) => {
-			flatMessages.push(m);
+			// Skip empty step messages and streaming fragments with no output
+			if (!m.steps && (m.output || m.elements?.length > 0)) {
+				flatMessages.push(m);
+			}
 			if (m.steps) flatten(m.steps);
 		});
 	};
