@@ -82,7 +82,9 @@ class SQLiteChainlitDataLayer(BaseDataLayer):
         )
 
     async def get_thread(self, thread_id: str) -> ThreadDict | None:
+        print(f"GET THREAD CALLED WITH {thread_id}", flush=True)
         chat = self.database.get_chat(thread_id)
+        print(f"GET THREAD RETURNED {chat.id if chat else None}", flush=True)
         if chat is None:
             return None
         messages = self.database.messages_for_chat(thread_id)

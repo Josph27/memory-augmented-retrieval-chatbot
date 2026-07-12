@@ -13,6 +13,8 @@ export default defineConfig({
 			"/project": { target: "http://localhost:8000" },
 			"/login": { target: "http://localhost:8000" },
 			"/logout": { target: "http://localhost:8000" },
+			"/user": { target: "http://localhost:8000" },
+			"/mcp": { target: "http://localhost:8000" },
 		},
 	},
 });

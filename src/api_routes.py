@@ -71,6 +71,20 @@ def register_api_routes(database: Database, chat_service_getter: Any) -> None:
         except Exception as e:
             return {"error": str(e)}, 500
 
+    @app.post("/api/chats/{chat_id}/fork")
+    async def fork_chat(chat_id: str):
+        try:
+            chat = get_db().get_chat(chat_id)
+            if not chat:
+                return {"error": "not found"}, 404
+            import uuid
+
+            new_chat_id = str(uuid.uuid4())
+            get_db().fork_chat(chat_id, new_chat_id)
+            return {"chat_id": new_chat_id}
+        except Exception as e:
+            return {"error": str(e)}, 500
+
     @app.post("/api/chats/{chat_id}/end")
     async def end_chat(chat_id: str):
         try:

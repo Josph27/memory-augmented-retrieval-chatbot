@@ -23,6 +23,12 @@ export async function createChat() {
 	return res.json();
 }
 
+export async function forkChat(chatId) {
+    const res = await fetch(`${BASE}/chats/${chatId}/fork`, { method: "POST" });
+    if (!res.ok) throw new Error(`Failed to fork chat: ${res.status}`);
+    return res.json();
+}
+
 export async function endChat(chatId) {
 	const res = await fetch(`${BASE}/chats/${chatId}/end`, { method: "POST" });
 	if (!res.ok) throw new Error(`Failed to end chat: ${res.status}`);

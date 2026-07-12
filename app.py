@@ -95,6 +95,7 @@ async def on_chat_resume(thread: dict) -> None:
 @cl.on_message
 async def on_message(message: cl.Message) -> None:
     """Handle one browser chat message."""
+    print(f"ON_MESSAGE RECEIVED: {message.content!r}", flush=True)
     chat_id = cl.user_session.get("chat_id")
     if chat_id and not database.is_chat_active(str(chat_id)):
         cl.user_session.set("chat_ended", True)

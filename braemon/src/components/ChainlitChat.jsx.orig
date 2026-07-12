@@ -4,12 +4,9 @@ import {
 	useChatMessages,
 	useChatInteract,
 	useChatData,
-	sessionIdState,
 } from "@chainlit/react-client";
-import { useRecoilState } from "recoil";
 import { createChat, endChat, forkChat } from "../api";
 import { useNavigate } from "react-router-dom";
-import { v4 as uuidv4 } from "uuid";
 
 function Message({ msg }) {
 	const isUser = msg.type === "user_message";
@@ -52,11 +49,9 @@ function Message({ msg }) {
 
 export default function ChainlitChat({ chatId }) {
 	const { setIdToResume, sendMessage } = useChatInteract();
-	const { connect, disconnect, idToResume } = useChatSession();
+	const { connect, idToResume } = useChatSession();
 	const { messages } = useChatMessages();
 	const { loading, connected } = useChatData();
-	const [sessionId, setSessionId] = useRecoilState(sessionIdState);
-	const [targetSessionId] = useState(() => uuidv4());
 	const [input, setInput] = useState("");
 	const scrollRef = useRef(null);
 	const hasConnected = useRef(false);
@@ -65,43 +60,15 @@ export default function ChainlitChat({ chatId }) {
 	useEffect(() => {
 		if (hasConnected.current) return;
 
-		let pendingUpdate = false;
-
-		if (sessionId !== targetSessionId) {
-			setSessionId(targetSessionId);
-			pendingUpdate = true;
-		}
-
+		// If we need to resume a chat, wait until Recoil state has updated
 		if (chatId && idToResume !== chatId) {
 			setIdToResume(chatId);
-			pendingUpdate = true;
+			return; // Wait for next render where idToResume === chatId
 		}
-		if (!chatId && idToResume) {
-			setIdToResume(undefined);
-			pendingUpdate = true;
-		}
-
-		if (pendingUpdate) return; // Wait for Recoil state to sync
 
 		hasConnected.current = true;
 		connect({ userEnv: {} });
-
-		return () => {
-			if (connect && typeof connect.cancel === "function") {
-				connect.cancel();
-			}
-			disconnect();
-		};
-	}, [
-		chatId,
-		idToResume,
-		setIdToResume,
-		connect,
-		disconnect,
-		sessionId,
-		targetSessionId,
-		setSessionId,
-	]);
+	}, [chatId, setIdToResume, connect]);
 
 	useEffect(() => {
 		if (scrollRef.current) {
@@ -148,15 +115,6 @@ export default function ChainlitChat({ chatId }) {
 		}
 	};
 
-	const flatMessages = [];
-	const flatten = (msgs) => {
-		msgs.forEach((m) => {
-			flatMessages.push(m);
-			if (m.steps) flatten(m.steps);
-		});
-	};
-	flatten(messages);
-
 	return (
 		<div className="flex flex-col h-full bg-background w-full">
 			{/* Messages Area */}
@@ -170,7 +128,7 @@ export default function ChainlitChat({ chatId }) {
 						Connecting to chat server...
 					</div>
 				)}
-				{flatMessages.map((msg) => (
+				{messages.map((msg) => (
 					<Message key={msg.id} msg={msg} />
 				))}
 				{loading && (

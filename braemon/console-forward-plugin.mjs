@@ -3,6 +3,9 @@
  * Records all console.log/warn/error + uncaught exceptions.
  */
 
+import fs from "node:fs";
+import path from "node:path";
+
 const VIRTUAL_ID = "virtual:console-forward";
 const RESOLVED_ID = "\0" + VIRTUAL_ID;
 
@@ -14,6 +17,9 @@ function consoleForwardPlugin() {
 		apply: "serve",
 		configResolved(config) {
 			viteConfig = config;
+			const logDir = path.resolve(process.cwd(), "../logs");
+			const logFile = path.join(logDir, "browser.log");
+			if (!fs.existsSync(logDir)) fs.mkdirSync(logDir, { recursive: true });
 		},
 
 		resolveId(id) {
@@ -110,6 +116,20 @@ function consoleForwardPlugin() {
 									debug: "\x1b[35m", // magenta
 								}[e.level] || "\x1b[37m";
 							const reset = "\x1b[0m";
+							const message = e.args.join(" ");
+							const logFile = path.resolve(
+								process.cwd(),
+								"../logs/browser.log",
+							);
+							fs.promises
+								.appendFile(
+									logFile,
+									`[${e.time}] [browser ${e.level}] ${message}\n`,
+									"utf-8",
+								)
+								.catch((err) =>
+									console.error("Failed to write to browser.log", err),
+								);
 							console.log(
 								`${label}[browser ${e.level}]${reset}`,
 								e.args.join(" "),

@@ -1,0 +1,22 @@
+--- braemon/src/components/ChainlitChat.jsx
++++ braemon/src/components/ChainlitChat.jsx
+@@ -39,12 +39,18 @@
+ 		if (chatId && idToResume !== chatId) {
+ 			setIdToResume(chatId);
+ 			return; // Wait for next render where idToResume === chatId
+ 		}
+ 
+ 		hasConnected.current = true;
+ 		connect({ userEnv: {} });
+-	}, [chatId, setIdToResume, connect]);
++
++		return () => {
++			if (connect && typeof connect.cancel === 'function') {
++				connect.cancel();
++			}
++		};
++	}, [chatId, idToResume, setIdToResume, connect]);
+ 
+ 	useEffect(() => {
+ 		if (scrollRef.current) {
+ 
