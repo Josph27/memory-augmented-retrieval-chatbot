@@ -1,10 +1,14 @@
-import { useState, useEffect } from "react";
-import { fetchDocuments } from "../api";
+import { useState, useEffect, useRef, useCallback } from "react";
+import { fetchDocuments, uploadDocumentFile } from "../api";
 
 function Documents() {
 	const [docs, setDocs] = useState([]);
 	const [loading, setLoading] = useState(true);
 	const [error, setError] = useState(null);
+	const [uploading, setUploading] = useState(false);
+	const [uploadProgress, setUploadProgress] = useState(0);
+	const [uploadError, setUploadError] = useState(null);
+	const fileInputRef = useRef(null);
 
 	useEffect(() => {
 		fetchDocuments()
@@ -18,6 +22,33 @@ function Documents() {
 				setLoading(false);
 			});
 	}, []);
+
+	const loadDocuments = useCallback(() => {
+		fetchDocuments()
+			.then(setDocs)
+			.catch((err) => console.error(err));
+	}, []);
+
+	const handleUpload = useCallback(
+		async (e) => {
+			const file = e.target.files?.[0];
+			if (!file) return;
+			setUploading(true);
+			setUploadProgress(0);
+			setUploadError(null);
+			try {
+				await uploadDocumentFile(file, setUploadProgress);
+				setUploading(false);
+				loadDocuments();
+			} catch (err) {
+				setUploadError(err?.message || "Upload failed");
+				setUploading(false);
+			}
+			// Reset input for re-selection
+			if (fileInputRef.current) fileInputRef.current.value = "";
+		},
+		[loadDocuments],
+	);
 
 	const formatDate = (ds) => {
 		if (!ds) return "";
@@ -48,14 +79,33 @@ function Documents() {
 							type="text"
 						/>
 					</div>
-					<button className="bg-primary text-on-primary font-label-md text-label-md px-lg py-sm rounded hover:opacity-90 transition-opacity flex items-center gap-xs whitespace-nowrap">
+					<input
+						type="file"
+						ref={fileInputRef}
+						style={{ display: "none" }}
+						onChange={handleUpload}
+					/>
+					<button
+						onClick={() => fileInputRef.current?.click()}
+						disabled={uploading}
+						className="bg-primary text-on-primary font-label-md text-label-md px-lg py-sm rounded hover:opacity-90 transition-opacity flex items-center gap-xs whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed"
+					>
 						<span className="material-symbols-outlined text-[18px]">
-							upload
+							{uploading ? "hourglass_top" : "upload"}
 						</span>
-						Upload Documents
+						{uploading
+							? `Uploading ${Math.round(uploadProgress)}%`
+							: "Upload Documents"}
 					</button>
 				</div>
 			</div>
+
+			{/* Upload error */}
+			{uploadError && (
+				<div className="mb-lg bg-error/10 border border-error/30 rounded py-sm px-md text-error text-body-sm">
+					{uploadError}
+				</div>
+			)}
 
 			{/* Quick Stats */}
 			<div className="mb-xl bg-secondary-container rounded py-sm px-md flex items-center">

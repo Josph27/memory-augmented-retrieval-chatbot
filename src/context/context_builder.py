@@ -67,9 +67,7 @@ class ContextBuilder:
     ) -> ContextPacket:
         """Build a budget-aware ContextPacket without affecting the model call."""
         candidates_to_pack = (
-            preselected_candidates
-            if preselected_candidates is not None
-            else ranked_candidates
+            preselected_candidates if preselected_candidates is not None else ranked_candidates
         )
         grouped = group_candidates_by_source(candidates_to_pack)
         selected_by_source: dict[str, SelectedContext] = {}
@@ -143,9 +141,7 @@ class ContextBuilder:
         )
         estimated_tokens = token_accounting["total_prompt_tokens"]
         dropped_candidate_ids = [
-            item["record_id"]
-            for item in dropped_candidates
-            if item.get("record_id") is not None
+            item["record_id"] for item in dropped_candidates if item.get("record_id") is not None
         ]
         return ContextPacket(
             chat_id=first_chat_id(ranked_candidates),
@@ -172,20 +168,14 @@ class ContextBuilder:
                 "model_id": context_budget.metadata.get("model_id"),
                 "tokenizer_id": token_accounting["tokenizer_id"],
                 "tokenizer_mode": token_accounting["tokenizer_mode"],
-                "native_context_window": context_budget.metadata.get(
-                    "native_context_window"
-                ),
+                "native_context_window": context_budget.metadata.get("native_context_window"),
                 "sliding_window": context_budget.metadata.get("sliding_window"),
-                "endpoint_context_window": context_budget.metadata.get(
-                    "endpoint_context_window"
-                ),
+                "endpoint_context_window": context_budget.metadata.get("endpoint_context_window"),
                 "endpoint_limit_verified": context_budget.metadata.get(
                     "endpoint_limit_verified",
                     False,
                 ),
-                "application_context_cap": context_budget.metadata.get(
-                    "application_context_cap"
-                ),
+                "application_context_cap": context_budget.metadata.get("application_context_cap"),
                 "effective_context_window": token_accounting["context_limit"],
                 "output_reserve": token_accounting["answer_reserve"],
                 "system_tokens": token_accounting["system_tokens"],
@@ -193,9 +183,7 @@ class ContextBuilder:
                 "memory_tokens": token_accounting["memory_tokens"],
                 "final_prompt_tokens": token_accounting["total_prompt_tokens"],
                 "limit_source": context_budget.metadata.get("limit_source"),
-                "effective_limit_source": context_budget.metadata.get(
-                    "effective_limit_source"
-                ),
+                "effective_limit_source": context_budget.metadata.get("effective_limit_source"),
                 "fallback_reason": token_accounting["fallback_reason"],
                 "context_limit": token_accounting["context_limit"],
                 "answer_reserve": token_accounting["answer_reserve"],
@@ -204,8 +192,7 @@ class ContextBuilder:
                 "overflow_tokens": token_accounting["overflow_tokens"],
                 "token_accounting": token_accounting,
                 "source_token_usage": {
-                    source: selected.used_tokens
-                    for source, selected in selected_by_source.items()
+                    source: selected.used_tokens for source, selected in selected_by_source.items()
                 },
                 "dropped_candidates": dropped_candidates,
                 "dropped_candidate_ids": dropped_candidate_ids,
@@ -269,14 +256,22 @@ class ContextBuilder:
         selected_by_source: dict[str, SelectedContext],
         latest_user_message: dict[str, str],
     ) -> list[dict[str, str]]:
-        """Create trace-only model-shaped messages in the target ordering."""
-        messages = [{"role": "system", "content": system_prompt}]
+        """Create trace-only model-shaped messages in the target ordering.
+
+        Qwen 3.5's chat template rejects any system message after the first
+        (chat_template.jinja: raise_exception('System message must be at the
+        beginning.')).  Structured memory is merged into the leading system
+        message; retrieved context (document chunks, gists, raw spans) is
+        prepended to the latest user message with a clear delimiter.
+        """
+        system_content = system_prompt
         structured_memory = format_source_section(
             "structured_memory",
             selected_by_source["structured_memory"].selected,
         )
         if structured_memory:
-            messages.append({"role": "system", "content": structured_memory})
+            system_content = f"{system_prompt}\n\n---\n\n{structured_memory}"
+        messages = [{"role": "system", "content": system_content}]
 
         retrieved_memory = "\n\n".join(
             section
@@ -312,12 +307,21 @@ class ContextBuilder:
             )
             if section
         )
-        if retrieved_memory:
-            messages.append({"role": "system", "content": retrieved_memory})
 
         recent_messages = selected_by_source["recent_messages"].selected
         messages.extend(format_recent_message(candidate) for candidate in recent_messages)
-        messages.append(latest_user_message)
+
+        if retrieved_memory:
+            augmented_user = {
+                **latest_user_message,
+                "content": (
+                    f"[Retrieved Context]\n{retrieved_memory}\n\n"
+                    f"[Question]\n{latest_user_message['content']}"
+                ),
+            }
+            messages.append(augmented_user)
+        else:
+            messages.append(latest_user_message)
         return messages
 
     def drop_non_recent_candidates_for_overflow(
@@ -421,11 +425,7 @@ class ContextBuilder:
         safety_margin = int(context_budget.metadata.get("safety_margin_tokens", 0) or 0)
         context_limit = context_budget.max_tokens or 0
         total_with_reserves = total_prompt_tokens + answer_reserve + safety_margin
-        overflow_tokens = (
-            max(0, total_with_reserves - context_limit)
-            if context_limit > 0
-            else 0
-        )
+        overflow_tokens = max(0, total_with_reserves - context_limit) if context_limit > 0 else 0
         estimator_info = estimator_metadata(self.token_estimator)
         tokenizer_metadata = tokenizer_trace_metadata(self.token_estimator)
         structured_memory_tokens = count_text(
@@ -439,9 +439,7 @@ class ContextBuilder:
             "structured_memory_tokens": structured_memory_tokens,
             "retrieved_memory_tokens": retrieved_memory_tokens,
             "memory_tokens": (
-                structured_memory_tokens
-                + retrieved_memory_tokens
-                + recent_message_tokens
+                structured_memory_tokens + retrieved_memory_tokens + recent_message_tokens
             ),
             "source_memory_tokens": source_memory_tokens,
             "recent_message_tokens": recent_message_tokens,

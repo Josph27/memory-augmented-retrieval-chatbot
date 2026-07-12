@@ -15,6 +15,9 @@ export default defineConfig({
 			"/logout": { target: "http://localhost:8000" },
 			"/user": { target: "http://localhost:8000" },
 			"/mcp": { target: "http://localhost:8000" },
+			"/set-session-cookie": { target: "http://localhost:8000" },
+			"/feedback": { target: "http://localhost:8000" },
+			"/logo": { target: "http://localhost:8000" },
 		},
 	},
 });

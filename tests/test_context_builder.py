@@ -137,8 +137,8 @@ def test_context_builder_orders_structured_before_recent_and_latest_last() -> No
     )
 
     contents = [message["content"] for message in packet.model_messages]
-    assert contents[0] == "system"
-    assert contents[1].startswith("Current structured memory:")
+    assert contents[0].startswith("system")
+    assert "Current structured memory:" in contents[0]
     assert contents[-3:] == ["recent user", "recent assistant", "latest question"]
     assert packet.recent_message_ids == [10, 11]
     assert packet.structured_memory is not None
@@ -179,9 +179,12 @@ def test_context_builder_formats_retrieved_sections_between_structured_and_recen
     )
 
     contents = [message["content"] for message in packet.model_messages]
-    assert contents[1].startswith("Current structured memory:")
-    assert contents[2].startswith("Document Memory:")
-    assert contents[-2:] == ["recent", "latest"]
+    assert "Current structured memory:" in contents[0]
+    assert contents[-2] == "recent"
+    assert "[Retrieved Context]" in contents[-1]
+    assert "Document Memory:" in contents[-1]
+    assert "[Question]" in contents[-1]
+    assert "latest" in contents[-1]
     assert packet.metadata["context_profile"] is None
     assert packet.metadata["section_order"] == [
         "system",
@@ -274,11 +277,10 @@ def test_context_builder_excludes_latest_user_message_from_recent_candidates() -
     contents = [message["content"] for message in packet.model_messages]
     assert contents.count("can you remember my name") == 1
     assert contents[-1] == "can you remember my name"
-    assert contents[1].startswith("Current structured memory:")
+    assert "Current structured memory:" in contents[0]
     assert packet.recent_message_ids == [1]
     assert any(
-        item["record_id"] == "r2"
-        and item["reason"] == "latest_user_message_excluded"
+        item["record_id"] == "r2" and item["reason"] == "latest_user_message_excluded"
         for item in packet.metadata["dropped_candidates"]
     )
 
@@ -548,6 +550,7 @@ def test_context_builder_records_overflow_when_recent_and_latest_still_exceed_li
     assert contents.count("latest must stay final") == 1
     assert packet.metadata["overflow_detected"] is True
     assert packet.metadata["overflow_tokens"] > 0
-    assert packet.metadata["estimated_prompt_tokens"] == packet.metadata[
-        "token_accounting"
-    ]["total_prompt_tokens"]
+    assert (
+        packet.metadata["estimated_prompt_tokens"]
+        == packet.metadata["token_accounting"]["total_prompt_tokens"]
+    )

@@ -55,24 +55,28 @@ class DocumentRegistry:
         self.database = database
 
     def resolve(self, chat_id: str, query: str) -> DocumentResolution:
+        """Resolve which documents are accessible for a query.
+
+        First checks documents specifically associated with this chat.  When
+        no chat-scoped documents are found, falls back to all ready documents
+        across every chat so that uploaded documents are usable everywhere.
+        """
         documents = self.database.documents_for_chat(chat_id)
+        if not documents:
+            documents = self.database.list_all_documents(status="Ready")
         if not documents:
             return DocumentResolution((), (), "no_associated_documents")
 
         normalized = query.casefold()
         explicit = [
-            document
-            for document in documents
-            if filename_mentioned(normalized, document.file_name)
+            document for document in documents if filename_mentioned(normalized, document.file_name)
         ]
         if explicit:
             return self._ready_resolution(explicit, "explicit_filename")
 
         ready = [document for document in documents if document.status == "Ready"]
         pending = [
-            document
-            for document in documents
-            if document.status in {"Uploading", "Indexing"}
+            document for document in documents if document.status in {"Uploading", "Indexing"}
         ]
         if pending and is_implicit_document_reference(normalized):
             names = ", ".join(document.file_name for document in pending)
@@ -89,9 +93,7 @@ class DocumentRegistry:
             return self._ready_resolution(ready, "all_ready_documents")
         failed = [document.file_name for document in documents if document.status == "Failed"]
         if failed:
-            raise DocumentScopeError(
-                "Document indexing failed: " + ", ".join(failed)
-            )
+            raise DocumentScopeError("Document indexing failed: " + ", ".join(failed))
         return DocumentResolution((), (), "no_ready_documents")
 
     @staticmethod
@@ -115,7 +117,10 @@ def filename_mentioned(normalized_query: str, file_name: str) -> bool:
     normalized_name = Path(file_name).name.casefold()
     if not normalized_name:
         return False
-    return re.search(rf"(?<![\w.-]){re.escape(normalized_name)}(?![\w.-])", normalized_query) is not None
+    return (
+        re.search(rf"(?<![\w.-]){re.escape(normalized_name)}(?![\w.-])", normalized_query)
+        is not None
+    )
 
 
 def is_implicit_document_reference(normalized_query: str) -> bool:

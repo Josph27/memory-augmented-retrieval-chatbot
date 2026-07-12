@@ -116,6 +116,52 @@ def register_api_routes(database: Database, chat_service_getter: Any) -> None:
         except Exception as e:
             return {"error": str(e)}, 500
 
+    @app.post("/api/documents/upload")
+    async def upload_document():
+        """Accept a file upload and index it globally (not scoped to a chat)."""
+        from fastapi import UploadFile, File, HTTPException, Request
+
+        request: Request = cl.context.request  # type: ignore[assignment]
+        try:
+            content_type = request.headers.get("content-type", "")
+            if "multipart/form-data" not in content_type:
+                raise HTTPException(status_code=400, detail="Expected multipart/form-data")
+
+            form = await request.form()
+            file: UploadFile | None = form.get("file")  # type: ignore[assignment]
+            if file is None:
+                raise HTTPException(status_code=400, detail="No file provided")
+
+            svc = get_chat_svc()
+            # Read file bytes into a temp location for indexing
+            import tempfile
+
+            suffix = ""
+            if file.filename and "." in file.filename:
+                suffix = file.filename[file.filename.rindex(".") :]
+            with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
+                content = await file.read()
+                tmp.write(content)
+                tmp_path = tmp.name
+
+            result = svc.index_document_file(
+                tmp_path,
+                display_name=file.filename or "uploaded file",
+            )
+            import os
+
+            os.unlink(tmp_path)
+
+            return {
+                "document_id": result.document_id,
+                "file_name": result.file_name,
+                "chunk_count": result.chunk_count,
+            }
+        except HTTPException:
+            raise
+        except Exception as e:
+            return {"error": str(e)}, 500
+
     @app.get("/api/memories")
     async def list_memories(limit: int = 200):
         try:

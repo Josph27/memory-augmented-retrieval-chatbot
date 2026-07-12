@@ -6,7 +6,10 @@ import "./index.css";
 import App from "./App.jsx";
 import ErrorBoundary from "./components/ErrorBoundary.jsx";
 
-const CHAINLIT_URL = "http://localhost:8000";
+const CHAINLIT_URL =
+	typeof window !== "undefined"
+		? window.location.origin
+		: "http://localhost:8000";
 const apiClient = new ChainlitAPI(CHAINLIT_URL, "webapp");
 
 function AuthWrapper({ children }) {

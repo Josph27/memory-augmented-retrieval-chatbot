@@ -24,9 +24,9 @@ export async function createChat() {
 }
 
 export async function forkChat(chatId) {
-    const res = await fetch(`${BASE}/chats/${chatId}/fork`, { method: "POST" });
-    if (!res.ok) throw new Error(`Failed to fork chat: ${res.status}`);
-    return res.json();
+	const res = await fetch(`${BASE}/chats/${chatId}/fork`, { method: "POST" });
+	if (!res.ok) throw new Error(`Failed to fork chat: ${res.status}`);
+	return res.json();
 }
 
 export async function endChat(chatId) {
@@ -43,6 +43,38 @@ export async function fetchDocuments({ status } = {}) {
 	const res = await fetch(url);
 	if (!res.ok) throw new Error(`Failed to fetch documents: ${res.status}`);
 	return res.json();
+}
+
+export async function uploadDocumentFile(file, onProgress) {
+	const formData = new FormData();
+	formData.append("file", file);
+
+	return new Promise((resolve, reject) => {
+		const xhr = new XMLHttpRequest();
+		xhr.open("POST", `${BASE}/documents/upload`);
+		xhr.withCredentials = true;
+
+		xhr.upload.onprogress = (e) => {
+			if (e.lengthComputable && onProgress) {
+				onProgress((e.loaded / e.total) * 100);
+			}
+		};
+
+		xhr.onload = () => {
+			if (xhr.status >= 200 && xhr.status < 300) {
+				try {
+					resolve(JSON.parse(xhr.responseText));
+				} catch (e) {
+					reject(new Error("Invalid response"));
+				}
+			} else {
+				reject(new Error(`Upload failed: ${xhr.status}`));
+			}
+		};
+
+		xhr.onerror = () => reject(new Error("Network error"));
+		xhr.send(formData);
+	});
 }
 
 export async function fetchMemories() {

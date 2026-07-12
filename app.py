@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+from pathlib import Path
 from types import SimpleNamespace
 from typing import NamedTuple
 
@@ -26,6 +27,14 @@ from src.orchestration.demo_orchestration import (
     normalize_orchestration_mode,
 )
 from src.retrieval.langchain_chroma_retriever import LangChainChromaUnavailable
+
+
+# Chainlit creates .files/ at import time via config.py:61, but that only
+# runs mkdir(exist_ok=True) without parents=True. If the process CWD or
+# sandbox state causes that import to miss, uploads crash with
+# FileNotFoundError. Ensure the directory exists eagerly.
+FILES_DIR = Path(".files")
+FILES_DIR.mkdir(parents=True, exist_ok=True)
 
 
 # Chainlit only exposes persisted thread history to authenticated users.

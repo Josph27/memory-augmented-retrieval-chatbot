@@ -57,7 +57,21 @@ function Layout() {
 						</NavLink>
 					))}
 				</div>
-				<div className="ml-auto" />
+				<div className="ml-auto flex items-center gap-xs">
+					<NavLink
+						to="/diagnostics"
+						className={({ isActive }) =>
+							isActive
+								? "text-primary font-bold border-b-2 border-primary h-full flex items-center pb-0 cursor-pointer active:opacity-80"
+								: "text-on-surface-variant font-medium hover:text-on-surface transition-colors hover:bg-surface-container-high h-full flex items-center px-sm rounded-sm cursor-pointer active:opacity-80"
+						}
+					>
+						<span className="material-symbols-outlined text-[14px] mr-1">
+							bug_report
+						</span>
+						Debug
+					</NavLink>
+				</div>
 			</nav>
 
 			{/* Main Content */}

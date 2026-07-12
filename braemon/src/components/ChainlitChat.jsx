@@ -44,20 +44,37 @@ function Message({ msg }) {
 				>
 					{msg.output}
 				</p>
-				{/* Defer docs UI until we map Chainlit elements to msg.docs */}
+				{msg.elements && msg.elements.length > 0 && (
+					<div className="mt-sm pt-sm border-t border-outline-variant/20 flex flex-wrap gap-sm">
+						{msg.elements.map((doc, j) => (
+							<span
+								key={doc.id || j}
+								className="bg-surface-container-high text-on-surface-variant px-sm py-1 rounded text-label-sm border border-outline-variant/30 flex items-center gap-1"
+								title={doc.name}
+							>
+								<span className="material-symbols-outlined text-[12px]">
+									{doc.name?.endsWith(".pdf") ? "description" : "draft"}
+								</span>
+								{doc.name}
+							</span>
+						))}
+					</div>
+				)}
 			</div>
 		</div>
 	);
 }
 
 export default function ChainlitChat({ chatId }) {
-	const { setIdToResume, sendMessage } = useChatInteract();
+	const { setIdToResume, sendMessage, uploadFile } = useChatInteract();
 	const { connect, disconnect, idToResume } = useChatSession();
 	const { messages } = useChatMessages();
 	const { loading, connected } = useChatData();
 	const [sessionId, setSessionId] = useRecoilState(sessionIdState);
 	const [targetSessionId] = useState(() => uuidv4());
 	const [input, setInput] = useState("");
+	const [attachedFile, setAttachedFile] = useState(null);
+	const fileInputRef = useRef(null);
 	const scrollRef = useRef(null);
 	const hasConnected = useRef(false);
 	const navigate = useNavigate();
@@ -111,9 +128,48 @@ export default function ChainlitChat({ chatId }) {
 
 	const handleSend = () => {
 		const text = input.trim();
-		if (!text) return;
-		sendMessage({ type: "user_message", output: text, name: "user" });
+		// Block if file is still uploading
+		if (attachedFile && !attachedFile.fileRef && !attachedFile.error) return;
+
+		if (!text && !attachedFile?.fileRef) return;
+
+		const fileRefs = attachedFile?.fileRef ? [attachedFile.fileRef] : [];
+		sendMessage(
+			{ type: "user_message", output: text || "", name: "user" },
+			fileRefs,
+		);
+
 		setInput("");
+		setAttachedFile(null);
+	};
+
+	const handleFileChange = (e) => {
+		const file = e.target.files?.[0];
+		if (!file) return;
+
+		setAttachedFile({ file, progress: 0, fileRef: null, error: null });
+
+		const { promise } = uploadFile(file, (progress) => {
+			setAttachedFile((prev) => (prev ? { ...prev, progress } : null));
+		});
+
+		promise
+			.then((fileRef) => {
+				setAttachedFile((prev) =>
+					prev ? { ...prev, fileRef, progress: 100 } : null,
+				);
+			})
+			.catch((error) => {
+				console.error("Upload failed:", error?.message || error);
+				setAttachedFile((prev) =>
+					prev ? { ...prev, error: "Upload failed" } : null,
+				);
+			});
+
+		// Reset input to allow re-selecting the same file
+		if (fileInputRef.current) {
+			fileInputRef.current.value = "";
+		}
 	};
 
 	const handleNewChat = async () => {
@@ -195,15 +251,21 @@ export default function ChainlitChat({ chatId }) {
 							End Chat
 						</button>
 						<button
-							className="bg-dusty-grape/20 border border-lilac-ash/30 text-almond-silk px-3 py-1 rounded-sm text-label-sm flex items-center gap-xs opacity-50 cursor-not-allowed"
-							disabled
-							title="Document upload coming soon"
+							onClick={() => fileInputRef.current?.click()}
+							disabled={!connected}
+							className="bg-dusty-grape/20 border border-lilac-ash/30 text-almond-silk px-3 py-1 rounded-sm text-label-sm flex items-center gap-xs hover:bg-dusty-grape/40 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
 						>
 							<span className="material-symbols-outlined text-[14px]">
 								upload_file
 							</span>
 							Upload Doc
 						</button>
+						<input
+							type="file"
+							ref={fileInputRef}
+							style={{ display: "none" }}
+							onChange={handleFileChange}
+						/>
 						<button
 							onClick={handleForkChat}
 							disabled={!connected}
@@ -222,6 +284,34 @@ export default function ChainlitChat({ chatId }) {
 							New Chat
 						</button>
 					</div>
+					{attachedFile && (
+						<div className="flex items-center justify-between bg-surface-container-high border border-outline-variant/30 rounded-sm px-sm py-xs mb-xs">
+							<div className="flex items-center gap-xs">
+								<span className="material-symbols-outlined text-[14px] text-on-surface-variant">
+									description
+								</span>
+								<span className="font-label-sm text-on-surface text-sm truncate max-w-[200px]">
+									{attachedFile.file.name}
+								</span>
+								{!attachedFile.fileRef && !attachedFile.error && (
+									<span className="text-xs text-almond-silk ml-2">
+										{Math.round(attachedFile.progress)}%
+									</span>
+								)}
+								{attachedFile.error && (
+									<span className="text-xs text-error ml-2">Failed</span>
+								)}
+							</div>
+							<button
+								onClick={() => setAttachedFile(null)}
+								className="text-on-surface-variant hover:text-error transition-colors"
+							>
+								<span className="material-symbols-outlined text-[16px]">
+									close
+								</span>
+							</button>
+						</div>
+					)}
 					<div className="relative flex items-center">
 						<span className="material-symbols-outlined absolute left-sm text-on-surface-variant text-[20px]">
 							terminal
