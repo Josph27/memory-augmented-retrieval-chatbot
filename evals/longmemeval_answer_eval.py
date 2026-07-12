@@ -157,10 +157,12 @@ class LongMemEvalAnswerExecutor:
         model: EvaluationAnswerModel,
         config: AppConfig,
         execution_mode: str,
+        routing_mode: str | None = None,
     ) -> None:
         self.model = model
         self.config = config
         self.execution_mode = execution_mode
+        self.routing_mode = routing_mode or config.routing_mode
 
     def execute(self, resolved_case: ResolvedLongMemCase) -> AnswerExecution:
         case = resolved_case.case
@@ -227,7 +229,7 @@ class LongMemEvalAnswerExecutor:
                 system_prompt=SYSTEM_PROMPT,
                 routing_agent=RoutingAgent(
                     route_planner=FixedRoutePlanner(case),  # type: ignore[arg-type]
-                    mode="rule",
+                    mode=self.routing_mode,
                 ),
                 retriever_dispatcher=RetrieverDispatcher(
                     database=database,
@@ -315,6 +317,10 @@ class LongMemEvalAnswerExecutor:
                             token_accounting.get("final_prompt_tokens", 0) or 0
                         ),
                     "enabled_sources": enabled_sources,
+                    "routing_mode_used": (
+                        (route_plan.metadata if route_plan else {}) or {}
+                    ).get("routing_mode")
+                    or self.routing_mode,
                     "required_scopes": required_scopes,
                     "gold_candidate_rank": gold_session_rank(ranked, gold_session_ids),
                     "gold_context_drop_reason": first_session_drop_reason(
@@ -361,6 +367,10 @@ class LongMemEvalAnswerExecutor:
                     "fallback_reason": workflow.get("fallback_reason"),
                     "tokenizer_mode": token_accounting.get("tokenizer_mode"),
                     "orchestration": workflow.get("orchestration"),
+                    "routing_mode_used": (
+                        (route_plan.metadata if route_plan else {}) or {}
+                    ).get("routing_mode")
+                    or self.routing_mode,
                 },
             )
 
@@ -572,6 +582,7 @@ def run_evaluation(
         "output_paths": artifact_paths(options.output_dir),
         "dry_run": options.dry_run,
         "dataset_path": str(manifest.dataset_path),
+        "routing_mode_used": config.routing_mode,
     }
     if options.dry_run:
         return dry_plan
@@ -599,6 +610,8 @@ def run_evaluation(
             "minimum_optional_candidate_utility": (
                 config.minimum_optional_candidate_utility
             ),
+            "routing_mode": config.routing_mode,
+            "routing_path": "fixture-assisted-route-planner",
         }
     )
     for resolved_case in resolved:
@@ -1165,6 +1178,7 @@ def main() -> None:
             model=answer_wrapper,
             config=config,
             execution_mode=execution_mode,
+            routing_mode=config.routing_mode,
         )
     if not args.dry_run:
         judge_client = OpenAIJudgeClient(

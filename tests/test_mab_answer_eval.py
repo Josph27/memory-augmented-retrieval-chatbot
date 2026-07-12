@@ -3,10 +3,12 @@ from __future__ import annotations
 import json
 from dataclasses import replace
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
 
+import evals.memory_agent_bench.adapter as mab_adapter
 from evals.mab_answer_eval.artifacts import read_jsonl
 from evals.mab_answer_eval.judge import (
     JUDGE_PROMPT_VERSION,
@@ -254,6 +256,84 @@ def test_dry_run_makes_no_calls_or_artifact_writes(tmp_path: Path) -> None:
     assert executor.calls == []
     assert judge.calls == 0
     assert not output.exists()
+
+
+def test_mab_dry_run_reports_configured_routing_mode(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("ROUTING_MODE", "semantic_full")
+    manifest = load_manifest(write_manifest(tmp_path / "manifest.yaml", manifest_value()))
+
+    report = run_evaluation(
+        manifest,
+        models=models(),
+        config=config(),
+        options=RunOptions(tmp_path / "artifacts", "graph", dry_run=True),
+        executor=FakeExecutor(),
+        judge_client=FakeJudge(),
+        catalog_loader=catalog,
+    )
+
+    assert report["routing_mode_used"] == "semantic_full"
+
+
+def test_mab_default_routing_mode_remains_rule(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("ROUTING_MODE", raising=False)
+    manifest = load_manifest(write_manifest(tmp_path / "manifest.yaml", manifest_value()))
+
+    report = run_evaluation(
+        manifest,
+        models=models(),
+        config=config(),
+        options=RunOptions(tmp_path / "artifacts", "graph", dry_run=True),
+        executor=FakeExecutor(),
+        judge_client=FakeJudge(),
+        catalog_loader=catalog,
+    )
+
+    assert report["routing_mode_used"] == "rule"
+
+
+def test_mab_harness_passes_configured_routing_mode_to_routing_agent(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, str] = {}
+
+    class CapturingCoordinator:
+        def __init__(self, **kwargs):  # type: ignore[no-untyped-def]
+            routing_agent = kwargs["routing_agent"]
+            captured["mode"] = routing_agent.mode
+            self.routing_agent = routing_agent
+
+        def run_turn(self, chat_id, question, **kwargs):  # type: ignore[no-untyped-def]
+            del chat_id, kwargs
+            decision = self.routing_agent.route(question)
+            return SimpleNamespace(
+                answer="cobalt",
+                trace=SimpleNamespace(
+                    route_plan=decision.route_plan,
+                    context_packet=SimpleNamespace(candidates=[], metadata={}),
+                    retrieved_candidates=[],
+                    ranked_candidates=[],
+                    post_expansion_candidates=[],
+                ),
+            )
+
+    monkeypatch.setattr(mab_adapter, "CoordinatorAgent", CapturingCoordinator)
+    harness = ProductionLikeHarness(
+        MockAnswerModel(),
+        mock_answer=True,
+        routing_mode="semantic_full",
+    )
+
+    turn = harness.ask("Can you summarize what I just uploaded?", ("cobalt",))
+
+    assert captured["mode"] == "semantic_full"
+    assert turn.trace.route_plan.metadata["routing_mode"] == "semantic_full"
 
 
 def test_normalized_token_f1_metric_scores_partial_overlap() -> None:

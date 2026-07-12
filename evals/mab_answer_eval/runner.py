@@ -172,6 +172,7 @@ class MABAnswerExecutor:
             direct_raw_retrieval_candidates=(
                 self.config.direct_raw_retrieval_candidates
             ),
+            routing_mode=self.config.routing_mode,
             database_path=case_db_path,
         )
         harness.replayed_chunks = [dict(chunk) for chunk in prepared.replayed_chunks]
@@ -231,6 +232,9 @@ class MABAnswerExecutor:
                     token_accounting.get("final_prompt_tokens", 0) or 0
                 ),
                 "enabled_sources": list(route_plan.get("active_sources", [])),
+                "routing_mode_used": route_plan.get("routing_mode")
+                or (route_plan.get("metadata") or {}).get("routing_mode")
+                or self.config.routing_mode,
                 "required_scopes": required_scopes,
                 "gold_candidate_rank": ranked_gold_rank,
                 "gold_context_drop_reason": first_gold_drop_reason(
@@ -403,6 +407,7 @@ def run_evaluation(
         "estimated_judge_calls": len(resolved),
         "output_paths": artifact_paths(options.output_dir),
         "dry_run": options.dry_run,
+        "routing_mode_used": config.routing_mode,
     }
     if options.dry_run:
         return dry_plan
@@ -800,7 +805,8 @@ def application_configuration_hash(config: AppConfig) -> str:
                     config.enable_retrieval_query_simplification
                 ),
             },
-            "routing_mode": "fixture-assisted-rule",
+            "routing_mode": config.routing_mode,
+            "routing_path": "fixture-assisted-route-planner",
             "reranker_mode": "deterministic",
             "raw_replay": False,
         }

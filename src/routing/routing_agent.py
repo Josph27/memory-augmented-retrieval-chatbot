@@ -1,14 +1,32 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
-from typing import Any, Protocol
+import re
+from dataclasses import dataclass, field
+from typing import Any, Protocol, cast
 
-from src.core.contracts import RoutePlan, SourcePlan
+from src.core.contracts import MemorySourceType, RoutePlan, SourcePlan
 from src.routing.route_planner import RoutePlanner
+from src.routing.semantic_router import SemanticRouter
 
-ROUTING_MODES = {"rule", "llm", "hybrid"}
+ROUTING_MODES = {
+    "rule",
+    "llm",
+    "hybrid",
+    "semantic",
+    "hybrid_semantic",
+    "semantic_full",
+}
 MIN_LLM_ROUTING_CONFIDENCE = 0.5
+MIN_SEMANTIC_FULL_CONFIDENCE = 0.62
+SEMANTIC_FULL_SOURCES = {
+    "recent_messages",
+    "structured_memory",
+    "document_memory",
+    "previous_chat_gist",
+    "raw_message_span",
+    "current_chat_span",
+}
 
 
 class RoutingModel(Protocol):
@@ -21,6 +39,123 @@ class RoutingModel(Protocol):
     ) -> str:
         """Return a chat completion as text."""
         ...
+
+
+class SemanticRoutingBackend(Protocol):
+    """Router contract for optional semantic backends."""
+
+    def route(self, query: str, task_context: str | None = None) -> object:
+        """Return a semantic route object."""
+        ...
+
+    def to_route_plan(self, semantic_plan: object) -> RoutePlan:
+        """Adapt the semantic route object into the internal RoutePlan schema."""
+        ...
+
+
+@dataclass(frozen=True)
+class SemanticFullExpansion:
+    """Conservative source expansion produced by experimental semantic_full mode."""
+
+    enabled_sources: frozenset[str] = field(default_factory=frozenset)
+    intent: str | None = None
+    context_profile: str | None = None
+    confidence: float = 1.0
+    reason: str = "No semantic expansion."
+
+
+class SemanticFullBackend(Protocol):
+    """Classifier contract for semantic_full expansion backends."""
+
+    def classify(self, query: str) -> SemanticFullExpansion:
+        """Return source expansions for the query."""
+        ...
+
+
+class KeywordSemanticFullBackend:
+    """Small deterministic semantic expansion backend.
+
+    This intentionally avoids model calls and heavy dependencies. It is an
+    experimental opt-in layer over the deterministic RoutePlanner: it can add
+    semantically implied sources, but it never removes the deterministic
+    baseline sources.
+    """
+
+    document_patterns = (
+        r"\b(?:uploaded|provided|attached)\b",
+        r"\b(?:attachment|attachments)\b",
+        r"\b(?:document|documents|file|files|pdf|report|paper)\b",
+        r"\b(?:material|materials|source|sources) i (?:provided|uploaded|attached|gave)\b",
+        r"\b(?:using|based on|from|in) (?:the )?(?:material|attachment|report)\b",
+        r"\bwhat i (?:uploaded|provided|attached)\b",
+        r"\bmain point of the report\b",
+    )
+    previous_chat_patterns = (
+        r"\blast time\b",
+        r"\bbefore\b",
+        r"\bprevious(?:ly)?\b",
+        r"\bprevious (?:chat|conversation|thread|discussion)\b",
+        r"\bpast (?:chat|conversation|thread|discussion)\b",
+        r"\bwhat did we discuss\b",
+        r"\bwhat did i tell you\b",
+        r"\bwhat we discussed\b",
+        r"\bwhat i told you\b",
+    )
+    structured_memory_patterns = (
+        r"\bwhat do you remember about my\b",
+        r"\bmy preferences?\b",
+        r"\bmy constraints?\b",
+        r"\bconstraints did i ask you\b",
+        r"\bkeep in mind\b",
+        r"\bsaved memory\b",
+        r"\bprofile information\b",
+        r"\bremember about my preferences?\b",
+    )
+    current_chat_patterns = (
+        r"\bearlier in this (?:chat|conversation|thread)\b",
+        r"\bin this (?:chat|conversation|thread)\b",
+        r"\bprevious turn\b",
+        r"\babove\b",
+        r"\bjust now\b",
+    )
+    summary_patterns = (r"\bsummar(?:ize|y)\b", r"\bmain point\b", r"\blimitations?\b")
+
+    def classify(self, query: str) -> SemanticFullExpansion:
+        normalized = normalize_for_semantic_full(query)
+        enabled: set[str] = set()
+        reasons: list[str] = []
+        intent: str | None = None
+        context_profile: str | None = None
+
+        if matches_any(normalized, self.document_patterns):
+            enabled.add("document_memory")
+            reasons.append("document/material reference")
+            intent = "semantic_document_question"
+            if matches_any(normalized, self.summary_patterns):
+                context_profile = "global_summary"
+
+        if matches_any(normalized, self.previous_chat_patterns):
+            enabled.update({"previous_chat_gist", "raw_message_span"})
+            reasons.append("previous-chat recall reference")
+            intent = intent or "semantic_previous_memory_question"
+
+        if matches_any(normalized, self.structured_memory_patterns):
+            enabled.add("structured_memory")
+            reasons.append("durable user-memory reference")
+            intent = intent or "semantic_structured_memory_question"
+
+        if matches_any(normalized, self.current_chat_patterns):
+            enabled.add("current_chat_span")
+            reasons.append("current-chat recall reference")
+            intent = intent or "semantic_current_chat_question"
+
+        return SemanticFullExpansion(
+            enabled_sources=frozenset(enabled),
+            intent=intent,
+            context_profile=context_profile,
+            confidence=0.86 if enabled else 1.0,
+            reason="; ".join(reasons) if reasons else "No semantic expansion.",
+        )
 
 
 @dataclass(frozen=True)
@@ -74,17 +209,27 @@ class RoutingAgent:
         route_planner: RoutePlanner | None = None,
         mode: str = "rule",
         model: RoutingModel | None = None,
+        semantic_router: SemanticRoutingBackend | None = None,
+        semantic_full_backend: SemanticFullBackend | None = None,
         min_confidence: float = MIN_LLM_ROUTING_CONFIDENCE,
     ) -> None:
         self.route_planner = route_planner or RoutePlanner()
         self.mode = normalized_routing_mode(mode)
         self.model = model
+        self.semantic_router = semantic_router or SemanticRouter()
+        self.semantic_full_backend = (
+            semantic_full_backend or KeywordSemanticFullBackend()
+        )
         self.min_confidence = min_confidence
 
     def route(self, query: str) -> RoutingDecision:
         """Return a structured routing decision for a user query."""
         if self.mode == "rule":
             return self._rule_decision(query=query, routing_mode="rule")
+        if self.mode in {"semantic", "hybrid_semantic"}:
+            return self._semantic_or_fallback_decision(query=query)
+        if self.mode == "semantic_full":
+            return self._semantic_full_or_fallback_decision(query=query)
         return self._llm_or_fallback_decision(query=query)
 
     def _rule_decision(
@@ -159,6 +304,71 @@ class RoutingAgent:
                 routing_mode=self.mode,
                 routing_fallback_reason=None,
                 metadata={"llm_routing_used": True},
+            )
+        except Exception as error:
+            return self._rule_decision(
+                query=query,
+                routing_mode=self.mode,
+                fallback_reason=f"{type(error).__name__}: {error}",
+            )
+
+    def _semantic_full_or_fallback_decision(self, query: str) -> RoutingDecision:
+        """Use semantic expansion over deterministic routing, failing closed."""
+        try:
+            base_route_plan = self.route_planner.plan(query)
+            expansion = self.semantic_full_backend.classify(query)
+            validate_semantic_full_expansion(expansion)
+            if expansion.enabled_sources and (
+                expansion.confidence < MIN_SEMANTIC_FULL_CONFIDENCE
+            ):
+                return self._rule_decision(
+                    query=query,
+                    routing_mode=self.mode,
+                    fallback_reason="semantic_full_low_confidence",
+                )
+            route_plan, added_sources = expand_route_plan_semantically(
+                base_route_plan,
+                expansion,
+            )
+            validate_semantic_route_plan(route_plan)
+            decision = decision_from_route_plan(route_plan)
+            return copy_decision(
+                decision,
+                routing_mode=self.mode,
+                fallback_mode=False,
+                routing_fallback_reason=None,
+                metadata={
+                    **(decision.metadata or {}),
+                    "semantic_full_used": True,
+                    "semantic_full_confidence": expansion.confidence,
+                    "semantic_full_added_sources": sorted(added_sources),
+                    "semantic_full_reason": expansion.reason,
+                    "semantic_full_fallback_reason": None,
+                },
+            )
+        except Exception as error:
+            return self._rule_decision(
+                query=query,
+                routing_mode=self.mode,
+                fallback_reason=f"{type(error).__name__}: {error}",
+            )
+
+    def _semantic_or_fallback_decision(self, query: str) -> RoutingDecision:
+        """Use the optional semantic backend when valid, otherwise rule routing."""
+        try:
+            semantic_plan = self.semantic_router.route(query)
+            route_plan = self.semantic_router.to_route_plan(semantic_plan)
+            validate_semantic_route_plan(route_plan)
+            decision = decision_from_route_plan(route_plan)
+            return copy_decision(
+                decision,
+                routing_mode=self.mode,
+                fallback_mode=False,
+                routing_fallback_reason=None,
+                metadata={
+                    **(decision.metadata or {}),
+                    "semantic_routing_used": True,
+                },
             )
         except Exception as error:
             return self._rule_decision(
@@ -366,6 +576,155 @@ def route_plan_from_llm_payload(
     )
 
 
+def expand_route_plan_semantically(
+    base_route_plan: RoutePlan,
+    expansion: SemanticFullExpansion,
+) -> tuple[RoutePlan, set[str]]:
+    """Return a RoutePlan with semantic_full sources added to the rule baseline."""
+    enabled_expansions = set(expansion.enabled_sources)
+    existing_sources = {source.source for source in base_route_plan.sources}
+    added_sources = {
+        source.source
+        for source in base_route_plan.sources
+        if source.source in enabled_expansions and not source.enabled
+    }
+    source_query = base_route_plan.metadata.get("retrieval_query") or base_route_plan.query
+    sources = [
+        expand_source_plan_semantically(
+            source=source,
+            should_enable=source.source in enabled_expansions,
+            query=str(source_query),
+            reason=expansion.reason,
+            confidence=expansion.confidence,
+        )
+        for source in base_route_plan.sources
+    ]
+    for source_name in sorted(enabled_expansions - existing_sources):
+        if source_name not in SEMANTIC_FULL_SOURCES:
+            continue
+        added_sources.add(source_name)
+        sources.append(
+            SourcePlan(
+                source=cast(MemorySourceType, source_name),
+                enabled=True,
+                reason=f"Semantic full expansion enabled source: {expansion.reason}",
+                query=str(source_query),
+                filters={
+                    "semantic_full_expansion": True,
+                    "semantic_full_reason": expansion.reason,
+                    "semantic_full_confidence": expansion.confidence,
+                },
+            )
+        )
+
+    return (
+        RoutePlan(
+            query=base_route_plan.query,
+            intent=expansion.intent or base_route_plan.intent,
+            confidence=max(
+                base_route_plan.confidence or 0.0,
+                expansion.confidence if enabled_expansions else 0.0,
+            ),
+            requires_retrieval=(
+                base_route_plan.requires_retrieval
+                or any(source not in {"recent_messages"} for source in enabled_expansions)
+            ),
+            sources=sources,
+            ranking_profile=base_route_plan.ranking_profile,
+            context_profile=expansion.context_profile or base_route_plan.context_profile,
+            fallback_policy=base_route_plan.fallback_policy,
+            update_policy=base_route_plan.update_policy,
+            termination_policy=base_route_plan.termination_policy,
+            metadata={
+                **base_route_plan.metadata,
+                "routing_mode": "semantic_full",
+                "semantic_full_confidence": expansion.confidence,
+                "semantic_full_added_sources": sorted(added_sources),
+                "semantic_full_reason": expansion.reason,
+            },
+        ),
+        added_sources,
+    )
+
+
+def expand_source_plan_semantically(
+    source: SourcePlan,
+    should_enable: bool,
+    query: str,
+    reason: str,
+    confidence: float,
+) -> SourcePlan:
+    """Enable a source if semantic_full selected it, preserving rule selections."""
+    if not should_enable:
+        return source
+    if source.enabled:
+        return SourcePlan(
+            source=source.source,
+            enabled=True,
+            reason=source.reason,
+            query=source.query,
+            limit=source.limit,
+            filters={
+                **source.filters,
+                "semantic_full_matched": True,
+                "semantic_full_reason": reason,
+                "semantic_full_confidence": confidence,
+            },
+        )
+    return SourcePlan(
+        source=source.source,
+        enabled=True,
+        reason=f"Semantic full expansion enabled source: {reason}",
+        query=query,
+        limit=source.limit,
+        filters={
+            **source.filters,
+            "semantic_full_expansion": True,
+            "semantic_full_reason": reason,
+            "semantic_full_confidence": confidence,
+        },
+    )
+
+
+def validate_semantic_full_expansion(expansion: SemanticFullExpansion) -> None:
+    """Fail closed when semantic_full emits unusable expansion data."""
+    if not isinstance(expansion, SemanticFullExpansion):
+        raise TypeError("semantic_full backend did not return a SemanticFullExpansion")
+    if not 0 <= expansion.confidence <= 1:
+        raise ValueError("semantic_full confidence must be between 0 and 1")
+    invalid_sources = set(expansion.enabled_sources) - SEMANTIC_FULL_SOURCES
+    if invalid_sources:
+        raise ValueError(
+            "semantic_full backend emitted unsupported sources: "
+            + ", ".join(sorted(invalid_sources))
+        )
+
+
+def validate_semantic_route_plan(route_plan: RoutePlan) -> None:
+    """Fail closed if a semantic backend does not emit the internal schema."""
+    if not isinstance(route_plan, RoutePlan):
+        raise TypeError("semantic backend did not return a RoutePlan")
+    if not route_plan.sources:
+        raise ValueError("semantic route plan did not include any sources")
+    if not any(source.enabled for source in route_plan.sources):
+        raise ValueError("semantic route plan did not enable any sources")
+    for source in route_plan.sources:
+        if not isinstance(source, SourcePlan):
+            raise TypeError("semantic route plan contains a non-SourcePlan source")
+        if source.enabled and not source.source:
+            raise ValueError("semantic route plan enabled a source without a name")
+
+
+def normalize_for_semantic_full(query: str) -> str:
+    """Normalize a query for deterministic semantic_full matching."""
+    return re.sub(r"\s+", " ", query.strip().lower())
+
+
+def matches_any(text: str, patterns: tuple[str, ...]) -> bool:
+    """Return whether any regex pattern matches the normalized text."""
+    return any(re.search(pattern, text) for pattern in patterns)
+
+
 def source_enabled_from_llm(
     source: str,
     use_recent: bool,
@@ -409,6 +768,7 @@ def copy_decision(
     routing_mode: str,
     fallback_mode: bool,
     routing_fallback_reason: str | None,
+    metadata: dict[str, Any] | None = None,
 ) -> RoutingDecision:
     """Return a decision with routing-mode metadata adjusted."""
     return RoutingDecision(
@@ -421,5 +781,5 @@ def copy_decision(
         fallback_mode=fallback_mode,
         routing_mode=routing_mode,
         routing_fallback_reason=routing_fallback_reason,
-        metadata=decision.metadata,
+        metadata=metadata if metadata is not None else decision.metadata,
     )

@@ -249,6 +249,7 @@ class ProductionLikeHarness:
         memory_replay_max_input_tokens: int = 8000,
         memory_replay_max_messages: int = 128,
         direct_raw_retrieval_candidates: int = 12,
+        routing_mode: str = "rule",
         database_path: Path | None = None,
     ) -> None:
         self._temp_dir = None
@@ -272,6 +273,7 @@ class ProductionLikeHarness:
         self.cross_encoder_top_k = max(1, cross_encoder_top_k)
         self.cross_encoder_weight = cross_encoder_weight
         self.orchestration_mode = orchestration_mode
+        self.routing_mode = routing_mode
         self.context_manager_agent = context_manager_agent
         self.raw_message_limit = raw_message_limit
         self.memory_update_batch_size = memory_update_batch_size
@@ -419,7 +421,7 @@ class ProductionLikeHarness:
             system_prompt=SYSTEM_PROMPT,
             routing_agent=RoutingAgent(
                 route_planner=route_planner,  # type: ignore[arg-type]
-                mode="rule",
+                mode=self.routing_mode,
             ),
             retriever_dispatcher=RetrieverDispatcher(
                 self.database,
@@ -477,6 +479,7 @@ def run_example(
     cross_encoder_top_k: int = 10,
     cross_encoder_weight: float = 0.65,
     orchestration_mode: str = NATIVE,
+    routing_mode: str = "rule",
 ) -> list[dict[str, Any]]:
     """Replay one example incrementally, then evaluate its questions."""
     selected_model = model or MockAnswerModel()
@@ -494,6 +497,7 @@ def run_example(
         cross_encoder_top_k=cross_encoder_top_k,
         cross_encoder_weight=cross_encoder_weight,
         orchestration_mode=orchestration_mode,
+        routing_mode=routing_mode,
     )
     try:
         if not skip_replay:
@@ -577,6 +581,11 @@ def run_example(
                         selected_harness.execution_classification
                     ),
                     "orchestration_mode": orchestration_mode,
+                    "routing_mode_used": getattr(
+                        selected_harness,
+                        "routing_mode",
+                        "rule",
+                    ),
                     "answer_metric": asdict(metrics),
                     "evidence_metric": {
                         "gold_in_context": metrics.evidence_contains_answer,

@@ -3,11 +3,13 @@ from __future__ import annotations
 import json
 from pathlib import Path
 import inspect
+from types import SimpleNamespace
 
 import pytest
 
 import evals.longmemeval_answer_eval as longmemeval_eval
 from evals.longmemeval_answer_eval import (
+    LongMemEvalAnswerExecutor,
     RunOptions,
     load_manifest,
     replay_history_sessions_production_like,
@@ -173,6 +175,97 @@ def test_dry_run_validates_without_writing(tmp_path: Path) -> None:
     assert report["estimated_generation_calls"] == 1
     assert report["estimated_judge_calls"] == 1
     assert not output_dir.exists()
+
+
+def test_longmemeval_dry_run_reports_configured_routing_mode(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("ROUTING_MODE", "semantic_full")
+    manifest = load_manifest(write_manifest(tmp_path / "manifest.yaml"))
+
+    report = run_evaluation(
+        manifest,
+        models=EvaluationModels(
+            "answer-a",
+            "judge-a",
+            judge_endpoint="https://judge.example",
+        ),
+        config=AppConfig.from_env(),
+        options=RunOptions(output_dir=tmp_path / "artifacts", execution_mode="graph", dry_run=True),
+    )
+
+    assert report["routing_mode_used"] == "semantic_full"
+
+
+def test_longmemeval_default_routing_mode_remains_rule(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("ROUTING_MODE", raising=False)
+    manifest = load_manifest(write_manifest(tmp_path / "manifest.yaml"))
+
+    report = run_evaluation(
+        manifest,
+        models=EvaluationModels(
+            "answer-a",
+            "judge-a",
+            judge_endpoint="https://judge.example",
+        ),
+        config=AppConfig.from_env(),
+        options=RunOptions(output_dir=tmp_path / "artifacts", execution_mode="graph", dry_run=True),
+    )
+
+    assert report["routing_mode_used"] == "rule"
+
+
+def test_longmemeval_executor_passes_configured_routing_mode_to_routing_agent(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, str] = {}
+
+    class CapturingCoordinator:
+        def __init__(self, **kwargs):  # type: ignore[no-untyped-def]
+            routing_agent = kwargs["routing_agent"]
+            captured["mode"] = routing_agent.mode
+            self.routing_agent = routing_agent
+
+        def run_turn(self, chat_id, question, **kwargs):  # type: ignore[no-untyped-def]
+            del chat_id, kwargs
+            decision = self.routing_agent.route(question)
+            return SimpleNamespace(
+                answer="solarized dark",
+                trace=SimpleNamespace(
+                    route_plan=decision.route_plan,
+                    metadata={"timings_ms": {"main_model_call": 0.0}},
+                    context_packet=SimpleNamespace(candidates=[], metadata={}),
+                    retrieved_candidates=[],
+                    ranked_candidates=[],
+                ),
+            )
+
+    monkeypatch.setattr(
+        longmemeval_eval,
+        "replay_history_sessions_production_like",
+        lambda **kwargs: [],
+    )
+    monkeypatch.setattr(longmemeval_eval, "CoordinatorAgent", CapturingCoordinator)
+
+    manifest = load_manifest(write_manifest(tmp_path / "manifest.yaml"))
+    resolved = resolve_cases(manifest)[0]
+    executor = LongMemEvalAnswerExecutor(
+        model=FakeAnswerModel(),
+        config=AppConfig.from_env(),
+        execution_mode="graph",
+        routing_mode="semantic_full",
+    )
+
+    execution = executor.execute(resolved)
+
+    assert captured["mode"] == "semantic_full"
+    assert execution.context_diagnostics["routing_mode_used"] == "semantic_full"
+    assert execution.raw_metadata["routing_mode_used"] == "semantic_full"
 
 
 def test_judge_only_uses_frozen_answers_without_replay_or_generation(

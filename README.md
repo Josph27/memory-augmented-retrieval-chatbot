@@ -120,6 +120,7 @@ Advanced and diagnostic options:
 | Variable | Legal values | Status |
 | --- | --- | --- |
 | `ORCHESTRATION_MODE` | `langgraph_demo`, `native`, `langgraph_shadow` | `langgraph_demo` is the live default. `native` is fallback/diagnostic. `langgraph_shadow` compares graph output while Native remains authoritative. |
+| `ROUTING_MODE` | `rule`, `semantic_full`, `semantic`, `hybrid_semantic`, `llm`, `hybrid` | `rule` is the default. `semantic_full` is an experimental deterministic semantic-expansion layer over the rule planner. `semantic`/`hybrid_semantic` use the typed Semantic Router v2 backend experimentally. `llm`/`hybrid` are structured-output LLM routing diagnostics and are not enabled by default. |
 | `DOCUMENT_RETRIEVAL_MODE` | effectively `langchain_chroma` | Compatibility seam with one real product backend. It is not a normal tuning knob. |
 | `STRUCTURED_MEMORY_RETRIEVAL_MODE` | `sqlite`, `vector`, `hybrid` | `sqlite` is canonical. `vector` and `hybrid` are advanced retrieval experiments over the long-term-memory vector index with SQLite fallback behavior. |
 | `RERANKER_MODE` | `deterministic`, `cross_encoder`, `hybrid`, `llm` | `deterministic` is canonical. CrossEncoder/LLM/hybrid are explicit ablation paths and are not recommended as defaults. |

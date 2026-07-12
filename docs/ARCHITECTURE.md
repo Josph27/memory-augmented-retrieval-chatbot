@@ -40,6 +40,7 @@ Configuration surface:
 | Variable | Default | Legal values | Role |
 | --- | --- | --- | --- |
 | `ORCHESTRATION_MODE` | `langgraph_demo` | `langgraph_demo`, `native`, `langgraph_shadow` | Live orchestration selector. `langgraph_demo` is canonical; the others are diagnostics/fallbacks. |
+| `ROUTING_MODE` | `rule` | `rule`, `semantic_full`, `semantic`, `hybrid_semantic`, `llm`, `hybrid` | Route-planning backend selector. `rule` is canonical; all other modes are experimental/diagnostic and fall back to deterministic routing on invalid output. |
 | `DOCUMENT_RETRIEVAL_MODE` | `langchain_chroma` | effectively `langchain_chroma` | Document backend selector. Unsupported values are logged and fall back to LangChain-Chroma. |
 | `STRUCTURED_MEMORY_RETRIEVAL_MODE` | `sqlite` | `sqlite`, `vector`, `hybrid` | Structured-memory retrieval selector. `sqlite` is canonical; vector/hybrid are advanced paths. |
 | `RERANKER_MODE` | `deterministic` | `deterministic`, `cross_encoder`, `hybrid`, `llm` | Candidate reranker selector. `deterministic` is canonical; other modes are ablations. |
@@ -93,6 +94,22 @@ Semantic Router v2 is a typed policy router, not an embedding-similarity router.
 It decides which memory sources are allowed, what scope they should use, what
 context profile applies, and whether evidence is required. The optional LLM
 routing path is intentionally not the canonical/default path.
+
+`ROUTING_MODE=semantic_full` is an experimental source-expansion mode. It first
+builds the deterministic `RoutePlan`, then applies conservative semantic cues
+for document/material references, previous-chat recall, durable user memory, and
+current-chat recall. It may add sources such as `document_memory`,
+`previous_chat_gist`, `raw_message_span`, or `current_chat_span`, but it does
+not remove sources selected by the deterministic rule planner. Invalid,
+unavailable, or low-confidence semantic output falls back to the deterministic
+plan.
+
+`ROUTING_MODE=semantic` and `ROUTING_MODE=hybrid_semantic` are experimental
+entry points that adapt Semantic Router v2 into the same internal `RoutePlan`
+schema used by the deterministic route planner. They do not call an LLM. If the
+semantic backend emits invalid schema, the `RoutingAgent` falls back to the
+deterministic planner. `ROUTING_MODE=llm` and `hybrid` are separate
+structured-output LLM routing diagnostics and remain default-off.
 
 ## Retrieval and expansion
 

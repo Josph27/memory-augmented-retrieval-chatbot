@@ -57,6 +57,16 @@ current and intentional unless otherwise noted.
   modes. CrossEncoder reranking improved context inclusion in a small ablation
   but did not improve first-stage candidate recall and was much slower, so it is
   not enabled by default.
+- `ROUTING_MODE=semantic_full` adds an experimental deterministic semantic
+  expansion layer over the rule router. It is useful for ambiguous document and
+  memory-reference phrasing, but it is still default-off and should be evaluated
+  before any demo switch.
+- `ROUTING_MODE=semantic` and `hybrid_semantic` expose the existing Semantic
+  Router v2 through the live `RoutingAgent` interface for experiments. They are
+  not the canonical default and should be treated as validation targets before
+  any production/demo switch.
+- `ROUTING_MODE=llm` and `hybrid` use structured-output LLM routing and remain
+  diagnostics because they add model-call variance to routing.
 - `ORCHESTRATION_MODE=native` and `langgraph_shadow` remain useful diagnostics,
   but `langgraph_demo` is the documented live mode.
 

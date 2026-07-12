@@ -10,6 +10,7 @@ artifacts and should normally remain untracked.
 | Repository tests | Unit and integration behavior for services, agents, retrieval, memory, document lifecycle, UI helpers, and evaluation utilities. | `uv run pytest -q` | Primary regression gate. |
 | Browser E2E | Real Chainlit browser flows: Home, sidebar navigation, active/ended chats, lifecycle controls, uploads, and Inspector UI. | `uv run pytest -q tests/e2e` | Product smoke for the live UI; needs localhost/browser access. |
 | Product Behavior | 50 product-level oracle cases across repository, service, handler, and browser layers. | `uv run python -m evals.product_behavior.runner` | Main product-behavior benchmark; expected 48/50 with two documented limitations. |
+| Routing | 120 manually curated routing-only source-selection cases. | `uv run python -m evals.routing.runner` | Deterministic router-quality benchmark; no retrieval, answer generation, model calls, or judge calls. |
 | MAB answer-level | MemoryAgentBench conversational-memory tasks through fixed manifests and the production-shaped answer path. | `uv run python -m evals.mab_answer_eval ...` | Held-out answer-quality diagnostic, not an uploaded-document RAG test. |
 | LongMemEval pilot | Long-session conversational-memory questions through a local adapter. | `uv run python -m evals.longmemeval_answer_eval ...` | Pilot evidence only; not an official leaderboard protocol. |
 | Document QA | Small document retrieval/grounding checks over local JSONL fixtures/subsets. | `uv run python -m evals.document_qa.run_document_qa_eval` | Subsystem regression signal, not yet a full RAG benchmark. |
@@ -62,6 +63,67 @@ Documented remaining failures:
 
 Browser E2E cases require permission to bind a localhost port and launch Chrome.
 Restricted sandboxes may fail before app startup with a socket permission error.
+
+## Routing evaluation
+
+Purpose: measure source-selection quality independently from retrieval,
+reranking, context assembly, answer generation, and judge behavior.
+
+Command:
+
+```bash
+uv run python -m evals.routing.runner
+```
+
+The repository-owned dataset is:
+
+```text
+evals/routing/datasets/routing_curated_v1.jsonl
+```
+
+It contains 120 manually curated, deterministic cases:
+
+| Category | Cases | What it tests |
+| --- | ---: | --- |
+| `document_retrieval` | 20 | Explicit document, file, PDF, paper, report, attachment, and document-comparison requests. |
+| `document_paraphrase` | 20 | Less literal references such as uploaded material, source material, supplied text, and attached content. |
+| `previous_chat_recall` | 20 | Earlier conversations, previous threads, yesterday/last-time recall, and cross-chat memory. |
+| `structured_memory_recall` | 20 | Durable user facts, preferences, profile information, constraints, and saved memory. |
+| `current_chat_recall` | 20 | Recent/current-thread references, exact wording, previous turn, and above/just-now queries. |
+| `general_no_retrieval` | 20 | General knowledge, writing, translation, coding, and math requests that should not enable specialized retrieval sources. |
+
+Each case includes gold labels for:
+
+- strict expected sources across `recent_messages`, `structured_memory`,
+  `document_memory`, `previous_chat_gist`, `raw_message_span`, and
+  `current_chat_span`;
+- required sources that must be enabled for the route to be useful;
+- allowed sources that do not make the relaxed metric fail;
+- forbidden sources that indicate harmful over-retrieval;
+- expected temporal scope (`none`, `current`, `previous`, `durable`, or
+  `document`);
+- whether exact/raw evidence is required.
+
+The runner compares `rule`, `semantic`, and `semantic_full` by default and
+reports:
+
+- strict exact accuracy, where the predicted source set, temporal scope, and
+  exact/raw-evidence flag must match exactly;
+- relaxed accuracy, where required sources must be present and forbidden sources
+  must be absent, but benign default sources such as broad `structured_memory`
+  do not automatically fail a case unless explicitly forbidden;
+- required-source recall;
+- forbidden-source precision and over-retrieval rate;
+- per-source precision, recall, and F1;
+- per-category accuracy;
+- expected-source-set versus predicted-source-set confusion matrix;
+- top improvements and regressions relative to `rule`.
+
+Limitations: routing evaluation only checks route decisions. It does not prove
+that retrievers find the right evidence, that reranking selects it, that the
+final `ContextPacket` is sufficient, or that the answer model uses the evidence
+correctly. It should be used before answer-level benchmarks, not instead of
+them.
 
 ## Browser E2E
 
