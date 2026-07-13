@@ -49,8 +49,7 @@ def chroma_document_inspection_rows(
 
     ids = [str(item) for item in result.get("ids", [])]
     metadatas = [
-        metadata if isinstance(metadata, dict) else {}
-        for metadata in result.get("metadatas", [])
+        metadata if isinstance(metadata, dict) else {} for metadata in result.get("metadatas", [])
     ]
     return rows_from_chroma_metadata(ids=ids, metadatas=metadatas)
 
@@ -84,6 +83,31 @@ def rows_from_chroma_metadata(
             )
         )
     return sorted(rows, key=lambda row: row.document_id)
+
+
+def delete_document_chunks(
+    persist_dir: str | Path,
+    document_id: str,
+    collection_name: str = DEFAULT_COLLECTION_NAME,
+) -> int:
+    """Delete all Chroma chunks for a document. Returns count of removed chunks."""
+    import chromadb
+
+    client = chromadb.PersistentClient(path=str(persist_dir))
+    collection = client.get_collection(collection_name)
+    try:
+        result = collection.get(
+            where={"document_id": document_id},
+            include=[],
+        )
+    except Exception:
+        return 0
+
+    chunk_ids = list(result.get("ids", []))
+    if not chunk_ids:
+        return 0
+    collection.delete(ids=chunk_ids)
+    return len(chunk_ids)
 
 
 def format_document_inspection_rows(rows: list[DocumentInspectionRow]) -> str:

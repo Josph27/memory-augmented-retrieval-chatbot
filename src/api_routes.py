@@ -141,6 +141,39 @@ def register_api_routes(database: Database, chat_service_getter: Any) -> None:
         except Exception as e:
             return {"error": str(e)}, 500
 
+    @app.delete("/api/documents/{doc_id}")
+    async def delete_document(doc_id: str):
+        try:
+            doc = get_db().get_document(doc_id)
+            if not doc:
+                return {"error": "not found"}, 404
+
+            warnings: list[str] = []
+            # Clean up Chroma chunks
+            try:
+                from src.config import AppConfig
+                from src.documents.inspection import delete_document_chunks
+                from src.retrieval.langchain_chroma_retriever import DEFAULT_COLLECTION_NAME
+
+                config = AppConfig.from_env()
+                chunks_removed = delete_document_chunks(
+                    persist_dir=str(config.langchain_chroma_persist_dir),
+                    document_id=doc_id,
+                    collection_name=DEFAULT_COLLECTION_NAME,
+                )
+            except Exception as err:
+                chunks_removed = 0
+                warnings.append(f"chroma_cleanup_failed: {err}")
+
+            get_db().delete_document(doc_id)
+            return {
+                "status": "deleted",
+                "chunks_removed": chunks_removed,
+                "warnings": warnings,
+            }
+        except Exception as e:
+            return {"error": str(e)}, 500
+
     @app.post("/api/documents/upload")
     async def upload_document():
         """Accept a file upload and index it globally (not scoped to a chat)."""

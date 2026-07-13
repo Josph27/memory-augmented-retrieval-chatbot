@@ -280,8 +280,7 @@ class Database:
     def _ensure_messages_summarized_column(self, connection: sqlite3.Connection) -> None:
         """Add `messages.summarized` for databases created before Short-Term Memory v2."""
         columns = {
-            row["name"]
-            for row in connection.execute("PRAGMA table_info(messages)").fetchall()
+            row["name"] for row in connection.execute("PRAGMA table_info(messages)").fetchall()
         }
         if "summarized" not in columns:
             connection.execute(
@@ -294,13 +293,11 @@ class Database:
     ) -> None:
         """Add independent episodic-gist processing state to existing databases."""
         columns = {
-            row["name"]
-            for row in connection.execute("PRAGMA table_info(messages)").fetchall()
+            row["name"] for row in connection.execute("PRAGMA table_info(messages)").fetchall()
         }
         if "gist_processed" not in columns:
             connection.execute(
-                "ALTER TABLE messages "
-                "ADD COLUMN gist_processed INTEGER NOT NULL DEFAULT 0"
+                "ALTER TABLE messages ADD COLUMN gist_processed INTEGER NOT NULL DEFAULT 0"
             )
             connection.execute(
                 """
@@ -326,23 +323,15 @@ class Database:
 
     def _ensure_chats_model_name_column(self, connection: sqlite3.Connection) -> None:
         """Add `chats.model_name` for databases created before model profiles."""
-        columns = {
-            row["name"]
-            for row in connection.execute("PRAGMA table_info(chats)").fetchall()
-        }
+        columns = {row["name"] for row in connection.execute("PRAGMA table_info(chats)").fetchall()}
         if "model_name" not in columns:
             connection.execute("ALTER TABLE chats ADD COLUMN model_name TEXT")
 
     def _ensure_chats_active_column(self, connection: sqlite3.Connection) -> None:
         """Add `chats.active` for databases created before chat lifecycle support."""
-        columns = {
-            row["name"]
-            for row in connection.execute("PRAGMA table_info(chats)").fetchall()
-        }
+        columns = {row["name"] for row in connection.execute("PRAGMA table_info(chats)").fetchall()}
         if "active" not in columns:
-            connection.execute(
-                "ALTER TABLE chats ADD COLUMN active INTEGER NOT NULL DEFAULT 1"
-            )
+            connection.execute("ALTER TABLE chats ADD COLUMN active INTEGER NOT NULL DEFAULT 1")
 
     def create_chat(
         self,
@@ -394,9 +383,7 @@ class Database:
             cursor_chat = self.get_chat(cursor)
             if cursor_chat:
                 clauses.append("(updated_at < ? OR (updated_at = ? AND id < ?))")
-                parameters.extend(
-                    [cursor_chat.updated_at, cursor_chat.updated_at, cursor_chat.id]
-                )
+                parameters.extend([cursor_chat.updated_at, cursor_chat.updated_at, cursor_chat.id])
         if search:
             clauses.append("(title LIKE ? OR id LIKE ?)")
             pattern = f"%{search}%"
@@ -633,9 +620,7 @@ class Database:
                 (chat_id,),
             ).fetchall()
             for inspection in inspections:
-                assistant_message_id = message_id_map.get(
-                    int(inspection["assistant_message_id"])
-                )
+                assistant_message_id = message_id_map.get(int(inspection["assistant_message_id"]))
                 if assistant_message_id is None:
                     continue
                 payload_json = remap_chat_local_json(
@@ -874,7 +859,17 @@ class Database:
             ).fetchone()
         return self._document_from_row(row) if row else None
 
-    def list_all_documents(self, limit: int = 100, status: str | None = None) -> list[StoredDocument]:
+    def delete_document(self, document_id: str) -> None:
+        """Delete one document record. Returns silently if not found."""
+        with self.connect() as connection:
+            connection.execute(
+                "DELETE FROM document_records WHERE id = ?",
+                (document_id,),
+            )
+
+    def list_all_documents(
+        self, limit: int = 100, status: str | None = None
+    ) -> list[StoredDocument]:
         """List all document records regardless of chat association."""
         parameters: list[object] = []
         status_clause = ""
@@ -897,21 +892,21 @@ class Database:
         return [self._document_from_row(row) for row in rows]
 
     def documents_for_chat(
-            self,
-            chat_id: str,
-            *,
-            statuses: tuple[str, ...] | None = None,
-        ) -> list[StoredDocument]:
-            """List documents associated with a chat in most-recent-first order."""
-            parameters: list[object] = [chat_id]
-            status_clause = ""
-            if statuses:
-                placeholders = ", ".join("?" for _ in statuses)
-                status_clause = f"AND documents.status IN ({placeholders})"
-                parameters.extend(statuses)
-            with self.connect() as connection:
-                rows = connection.execute(
-                    f"""
+        self,
+        chat_id: str,
+        *,
+        statuses: tuple[str, ...] | None = None,
+    ) -> list[StoredDocument]:
+        """List documents associated with a chat in most-recent-first order."""
+        parameters: list[object] = [chat_id]
+        status_clause = ""
+        if statuses:
+            placeholders = ", ".join("?" for _ in statuses)
+            status_clause = f"AND documents.status IN ({placeholders})"
+            parameters.extend(statuses)
+        with self.connect() as connection:
+            rows = connection.execute(
+                f"""
                     SELECT documents.id, documents.file_name, documents.status,
                            documents.source, documents.chunk_count, documents.error,
                            documents.created_at, documents.updated_at,
@@ -923,9 +918,9 @@ class Database:
                     {status_clause}
                     ORDER BY links.associated_at DESC, documents.id DESC
                     """,
-                    parameters,
-                ).fetchall()
-            return [self._document_from_row(row) for row in rows]
+                parameters,
+            ).fetchall()
+        return [self._document_from_row(row) for row in rows]
 
     def record_operation_once(
         self,
@@ -984,9 +979,7 @@ class Database:
                     or row["scope_id"] != chat_id
                     or not row["result_ref"]
                 ):
-                    raise RuntimeError(
-                        "operation id belongs to a different upload scope"
-                    )
+                    raise RuntimeError("operation id belongs to a different upload scope")
                 return False, str(row["result_ref"])
             connection.execute(
                 """
@@ -1288,8 +1281,7 @@ class Database:
             if gist_processed_message_ids:
                 placeholders = ",".join("?" for _ in gist_processed_message_ids)
                 connection.execute(
-                    f"UPDATE messages SET gist_processed = 1 "
-                    f"WHERE id IN ({placeholders})",
+                    f"UPDATE messages SET gist_processed = 1 WHERE id IN ({placeholders})",
                     gist_processed_message_ids,
                 )
             return int(cursor.lastrowid)
@@ -1409,13 +1401,20 @@ class Database:
                 row["name"]
                 for row in connection.execute("PRAGMA table_info(long_term_memories)").fetchall()
             }
-            expected = {"memory_id", "key", "value", "category", "confidence",
-                        "status", "source_chat_id", "created_at", "updated_at"}
+            expected = {
+                "memory_id",
+                "key",
+                "value",
+                "category",
+                "confidence",
+                "status",
+                "source_chat_id",
+                "created_at",
+                "updated_at",
+            }
             missing = expected - columns
             if missing:
-                raise RuntimeError(
-                    f"long_term_memories schema mismatch: missing columns {missing}"
-                )
+                raise RuntimeError(f"long_term_memories schema mismatch: missing columns {missing}")
             rows = connection.execute(
                 """
                 SELECT memory_id, key, value, category, confidence, status,
@@ -1430,20 +1429,20 @@ class Database:
         return [dict(row) for row in rows]
 
     def _chat_gist_from_row(self, row: sqlite3.Row) -> StoredChatGist:
-            return StoredChatGist(
-                id=row["id"],
-                chat_id=row["chat_id"],
-                source_type=row["source_type"],
-                gist_text=row["gist_text"],
-                topics_json=row["topics_json"],
-                decisions_json=row["decisions_json"],
-                open_tasks_json=row["open_tasks_json"],
-                start_message_id=row["start_message_id"],
-                end_message_id=row["end_message_id"],
-                created_at=row["created_at"],
-                updated_at=row["updated_at"],
-                metadata_json=row["metadata_json"],
-            )
+        return StoredChatGist(
+            id=row["id"],
+            chat_id=row["chat_id"],
+            source_type=row["source_type"],
+            gist_text=row["gist_text"],
+            topics_json=row["topics_json"],
+            decisions_json=row["decisions_json"],
+            open_tasks_json=row["open_tasks_json"],
+            start_message_id=row["start_message_id"],
+            end_message_id=row["end_message_id"],
+            created_at=row["created_at"],
+            updated_at=row["updated_at"],
+            metadata_json=row["metadata_json"],
+        )
 
 
 MESSAGE_ID_METADATA_KEYS = {
@@ -1518,10 +1517,7 @@ def remap_chat_local_provenance(
         if key in MESSAGE_ID_LIST_METADATA_KEYS:
             if not isinstance(item, list):
                 raise ValueError(f"{key} must be a list")
-            remapped[key] = [
-                remap_message_id(message_id, message_id_map)
-                for message_id in item
-            ]
+            remapped[key] = [remap_message_id(message_id, message_id_map) for message_id in item]
         elif key in MESSAGE_ID_METADATA_KEYS:
             remapped[key] = remap_message_id(item, message_id_map)
         elif key in CHAT_ID_METADATA_KEYS and item == source_chat_id:

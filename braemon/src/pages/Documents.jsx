@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { fetchDocuments, uploadDocumentFile } from "../api";
+import { fetchDocuments, uploadDocumentFile, deleteDocument } from "../api";
 
 function Documents() {
 	const [docs, setDocs] = useState([]);
@@ -28,6 +28,20 @@ function Documents() {
 			.then(setDocs)
 			.catch((err) => console.error(err));
 	}, []);
+
+	const handleDelete = useCallback(
+		async (docId, e) => {
+			e.stopPropagation();
+			try {
+				await deleteDocument(docId);
+				loadDocuments();
+			} catch (err) {
+				console.error(err);
+				alert("Failed to delete document.");
+			}
+		},
+		[loadDocuments],
+	);
 
 	const handleUpload = useCallback(
 		async (e) => {
@@ -154,9 +168,9 @@ function Documents() {
 										{formatDate(doc.updated_at || doc.created_at)}
 									</span>
 									<button
-										className="text-on-surface-variant p-1 opacity-50 cursor-not-allowed"
-										title="Document deletion coming soon."
-										disabled
+										onClick={(e) => handleDelete(doc.id, e)}
+										className="text-on-surface-variant p-1 hover:bg-error/10 rounded transition-colors"
+										title="Delete document"
 									>
 										<span className="material-symbols-outlined text-[18px]">
 											delete

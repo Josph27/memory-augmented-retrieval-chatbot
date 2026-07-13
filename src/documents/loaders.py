@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import re
+from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 
 
+MAX_PDF_PAGES = 512
 SUPPORTED_TEXT_EXTENSIONS = {".txt", ".md"}
 SUPPORTED_EXTENSIONS = SUPPORTED_TEXT_EXTENSIONS | {".pdf"}
 
@@ -81,6 +84,33 @@ def load_text_file(
     )
 
 
+def normalize_pdf_text(text: str, page_count: int) -> str:
+    """Normalize PDF-extracted text for chunking: fix line breaks, strip artifacts."""
+    lines = text.split("\n")
+
+    # Strip standalone page numbers
+    lines = [line for line in lines if line.strip() and not re.fullmatch(r"\d{1,4}", line.strip())]
+
+    # Remove repeated header/footer lines (appear on ≥50% of pages)
+    if page_count >= 3:
+        threshold = max(page_count // 2, 2)
+        line_counts = Counter(lines)
+        repeated = {line for line, count in line_counts.items() if count >= threshold}
+        lines = [line for line in lines if line not in repeated]
+
+    # Collapse single newlines within paragraphs, keep paragraph breaks
+    # PDFs produce one line per visual line, not per paragraph.
+    # Strategy: join all lines with \n, then collapse single \n to space,
+    # and coalesce runs of \n into \n\n paragraph breaks.
+    joined = "\n".join(lines)
+    # Replace single newline (text\ntext) with space
+    normalized = re.sub(r"(?<!\n)\n(?!\n)", " ", joined)
+    # Coalesce multiple newlines into double paragraph breaks
+    normalized = re.sub(r"\n{2,}", "\n\n", normalized)
+
+    return normalized.strip()
+
+
 def load_pdf_file(path: Path, display_name: str | None = None) -> LoadedDocument:
     """Load PDF text with a mature PDF library when one is installed."""
     try:
@@ -89,10 +119,21 @@ def load_pdf_file(path: Path, display_name: str | None = None) -> LoadedDocument
         try:
             text, page_count, loader_name = load_pdf_with_pymupdf(path)
         except DocumentLoaderError as error:
-            msg = (
-                "PDF loading requires pypdf or PyMuPDF. Install one of them to index PDF files."
-            )
+            msg = "PDF loading requires pypdf or PyMuPDF. Install one of them to index PDF files."
             raise DocumentLoaderError(msg) from error
+
+    if page_count > MAX_PDF_PAGES:
+        raise DocumentLoaderError(
+            f"PDF has {page_count} pages (max {MAX_PDF_PAGES}). "
+            "Split the document into smaller files."
+        )
+
+    if not text.strip():
+        raise DocumentLoaderError(
+            "No extractable text found. This may be a scanned/image PDF. Try OCR before indexing."
+        )
+
+    text = normalize_pdf_text(text, page_count)
 
     metadata = base_file_metadata(path, loader_name=loader_name, display_name=display_name)
     metadata["page_count"] = page_count

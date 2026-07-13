@@ -377,6 +377,13 @@ export default function ChainlitChat({ chatId }) {
 	};
 	flatten(messages);
 
+	// Sort by creation time so user messages appear before assistant responses
+	flatMessages.sort((a, b) => {
+		const ta = typeof a.createdAt === "number" ? a.createdAt : 0;
+		const tb = typeof b.createdAt === "number" ? b.createdAt : 0;
+		return ta - tb;
+	});
+
 	return (
 		<div className="flex flex-col h-full bg-background w-full">
 			{/* Messages Area */}

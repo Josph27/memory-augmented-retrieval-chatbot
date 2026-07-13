@@ -61,13 +61,17 @@ def test_answer_timeout_preserves_user_without_fake_assistant(
 
     messages = database.messages_for_chat("chat")
     assert [(message.role, message.content) for message in messages] == [
-        ("user", "please answer")
+        ("user", "please answer"),
+        (
+            "assistant",
+            "The answer could not be generated. Your message was saved and you can retry this turn.",
+        ),
     ]
     assert result.termination_reason == "answer_generation_failed"
-    assert result.assistant_message_id is None
+    assert result.assistant_message_id is not None
     assert result.metadata["answer_status"] == "failed"
     assert database.is_chat_active("chat") is True
-    assert database.answer_inspections_for_chat("chat") == []
+    assert len(database.answer_inspections_for_chat("chat")) == 1
 
 
 def test_send_and_end_share_one_atomic_chat_guard(tmp_path: Path) -> None:

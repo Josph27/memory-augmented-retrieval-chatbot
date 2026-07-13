@@ -91,6 +91,12 @@ export async function uploadDocumentFile(file, onProgress) {
 	});
 }
 
+export async function deleteDocument(docId) {
+	const res = await fetch(`${BASE}/documents/${docId}`, { method: "DELETE" });
+	if (!res.ok) throw new Error(`Failed to delete document: ${res.status}`);
+	return res.json();
+}
+
 export async function fetchMemories() {
 	const res = await fetch(`${BASE}/memories`);
 	if (!res.ok) throw new Error(`Failed to fetch memories: ${res.status}`);
