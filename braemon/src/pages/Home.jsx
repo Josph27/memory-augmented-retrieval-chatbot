@@ -1,6 +1,6 @@
 import { Link, useNavigate } from "react-router-dom";
 import { useState, useEffect } from "react";
-import { fetchChats, createChat } from "../api";
+import { fetchChats, createChat, endChat, reactivateChat, deleteChat } from "../api";
 
 function Home() {
 	const navigate = useNavigate();

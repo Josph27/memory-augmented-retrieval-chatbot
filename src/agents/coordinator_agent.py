@@ -291,13 +291,11 @@ class CoordinatorAgent:
                 )
 
         stage_started = perf_counter()
-        assistant_message_id = None
-        if not answer_failed:
-            assistant_message_id = self.database.save_message(
-                chat_id=chat_id,
-                role="assistant",
-                content=response,
-            )
+        assistant_message_id = self.database.save_message(
+            chat_id=chat_id,
+            role="assistant",
+            content=response,
+        )
         timings["save_assistant_message"] = elapsed_ms(stage_started)
         if perform_memory_update:
             try:

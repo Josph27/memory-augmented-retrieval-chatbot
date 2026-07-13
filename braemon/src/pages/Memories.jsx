@@ -26,7 +26,6 @@ export default function Memories() {
 
 	const handleDelete = async (memoryId, e) => {
 		e.stopPropagation();
-		if (!confirm("Are you sure you want to delete this memory?")) return;
 		try {
 			await deleteMemory(memoryId);
 			loadMemories(); // Refresh after delete

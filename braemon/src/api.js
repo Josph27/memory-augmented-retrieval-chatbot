@@ -35,6 +35,20 @@ export async function endChat(chatId) {
 	return res.json();
 }
 
+export async function reactivateChat(chatId) {
+	const res = await fetch(`${BASE}/chats/${chatId}/reactivate`, {
+		method: "POST",
+	});
+	if (!res.ok) throw new Error(`Failed to reactivate chat: ${res.status}`);
+	return res.json();
+}
+
+export async function deleteChat(chatId) {
+	const res = await fetch(`${BASE}/chats/${chatId}`, { method: "DELETE" });
+	if (!res.ok) throw new Error(`Failed to delete chat: ${res.status}`);
+	return res.json();
+}
+
 export async function fetchDocuments({ status } = {}) {
 	const params = new URLSearchParams();
 	if (status) params.set("status", status);

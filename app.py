@@ -147,7 +147,6 @@ async def on_message(message: cl.Message) -> None:
                 content=status,
             ).send()
 
-
     if not content:
         return
 
@@ -168,7 +167,7 @@ async def on_message(message: cl.Message) -> None:
     if result.metadata.get("answer_status") == "failed":
         await send_product_error(result.answer)
         await cl.Message(
-            id=f"error:{uuid4()}",
+            id=f"error:{result.assistant_message_id}",
             content=result.answer,
         ).send()
         await send_chat_controls(str(chat_id))
@@ -191,10 +190,17 @@ async def on_message(message: cl.Message) -> None:
     if retrieval_errors:
         trace_metadata["retrieval_errors"] = retrieval_errors
 
+    # Embed trace data in message content so it survives Chainlit persistence
+    import json as _json
+
+    answer_text = result.answer
+    if trace_metadata:
+        trace_json = _json.dumps(trace_metadata, default=str)
+        answer_text = f"{result.answer}\n\n<!--breamon-trace:{trace_json}-->"
+
     await cl.Message(
         id=f"message:{result.assistant_message_id}",
-        content=result.answer,
-        metadata={"trace": trace_metadata} if trace_metadata else None,
+        content=answer_text,
     ).send()
     await send_answer_inspections(str(chat_id))
     chat_service.finalize_post_answer_memory_update(chat_id)

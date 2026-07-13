@@ -1,6 +1,7 @@
 import { useParams, Link, useNavigate } from "react-router-dom";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import ChainlitChat from "../components/ChainlitChat";
+import ChatActions from "../components/ChatActions";
 import { fetchChats } from "../api";
 
 export default function Chat() {
@@ -9,10 +10,25 @@ export default function Chat() {
 	const [chats, setChats] = useState([]);
 	const [inactiveOpen, setInactiveOpen] = useState(false);
 
-	useEffect(() => {
-		// Fetch chats whenever chatId changes so the sidebar is up-to-date
+	const refreshChats = useCallback(() => {
 		fetchChats({ limit: 50 }).then(setChats).catch(console.error);
-	}, [chatId]);
+	}, []);
+
+	useEffect(() => {
+		refreshChats();
+	}, [chatId, refreshChats]);
+
+	const handleStateChange = useCallback((id, active) => {
+		setChats((prev) => prev.map((c) => (c.id === id ? { ...c, active } : c)));
+	}, []);
+
+	const handleDelete = useCallback(
+		(deletedId) => {
+			setChats((prev) => prev.filter((c) => c.id !== deletedId));
+			if (chatId === deletedId) navigate("/chats");
+		},
+		[chatId, navigate],
+	);
 
 	const activeThreads = chats.filter((c) => c.active);
 	const inactiveThreads = chats.filter((c) => !c.active);
@@ -38,20 +54,27 @@ export default function Chat() {
 							{activeThreads.map((t) => {
 								const isActive = t.id === chatId;
 								return (
-									<Link
-										key={t.id}
-										to={`/chat/${t.id}`}
-										className={
-											isActive
-												? "bg-secondary-container/30 text-secondary border-l-2 border-secondary px-3 py-2 flex items-center gap-sm transition-all duration-150 rounded-r text-[13px] no-underline"
-												: "text-on-surface-variant px-3 py-2 hover:bg-surface-container-highest/50 transition-colors flex items-center gap-sm rounded-r text-[13px] no-underline"
-										}
-									>
-										<span className="material-symbols-outlined text-[14px]">
-											chat_bubble
-										</span>
-										<span className="truncate">{t.title || "Untitled"}</span>
-									</Link>
+									<div key={t.id} className="group flex items-center">
+										<Link
+											to={`/chat/${t.id}`}
+											className={
+												isActive
+													? "bg-secondary-container/30 text-secondary border-l-2 border-secondary px-3 py-2 flex items-center gap-sm transition-all duration-150 rounded-r text-[13px] no-underline flex-1 min-w-0"
+													: "text-on-surface-variant px-3 py-2 hover:bg-surface-container-highest/50 transition-colors flex items-center gap-sm rounded-r text-[13px] no-underline flex-1 min-w-0"
+											}
+										>
+											<span className="material-symbols-outlined text-[14px] shrink-0">
+												chat_bubble
+											</span>
+											<span className="truncate">{t.title || "Untitled"}</span>
+										</Link>
+										<ChatActions
+											chatId={t.id}
+											active={true}
+											onStateChange={handleStateChange}
+											onDelete={handleDelete}
+										/>
+									</div>
 								);
 							})}
 						</div>
@@ -78,20 +101,29 @@ export default function Chat() {
 								{inactiveThreads.map((t) => {
 									const isActive = t.id === chatId;
 									return (
-										<Link
-											key={t.id}
-											to={`/chat/${t.id}`}
-											className={
-												isActive
-													? "bg-secondary-container/30 text-secondary border-l-2 border-secondary px-3 py-2 flex items-center gap-sm transition-all duration-150 rounded-r text-[13px] no-underline"
-													: "text-on-surface-variant/70 px-3 py-2 hover:bg-surface-container-highest/30 transition-colors flex items-center gap-sm rounded-r text-[13px] no-underline"
-											}
-										>
-											<span className="material-symbols-outlined text-[14px]">
-												history
-											</span>
-											<span className="truncate">{t.title || "Untitled"}</span>
-										</Link>
+										<div key={t.id} className="group flex items-center">
+											<Link
+												to={`/chat/${t.id}`}
+												className={
+													isActive
+														? "bg-secondary-container/30 text-secondary border-l-2 border-secondary px-3 py-2 flex items-center gap-sm transition-all duration-150 rounded-r text-[13px] no-underline flex-1 min-w-0"
+														: "text-on-surface-variant/70 px-3 py-2 hover:bg-surface-container-highest/30 transition-colors flex items-center gap-sm rounded-r text-[13px] no-underline flex-1 min-w-0"
+												}
+											>
+												<span className="material-symbols-outlined text-[14px] shrink-0">
+													history
+												</span>
+												<span className="truncate">
+													{t.title || "Untitled"}
+												</span>
+											</Link>
+											<ChatActions
+												chatId={t.id}
+												active={false}
+												onStateChange={handleStateChange}
+												onDelete={handleDelete}
+											/>
+										</div>
 									);
 								})}
 							</div>

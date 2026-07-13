@@ -1,6 +1,7 @@
 import { Link, useNavigate } from "react-router-dom";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { fetchChats, createChat } from "../api";
+import ChatActions from "../components/ChatActions";
 
 export default function Chats() {
 	const navigate = useNavigate();
@@ -33,6 +34,14 @@ export default function Chats() {
 
 	const activeThreads = chats.filter((c) => c.active);
 	const inactiveThreads = chats.filter((c) => !c.active);
+
+	const handleStateChange = useCallback((id, active) => {
+		setChats((prev) => prev.map((c) => (c.id === id ? { ...c, active } : c)));
+	}, []);
+
+	const handleDelete = useCallback((deletedId) => {
+		setChats((prev) => prev.filter((c) => c.id !== deletedId));
+	}, []);
 
 	const formatDate = (ds) => {
 		if (!ds) return "";
@@ -81,23 +90,31 @@ export default function Chats() {
 								</div>
 							) : (
 								activeThreads.map((t) => (
-									<Link
+									<div
 										key={t.id}
-										to={`/chat/${t.id}`}
-										className="group flex items-center justify-between px-lg py-sm border-b border-lilac-ash/10 hover:bg-dusty-grape/20 transition-colors cursor-pointer h-10 no-underline"
+										className="group flex items-center bg-surface-container-low hover:bg-dusty-grape/20 transition-colors border-b border-lilac-ash/10 h-10"
 									>
-										<div className="flex items-center gap-md">
-											<span className="material-symbols-outlined text-[16px] text-primary">
+										<Link
+											to={`/chat/${t.id}`}
+											className="flex items-center gap-md px-lg py-sm flex-1 min-w-0 no-underline"
+										>
+											<span className="material-symbols-outlined text-[16px] text-primary shrink-0">
 												chat_bubble
 											</span>
 											<span className="font-body-md text-body-md text-on-surface truncate max-w-[300px]">
 												{t.title}
 											</span>
-										</div>
-										<span className="font-code text-code text-on-surface-variant">
+										</Link>
+										<span className="font-code text-code text-on-surface-variant mr-sm whitespace-nowrap">
 											{formatDate(t.updated_at || t.created_at)}
 										</span>
-									</Link>
+										<ChatActions
+											chatId={t.id}
+											active={true}
+											onStateChange={handleStateChange}
+											onDelete={handleDelete}
+										/>
+									</div>
 								))
 							)}
 						</div>
@@ -114,23 +131,31 @@ export default function Chats() {
 								</div>
 							) : (
 								inactiveThreads.map((t) => (
-									<Link
+									<div
 										key={t.id}
-										to={`/chat/${t.id}`}
-										className="group flex items-center justify-between px-lg py-sm border-b border-lilac-ash/10 hover:bg-dusty-grape/10 transition-colors cursor-pointer h-10 no-underline"
+										className="group flex items-center bg-surface-container-lowest hover:bg-dusty-grape/10 transition-colors border-b border-lilac-ash/10 h-10"
 									>
-										<div className="flex items-center gap-md">
-											<span className="material-symbols-outlined text-[16px] text-on-surface-variant">
+										<Link
+											to={`/chat/${t.id}`}
+											className="flex items-center gap-md px-lg py-sm flex-1 min-w-0 no-underline"
+										>
+											<span className="material-symbols-outlined text-[16px] text-on-surface-variant shrink-0">
 												history
 											</span>
 											<span className="font-body-md text-body-md text-on-surface-variant truncate max-w-[300px]">
 												{t.title}
 											</span>
-										</div>
-										<span className="font-code text-code text-on-surface-variant/70">
+										</Link>
+										<span className="font-code text-code text-on-surface-variant/70 mr-sm whitespace-nowrap">
 											{formatDate(t.updated_at || t.created_at)}
 										</span>
-									</Link>
+										<ChatActions
+											chatId={t.id}
+											active={false}
+											onStateChange={handleStateChange}
+											onDelete={handleDelete}
+										/>
+									</div>
 								))
 							)}
 						</div>

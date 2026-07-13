@@ -67,7 +67,7 @@ async function run() {
 		});
 		await sleep(3000);
 
-		const INPUT = 'input[placeholder*="command"]';
+		const INPUT = 'input[placeholder*="prompt"]';
 		await page.waitForSelector(INPUT, { timeout: TIMEOUT });
 
 		// ═══ Test 1: User messages appear in chat ═══

@@ -96,6 +96,31 @@ def register_api_routes(database: Database, chat_service_getter: Any) -> None:
         except Exception as e:
             return {"error": str(e)}, 500
 
+    @app.post("/api/chats/{chat_id}/reactivate")
+    async def reactivate_chat(chat_id: str):
+        try:
+            chat = get_db().get_chat(chat_id)
+            if not chat:
+                return {"error": "not found"}, 404
+            get_db().mark_chat_active(chat_id)
+            return {"status": "activated"}
+        except Exception as e:
+            return {"error": str(e)}, 500
+
+    @app.delete("/api/chats/{chat_id}")
+    async def delete_chat(chat_id: str):
+        try:
+            chat = get_db().get_chat(chat_id)
+            if not chat:
+                return {"error": "not found"}, 404
+            # Extract all pending memories before deleting the chat
+            svc = get_chat_svc()
+            svc.memory.process_all_for_chat_end(chat_id)
+            get_db().delete_chat(chat_id)
+            return {"status": "deleted", "memories_extracted": True}
+        except Exception as e:
+            return {"error": str(e)}, 500
+
     @app.get("/api/documents")
     async def list_documents(limit: int = 100, status: str | None = None):
         try:

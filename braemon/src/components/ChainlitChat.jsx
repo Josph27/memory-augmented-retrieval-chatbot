@@ -14,7 +14,22 @@ import { v4 as uuidv4 } from "uuid";
 function Message({ msg }) {
 	const isUser = msg.type === "user_message";
 	const isError = typeof msg.id === "string" && msg.id.startsWith("error:");
-	const trace = msg.metadata?.trace;
+
+	// Extract persisted trace data from embedded comment, fall back to live metadata
+	let displayText = msg.output || "";
+	let trace = null;
+	const traceMatch = displayText.match(/<!--breamon-trace:([\s\S]*?)-->/);
+	if (traceMatch) {
+		try {
+			trace = JSON.parse(traceMatch[1]);
+		} catch {}
+		displayText = displayText
+			.replace(/<!--breamon-trace:[\s\S]*?-->/, "")
+			.trim();
+	}
+	if (!trace) {
+		trace = msg.metadata?.trace;
+	}
 
 	// Persist expand state per message ID across reloads
 	const storageKey = `breamon-expanded-${msg.id}`;
@@ -92,7 +107,7 @@ function Message({ msg }) {
 				<p
 					className={`${isUser ? "font-code" : "font-body-md"} text-on-surface leading-relaxed whitespace-pre-wrap`}
 				>
-					{msg.output}
+					{displayText}
 				</p>
 				{msg.elements && msg.elements.length > 0 && (
 					<div className="mt-sm pt-sm border-t border-outline-variant/20 flex flex-wrap gap-sm">
