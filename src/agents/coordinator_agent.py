@@ -6,6 +6,7 @@ from uuid import uuid4
 
 from openai import OpenAIError
 
+from src.retrieval.langchain_chroma_retriever import LangChainChromaUnavailable
 from src.agents.chat_agent import ChatAgent
 from src.agents.context_builder_agent import ContextBuilderAgent
 from src.agents.context_manager_agent import ContextManagerAgent
@@ -109,9 +110,7 @@ class CoordinatorAgent:
             chat_id=chat_id,
             route_plan=route_plan,
         )
-        retrieval_errors = list(
-            getattr(self.retriever_dispatcher, "last_errors", [])
-        )
+        retrieval_errors = list(getattr(self.retriever_dispatcher, "last_errors", []))
         timings["retrieval"] = elapsed_ms(stage_started)
         stage_started = perf_counter()
         rerank_result = self.memory_reranker.rank_with_trace(
@@ -183,9 +182,7 @@ class CoordinatorAgent:
                     raise RuntimeError(langgraph_orchestration.error)
             except Exception as error:
                 orchestration_error = bounded_error(error)
-                orchestration_fallback_used = (
-                    requested_orchestration_mode == LANGGRAPH_DEMO
-                )
+                orchestration_fallback_used = requested_orchestration_mode == LANGGRAPH_DEMO
             else:
                 orchestration_comparison = compare_orchestration(
                     native_orchestration,
@@ -205,9 +202,7 @@ class CoordinatorAgent:
         if authoritative_orchestration.mode == LANGGRAPH_DEMO:
             graph_metadata = authoritative_trace.metadata
             reranker_metadata = dict(graph_metadata.get("reranker", {}))
-            context_manager_metadata = dict(
-                graph_metadata.get("context_manager", {})
-            )
+            context_manager_metadata = dict(graph_metadata.get("context_manager", {}))
 
         stage_started = perf_counter()
         context = self.memory_agent.build_context(
@@ -250,14 +245,27 @@ class CoordinatorAgent:
             f"{item.get('source')}: {item.get('type')}: {item.get('message')}"
             for item in retrieval_errors
         )
-        insufficient_evidence = bool(
-            authoritative_trace.metadata.get("insufficient_evidence")
-        )
+        insufficient_evidence = bool(authoritative_trace.metadata.get("insufficient_evidence"))
         answer_failed = False
-        if authoritative_orchestration.mode == LANGGRAPH_DEMO and insufficient_evidence:
-            reason = authoritative_trace.metadata.get(
-                "insufficient_evidence_reason"
-            ) or "required evidence was not available"
+        if authoritative_orchestration.mode == LANGGRAPH_DEMO and retrieval_errors:
+            answer_failed = True
+            error_details = "; ".join(
+                f"{e.get('source')}: {e.get('message')}" for e in retrieval_errors[:3]
+            )
+            response = (
+                f"Retrieval failed: {error_details}. "
+                "Your message was saved and you can retry this turn."
+            )
+            timings["main_model_call"] = 0.0
+        if (
+            not answer_failed
+            and authoritative_orchestration.mode == LANGGRAPH_DEMO
+            and insufficient_evidence
+        ):
+            reason = (
+                authoritative_trace.metadata.get("insufficient_evidence_reason")
+                or "required evidence was not available"
+            )
             response = f"I do not have sufficient grounded evidence: {reason}."
             timings["main_model_call"] = 0.0
         else:
@@ -272,6 +280,14 @@ class CoordinatorAgent:
                 response = (
                     "The answer could not be generated. Your message was saved and "
                     "you can retry this turn."
+                )
+            except LangChainChromaUnavailable as error:
+                timings["main_model_call"] = elapsed_ms(stage_started)
+                errors.append(str(error))
+                answer_failed = True
+                response = (
+                    "The retrieval system is unavailable. Your message was saved "
+                    "and you can retry this turn."
                 )
 
         stage_started = perf_counter()
@@ -294,9 +310,7 @@ class CoordinatorAgent:
                 # Memory updates should not break the visible chat response. The next
                 # successful turn can retry because messages remain unprocessed.
         timings["total_turn"] = elapsed_ms(total_started)
-        saved_memory_rows = list(
-            getattr(self.memory_agent.memory, "last_saved_memory_rows", [])
-        )
+        saved_memory_rows = list(getattr(self.memory_agent.memory, "last_saved_memory_rows", []))
         retrieved_memory_rows = structured_memory_candidate_trace_rows(retrieved_candidates)
         retrieved_document_rows = document_memory_candidate_trace_rows(retrieved_candidates)
         effective_orchestration_mode = (
@@ -348,13 +362,9 @@ class CoordinatorAgent:
                 "context_limit": trace_context_packet.metadata.get("context_limit"),
                 "answer_reserve": trace_context_packet.metadata.get("answer_reserve"),
                 "safety_margin": trace_context_packet.metadata.get("safety_margin"),
-                "overflow_detected": trace_context_packet.metadata.get(
-                    "overflow_detected"
-                ),
+                "overflow_detected": trace_context_packet.metadata.get("overflow_detected"),
                 "overflow_tokens": trace_context_packet.metadata.get("overflow_tokens"),
-                "dropped_candidate_ids": trace_context_packet.metadata.get(
-                    "dropped_candidate_ids"
-                ),
+                "dropped_candidate_ids": trace_context_packet.metadata.get("dropped_candidate_ids"),
                 "dropped_candidate_reasons": trace_context_packet.metadata.get(
                     "dropped_candidate_reasons"
                 ),
@@ -385,6 +395,7 @@ class CoordinatorAgent:
                 "answer_status": "failed" if answer_failed else "completed",
             },
         )
+
     def _log_trace(self, trace: WorkflowTrace) -> None:
         """Emit a compact console trace until trace persistence exists."""
         recent_ids = []

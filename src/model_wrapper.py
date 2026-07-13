@@ -2,9 +2,12 @@ from __future__ import annotations
 
 import os
 
+import httpx
 from openai import OpenAI
 
 from src.config import AppConfig
+
+_M_REQUEST_TIMEOUT = float(os.environ.get("MODEL_REQUEST_TIMEOUT", "35"))
 
 
 class ModelWrapper:
@@ -16,10 +19,17 @@ class ModelWrapper:
 
     def __init__(self, config: AppConfig, model_name: str | None = None) -> None:
         self.model_name = model_name or config.model_name
+        self._timeout = _M_REQUEST_TIMEOUT
         self.client = OpenAI(
             api_key=config.openai_api_key,
             base_url=config.openai_base_url,
-            timeout=float(os.environ.get("MODEL_REQUEST_TIMEOUT", "120")),
+            timeout=httpx.Timeout(
+                self._timeout,
+                connect=self._timeout,
+                read=self._timeout,
+                write=self._timeout,
+                pool=self._timeout,
+            ),
         )
 
     def chat(
@@ -35,7 +45,14 @@ class ModelWrapper:
         completion = self.client.chat.completions.create(
             model=self.model_name,
             messages=messages,
+            timeout=httpx.Timeout(
+                self._timeout,
+                connect=self._timeout,
+                read=self._timeout,
+                write=self._timeout,
+                pool=self._timeout,
+            ),
             **kwargs,
         )
         content = completion.choices[0].message.content
-        return content or ""
+        return (content or "").strip()

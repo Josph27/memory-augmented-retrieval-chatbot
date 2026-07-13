@@ -7,6 +7,7 @@
     "dev": "vite",
     "build": "vite build",
     "lint": "oxlint",
+    "test:e2e": "node e2e/chat-messages.test.mjs",
     "preview": "vite preview"
   },
   "dependencies": {

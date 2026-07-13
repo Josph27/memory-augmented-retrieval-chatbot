@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from uuid import uuid4
 from types import SimpleNamespace
 from typing import NamedTuple
 
@@ -18,8 +19,6 @@ from src.documents.loaders import DocumentLoaderError
 from src.inspection.answer_inspector import inspection_rows_for_ui
 from src.memory.memory_trace import (
     demo_memory_trace_enabled,
-    format_retrieved_memories_markdown,
-    format_saved_memories_markdown,
 )
 from src.model_wrapper import ModelWrapper
 from src.orchestration.demo_orchestration import (
@@ -139,10 +138,15 @@ async def on_message(message: cl.Message) -> None:
     persisted_user_message_id = (
         chat_service.persist_user_message_for_turn(str(chat_id), content) if content else None
     )
-
     upload_result = index_uploaded_files(message, chat_service, str(chat_id))
     if upload_result.statuses:
-        await cl.Message(content="\n".join(upload_result.statuses)).send()
+        for status in upload_result.statuses:
+            is_error = status.startswith("Could not index")
+            await cl.Message(
+                id=f"error:{uuid4()}" if is_error else None,
+                content=status,
+            ).send()
+
 
     if not content:
         return
@@ -161,30 +165,39 @@ async def on_message(message: cl.Message) -> None:
         persisted_user_message_id,
         True,  # defer_post_answer_memory_update
     )
-    if demo_memory_trace_enabled():
-        retrieved_trace = format_retrieved_memories_markdown(retrieved_memory_rows(result))
-        if retrieved_trace:
-            await cl.Message(content=retrieved_trace).send()
-
     if result.metadata.get("answer_status") == "failed":
         await send_product_error(result.answer)
+        await cl.Message(
+            id=f"error:{uuid4()}",
+            content=result.answer,
+        ).send()
         await send_chat_controls(str(chat_id))
         return
+
+    trace_metadata: dict[str, object] = {}
+    if demo_memory_trace_enabled():
+        retrieved = retrieved_memory_rows(result)
+        if retrieved:
+            trace_metadata["retrieved"] = retrieved
+    if orchestration_mode != NATIVE:
+        trace_metadata["orchestration"] = format_orchestration_trace_markdown(result)
+    if demo_memory_trace_enabled():
+        saved = list(getattr(chat_service.memory, "last_saved_memory_rows", []))
+        if saved:
+            trace_metadata["saved"] = saved
+
+    # Include retrieval errors from coordinator metadata for visibility
+    retrieval_errors = result.metadata.get("retrieval_errors")
+    if retrieval_errors:
+        trace_metadata["retrieval_errors"] = retrieval_errors
+
     await cl.Message(
         id=f"message:{result.assistant_message_id}",
         content=result.answer,
+        metadata={"trace": trace_metadata} if trace_metadata else None,
     ).send()
     await send_answer_inspections(str(chat_id))
     chat_service.finalize_post_answer_memory_update(chat_id)
-    if orchestration_mode != NATIVE:
-        await cl.Message(content=format_orchestration_trace_markdown(result)).send()
-
-    if demo_memory_trace_enabled():
-        saved_trace = format_saved_memories_markdown(
-            list(getattr(chat_service.memory, "last_saved_memory_rows", []))
-        )
-        if saved_trace:
-            await cl.Message(content=saved_trace).send()
     await send_chat_controls(str(chat_id))
 
 

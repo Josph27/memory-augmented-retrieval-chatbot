@@ -13,15 +13,80 @@ import { v4 as uuidv4 } from "uuid";
 
 function Message({ msg }) {
 	const isUser = msg.type === "user_message";
+	const isError = typeof msg.id === "string" && msg.id.startsWith("error:");
+	const trace = msg.metadata?.trace;
+
+	// Persist expand state per message ID across reloads
+	const storageKey = `breamon-expanded-${msg.id}`;
+	const [expanded, setExpanded] = useState(() => {
+		try {
+			return localStorage.getItem(storageKey) === "1";
+		} catch {
+			return false;
+		}
+	});
+
+	const toggleExpanded = () => {
+		setExpanded((prev) => {
+			const next = !prev;
+			try {
+				localStorage.setItem(storageKey, next ? "1" : "0");
+			} catch {}
+			return next;
+		});
+	};
+
+	const traceSections = [];
+	if (trace) {
+		if (Array.isArray(trace.retrieved) && trace.retrieved.length > 0) {
+			traceSections.push({
+				label: "Retrieved Memories",
+				rows: trace.retrieved,
+			});
+		}
+		if (Array.isArray(trace.saved) && trace.saved.length > 0) {
+			traceSections.push({ label: "Saved Memories", rows: trace.saved });
+		}
+		if (trace.orchestration) {
+			traceSections.push({
+				label: "Orchestration",
+				text: String(trace.orchestration),
+			});
+		}
+		if (
+			Array.isArray(trace.retrieval_errors) &&
+			trace.retrieval_errors.length > 0
+		) {
+			traceSections.push({
+				label: "Retrieval Errors",
+				items: trace.retrieval_errors,
+			});
+		}
+	}
+
 	return (
 		<div
-			className={`w-full max-w-4xl mx-auto flex flex-col ${isUser ? "translate-x-[20px]" : "-translate-x-[20px]"}`}
+			className={`w-full max-w-4xl mx-auto flex flex-col ${isUser ? "translate-x-[20px]" : isError ? "" : "-translate-x-[20px]"}`}
 		>
+			{isError && (
+				<div className="flex items-center gap-xs mb-1">
+					<span className="material-symbols-outlined text-[16px] text-brand-purple">
+						error
+					</span>
+					<span className="text-label-sm text-brand-purple font-bold uppercase tracking-wider">
+						ERROR:
+					</span>
+				</div>
+			)}
 			<div
 				className={
-					isUser
-						? "bg-surface-container border-t-[4px] border-r-[4px] border-almond-silk p-md border-b border-l border-outline-variant/20 rounded-sm"
-						: "bg-surface-dim border-t-[4px] border-l-[4px] border-brand-purple p-md border-b border-r border-outline-variant/20 rounded-sm"
+					isError
+						? "bg-surface-dim border-[4px] border-brand-purple p-md rounded-sm"
+						: traceSections.length > 0
+							? "bg-surface-dim border-l-[4px] border-brand-purple p-md rounded-tl-sm border-t-outline-variant/40 border-r-outline-variant/40 rounded-tr-sm"
+							: isUser
+								? "bg-surface-container border-r-[4px] border-almond-silk p-md border-t-outline-variant/40 border-b-outline-variant/40 border-l-outline-variant/40 rounded-sm"
+								: "bg-surface-dim border-l-[4px] border-brand-purple p-md border-t-outline-variant/40 border-b-outline-variant/40 border-r-outline-variant/40 rounded-sm"
 				}
 			>
 				<p
@@ -46,6 +111,86 @@ function Message({ msg }) {
 					</div>
 				)}
 			</div>
+			{traceSections.length > 0 && (
+				<div className="border-t-[3px] border-almond-silk bg-surface-dim rounded-b-sm border-b border-r border-l border-outline-variant/20">
+					<button
+						onClick={toggleExpanded}
+						className="w-full flex items-center justify-between px-md py-xs text-label-sm text-almond-silk hover:text-white transition-colors select-none"
+					>
+						<span>system info</span>
+						<span className="material-symbols-outlined text-[14px]">
+							{expanded ? "expand_less" : "expand_more"}
+						</span>
+					</button>
+					{expanded && (
+						<div className="px-md pb-md max-h-64 overflow-y-auto custom-scrollbar">
+							{traceSections.map((section, i) => (
+								<div key={i} className="mb-md">
+									<div className="text-label-sm text-on-surface-variant font-bold mb-xs uppercase tracking-wider">
+										{section.label}
+									</div>
+									{section.text && (
+										<pre className="text-code text-on-surface-variant whitespace-pre-wrap bg-surface-container-lowest p-sm rounded-sm text-[12px] leading-tight">
+											{section.text}
+										</pre>
+									)}
+									{section.rows && (
+										<table className="w-full text-code text-[12px] leading-tight border-collapse">
+											<thead>
+												<tr className="border-b border-outline-variant/30">
+													{Object.keys(section.rows[0] || {})
+														.slice(0, 6)
+														.map((k) => (
+															<th
+																key={k}
+																className="text-left text-on-surface-variant/70 font-normal py-xs pr-sm whitespace-nowrap"
+															>
+																{k}
+															</th>
+														))}
+												</tr>
+											</thead>
+											<tbody>
+												{section.rows.map((row, j) => (
+													<tr
+														key={j}
+														className="border-b border-outline-variant/10 hover:bg-surface-container-high/50"
+													>
+														{Object.values(row)
+															.slice(0, 6)
+															.map((val, k) => (
+																<td
+																	key={k}
+																	className="py-xs pr-sm text-on-surface-variant max-w-[300px] truncate"
+																>
+																	{typeof val === "string" && val.length > 100
+																		? val.slice(0, 100) + "..."
+																		: String(val ?? "")}
+																</td>
+															))}
+													</tr>
+												))}
+											</tbody>
+										</table>
+									)}
+									{section.items && (
+										<ul className="text-code text-[12px] text-on-surface-variant leading-tight space-y-xs list-disc pl-md">
+											{section.items.map((item, j) => (
+												<li
+													key={j}
+													className="bg-surface-container-lowest p-sm rounded-sm"
+												>
+													{String(item)}
+												</li>
+											))}
+										</ul>
+									)}
+								</div>
+							))}
+						</div>
+					)}
+				</div>
+			)}
 		</div>
 	);
 }
@@ -62,6 +207,8 @@ export default function ChainlitChat({ chatId }) {
 	const fileInputRef = useRef(null);
 	const scrollRef = useRef(null);
 	const hasConnected = useRef(false);
+	const loadingStart = useRef(null);
+	const [elapsed, setElapsed] = useState(0);
 	const navigate = useNavigate();
 
 	useEffect(() => {
@@ -110,6 +257,19 @@ export default function ChainlitChat({ chatId }) {
 			scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
 		}
 	}, [messages]);
+
+	useEffect(() => {
+		if (loading) {
+			if (!loadingStart.current) loadingStart.current = Date.now();
+			const interval = setInterval(() => {
+				setElapsed(Math.round((Date.now() - loadingStart.current) / 1000));
+			}, 500);
+			return () => clearInterval(interval);
+		} else {
+			loadingStart.current = null;
+			setElapsed(0);
+		}
+	}, [loading]);
 
 	const handleSend = () => {
 		const text = input.trim();
@@ -192,11 +352,12 @@ export default function ChainlitChat({ chatId }) {
 	const flatMessages = [];
 	const flatten = (msgs) => {
 		msgs.forEach((m) => {
-			// Skip empty step messages and streaming fragments with no output
-			if (!m.steps && (m.output || m.elements?.length > 0)) {
+			if (Array.isArray(m.steps) && m.steps.length > 0) {
+				flatten(m.steps);
+			}
+			if (m.output || m.elements?.length > 0) {
 				flatMessages.push(m);
 			}
-			if (m.steps) flatten(m.steps);
 		});
 	};
 	flatten(messages);
@@ -206,7 +367,7 @@ export default function ChainlitChat({ chatId }) {
 			{/* Messages Area */}
 			<div
 				ref={scrollRef}
-				className="flex-1 overflow-y-auto px-margin pt-sm pb-0 flex flex-col gap-sm min-h-0"
+				className="flex-1 overflow-y-auto px-margin pt-sm pb-0 flex flex-col gap-[12px] min-h-0"
 				style={{ overscrollBehavior: "none" }}
 			>
 				{!connected && !loading && (
@@ -218,8 +379,21 @@ export default function ChainlitChat({ chatId }) {
 					<Message key={msg.id} msg={msg} />
 				))}
 				{loading && (
-					<div className="text-on-surface-variant italic pl-md max-w-4xl mx-auto w-full">
-						Processing...
+					<div className="flex items-center gap-sm text-on-surface-variant pl-md max-w-4xl mx-auto w-full font-body-md">
+						<span className="material-symbols-outlined animate-spin text-[18px] text-brand-purple">
+							progress_activity
+						</span>
+						<span>Processing</span>
+						<span className="inline-flex">
+							<span className="animate-[pulse_1s_ease-in-out_infinite]">.</span>
+							<span className="animate-[pulse_1s_ease-in-out_0.2s_infinite]">
+								.
+							</span>
+							<span className="animate-[pulse_1s_ease-in-out_0.4s_infinite]">
+								.
+							</span>
+						</span>
+						<span className="text-on-surface-variant/50">({elapsed}s)</span>
 					</div>
 				)}
 			</div>
@@ -306,7 +480,7 @@ export default function ChainlitChat({ chatId }) {
 						</span>
 						<input
 							className="w-full bg-surface-container-lowest border border-outline-variant/50 rounded-sm py-2 pl-10 pr-12 text-body-md text-on-surface placeholder:text-on-surface-variant/50 focus:border-almond-silk focus:ring-0 focus:outline-none transition-colors"
-							placeholder="Enter command or natural language query..."
+							placeholder="Enter prompt text..."
 							value={input}
 							onChange={(e) => setInput(e.target.value)}
 							onKeyDown={(e) => {
