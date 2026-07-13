@@ -65,15 +65,25 @@ class StructuredMemoryRetriever:
             else:
                 store_records.extend(self.long_term_store.list(namespace))
 
-        store_records = [record for record in dedupe_memory_records(store_records) if record.status == "active"]
+        store_records = [
+            record for record in dedupe_memory_records(store_records) if record.status == "active"
+        ]
         if store_records:
             print_retrieved_memory_traces(chat_id, store_records)
             return [record_to_candidate(record) for record in store_records]
 
+        # Primary path returned empty — supplement chat_memory_state with DB records
+        # so manually reactivated memories are not lost when the LangMem snapshot is stale.
         del source_plan
         memory_state = load_memory_state(self.database.chat_memory_state(chat_id))
+        db_records: list[LongTermMemoryRecord] = []
+        for namespace in structured_memory_namespaces(chat_id):
+            db_records.extend(self.long_term_store.list(namespace))
+        db_active = {record.memory_id: record for record in db_records if record.status == "active"}
         candidates: list[MemoryCandidate] = []
+        seen_ids: set[str] = set()
         for record in active_memories(memory_state):
+            seen_ids.add(str(record["id"]))
             source_message_ids = record.get("source_message_ids", [])
             confidence = record.get("confidence")
             candidates.append(
@@ -94,6 +104,11 @@ class StructuredMemoryRetriever:
                     },
                 )
             )
+        # Append DB-active records not already present in chat_memory_state
+        for memory_id, db_record in db_active.items():
+            if memory_id in seen_ids:
+                continue
+            candidates.append(record_to_candidate(db_record))
         return candidates
 
     def _retrieve_vector_or_fallback(
@@ -116,8 +131,7 @@ class StructuredMemoryRetriever:
             return self._retrieve_sqlite(chat_id, source_plan)
         print_retrieved_memory_traces(chat_id, active_records)
         return [
-            vector_record_to_candidate(record)
-            for record in dedupe_memory_records(active_records)
+            vector_record_to_candidate(record) for record in dedupe_memory_records(active_records)
         ]
 
     def _retrieve_hybrid(
@@ -152,10 +166,7 @@ class StructuredMemoryRetriever:
         if not records:
             return sqlite_candidates
         print_retrieved_memory_traces(chat_id, records)
-        return [
-            hybrid_record_to_candidate(record)
-            for record in records
-        ][: source_plan.limit or 10]
+        return [hybrid_record_to_candidate(record) for record in records][: source_plan.limit or 10]
 
     def _vector_records(
         self,
@@ -168,8 +179,7 @@ class StructuredMemoryRetriever:
         results = index.search(query=query, limit=source_plan.limit or 10)
         records = []
         allowed_namespaces = {
-            namespace_path(namespace)
-            for namespace in structured_memory_namespaces(chat_id)
+            namespace_path(namespace) for namespace in structured_memory_namespaces(chat_id)
         }
         for result in results:
             if namespace_path(result.namespace) not in allowed_namespaces:

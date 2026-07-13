@@ -132,9 +132,9 @@ class LangMemStructuredMemoryState:
         if not user_messages:
             return MemoryUpdateResult(
                 memory_state=normalized_memory,
-            accepted=False,
-            rejection_reason="no_user_messages",
-        )
+                accepted=False,
+                rejection_reason="no_user_messages",
+            )
 
         source_chat_id = messages[0].chat_id
         long_term_records = self._load_existing_long_term_records(source_chat_id)
@@ -251,11 +251,15 @@ def create_real_langmem_manager(config: LangMemBackendConfig) -> LangMemManager:
             "LangMem structured memory requires langmem and langchain-openai."
         ) from exc
 
+    _langmem_timeout = float(os.environ.get("MODEL_REQUEST_TIMEOUT", "35"))
     model = ChatOpenAI(
         api_key=config.openai_api_key,
         base_url=config.openai_base_url,
         model=config.model_name,
         temperature=0.0,
+        request_timeout=_langmem_timeout,
+        max_retries=0,
+        stream_chunk_timeout=_langmem_timeout,
     )
     return create_memory_manager(
         model,

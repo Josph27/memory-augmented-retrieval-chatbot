@@ -199,9 +199,10 @@ class SQLiteLongTermMemoryStore:
         self.database = database
         self.vector_sync = vector_sync
         mode = (
-            retrieval_mode
-            or os.getenv("STRUCTURED_MEMORY_RETRIEVAL_MODE", "sqlite")
-        ).strip().lower()
+            (retrieval_mode or os.getenv("STRUCTURED_MEMORY_RETRIEVAL_MODE", "sqlite"))
+            .strip()
+            .lower()
+        )
         if self.vector_sync is None and mode in {"vector", "hybrid"}:
             from src.memory.structured_memory_vector_sync import (
                 StructuredMemoryVectorSync as DefaultStructuredMemoryVectorSync,
@@ -357,7 +358,9 @@ class SQLiteLongTermMemoryStore:
                 score = lexical_score(row, terms)
                 if score > 0:
                     scored.append((score, row))
-            scored.sort(key=lambda item: (item[0], item[1].updated_at, item[1].memory_id), reverse=True)
+            scored.sort(
+                key=lambda item: (item[0], item[1].updated_at, item[1].memory_id), reverse=True
+            )
             return [row for _, row in scored[:limit]]
 
         candidate_rows.sort(key=lambda row: (row.updated_at, row.memory_id), reverse=True)
@@ -380,10 +383,14 @@ class SQLiteLongTermMemoryStore:
 
         namespaces = [namespace_from_path(row["namespace_path"]) for row in rows]
         if prefix is not None:
-            namespaces = [namespace for namespace in namespaces if matches_namespace_prefix(namespace, prefix)]
+            namespaces = [
+                namespace for namespace in namespaces if matches_namespace_prefix(namespace, prefix)
+            ]
         return namespaces[:limit]
 
-    def _rows_for_namespace_prefix(self, namespace_prefix: tuple[str, ...]) -> list[LongTermMemoryRecord]:
+    def _rows_for_namespace_prefix(
+        self, namespace_prefix: tuple[str, ...]
+    ) -> list[LongTermMemoryRecord]:
         with self.database.connect() as connection:
             rows = connection.execute(
                 """
@@ -403,6 +410,7 @@ class SQLiteLongTermMemoryStore:
                     updated_at,
                     metadata_json
                 FROM long_term_memories
+                WHERE status = 'active'
                 ORDER BY updated_at DESC, memory_id ASC
                 """
             ).fetchall()
@@ -432,7 +440,9 @@ class LangGraphInMemoryLongTermMemoryStore:
         item = self.store.get(namespace, memory_id)
         if item is None:
             return None
-        return record_from_store_value(item.value, namespace=tuple(item.namespace), memory_id=item.key)
+        return record_from_store_value(
+            item.value, namespace=tuple(item.namespace), memory_id=item.key
+        )
 
     def delete(self, namespace: tuple[str, ...], memory_id: str) -> None:
         self.store.delete(namespace, memory_id)
@@ -523,7 +533,9 @@ def record_to_memory_state_record(record: LongTermMemoryRecord) -> dict[str, Any
     return record.as_memory_record()
 
 
-def memory_state_from_records(records: list[LongTermMemoryRecord]) -> dict[str, list[dict[str, Any]]]:
+def memory_state_from_records(
+    records: list[LongTermMemoryRecord],
+) -> dict[str, list[dict[str, Any]]]:
     """Convert store records into the existing chat_memory_state JSON shape."""
     return {"memories": [record_to_memory_state_record(record) for record in records]}
 
@@ -535,9 +547,7 @@ def merge_memory_records(
     """Merge records by id while preserving record dictionaries."""
     merged = [dict(record) for record in existing_records]
     index_by_id = {
-        str(record.get("id")): index
-        for index, record in enumerate(merged)
-        if record.get("id")
+        str(record.get("id")): index for index, record in enumerate(merged) if record.get("id")
     }
     for record in new_records:
         memory_id = str(record.get("id"))
@@ -568,7 +578,9 @@ def row_to_record(row: sqlite3.Row) -> LongTermMemoryRecord:
     source_ids = safe_json_list(row["source_message_ids_json"])
     confidence = float(row["confidence"]) if row["confidence"] is not None else 0.5
     return LongTermMemoryRecord(
-        namespace=namespace_from_path(row["namespace_path"] if "namespace_path" in row.keys() else row["namespace_json"]),
+        namespace=namespace_from_path(
+            row["namespace_path"] if "namespace_path" in row.keys() else row["namespace_json"]
+        ),
         memory_id=row["memory_id"],
         category=row["category"],
         key=row["key"],
@@ -674,7 +686,9 @@ def lexical_score(record: LongTermMemoryRecord, terms: set[str]) -> float:
     """Score a record against lexical terms."""
     if not terms:
         return 0.0
-    record_terms = important_terms(" ".join([record.key, record.value, json.dumps(record.metadata)]))
+    record_terms = important_terms(
+        " ".join([record.key, record.value, json.dumps(record.metadata)])
+    )
     overlap = len(record_terms & terms)
     if overlap == 0:
         return 0.0

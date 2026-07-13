@@ -1,4 +1,5 @@
 from __future__ import annotations
+import asyncio
 from datetime import datetime, timezone
 import chainlit as cl
 from src.database import Database
@@ -107,17 +108,37 @@ def register_api_routes(database: Database, chat_service_getter: Any) -> None:
         except Exception as e:
             return {"error": str(e)}, 500
 
+    @app.post("/api/chats/{chat_id}/consolidate")
+    async def consolidate_chat(chat_id: str):
+        try:
+            chat = get_db().get_chat(chat_id)
+            if not chat:
+                return {"error": "not found"}, 404
+            svc = get_chat_svc()
+            result = await asyncio.wait_for(
+                asyncio.to_thread(svc.memory.process_all_for_chat_end, chat_id),
+                timeout=6,
+            )
+            return {
+                "status": "consolidated",
+                "processed": result.processed_message_count,
+                "batches": result.batch_count,
+            }
+        except asyncio.TimeoutError:
+            return {
+                "error": "Memory consolidation timed out after 6 seconds — the model may be unresponsive."
+            }, 504
+        except Exception as e:
+            return {"error": str(e)}, 500
+
     @app.delete("/api/chats/{chat_id}")
     async def delete_chat(chat_id: str):
         try:
             chat = get_db().get_chat(chat_id)
             if not chat:
                 return {"error": "not found"}, 404
-            # Extract all pending memories before deleting the chat
-            svc = get_chat_svc()
-            svc.memory.process_all_for_chat_end(chat_id)
             get_db().delete_chat(chat_id)
-            return {"status": "deleted", "memories_extracted": True}
+            return {"status": "deleted"}
         except Exception as e:
             return {"error": str(e)}, 500
 
@@ -138,6 +159,28 @@ def register_api_routes(database: Database, chat_service_getter: Any) -> None:
                 }
                 for d in docs
             ]
+        except Exception as e:
+            return {"error": str(e)}, 500
+
+    @app.post("/api/documents/{doc_id}/deactivate")
+    async def deactivate_document(doc_id: str):
+        try:
+            doc = get_db().get_document(doc_id)
+            if not doc:
+                return {"error": "not found"}, 404
+            get_db().update_document_status(doc_id, "deleted")
+            return {"status": "deactivated"}
+        except Exception as e:
+            return {"error": str(e)}, 500
+
+    @app.post("/api/documents/{doc_id}/activate")
+    async def activate_document(doc_id: str):
+        try:
+            doc = get_db().get_document(doc_id)
+            if not doc:
+                return {"error": "not found"}, 404
+            get_db().update_document_status(doc_id, "Ready")
+            return {"status": "activated"}
         except Exception as e:
             return {"error": str(e)}, 500
 
@@ -221,10 +264,38 @@ def register_api_routes(database: Database, chat_service_getter: Any) -> None:
             return {"error": str(e)}, 500
 
     @app.get("/api/memories")
-    async def list_memories(limit: int = 200):
+    async def list_memories(limit: int = 200, status: str | None = None):
         try:
-            memories = get_db().list_all_memories(limit=limit)
+            memories = get_db().list_all_memories(limit=limit, status=status)
             return memories
+        except Exception as e:
+            return {"error": str(e)}, 500
+
+    @app.post("/api/memories/{memory_id}/deactivate")
+    async def deactivate_memory(memory_id: str):
+        try:
+            with get_db().connect() as conn:
+                cur = conn.execute(
+                    "UPDATE long_term_memories SET status = 'deleted' WHERE memory_id = ?",
+                    (memory_id,),
+                )
+            if cur.rowcount == 0:
+                return {"error": "not found"}, 404
+            return {"status": "deactivated"}
+        except Exception as e:
+            return {"error": str(e)}, 500
+
+    @app.post("/api/memories/{memory_id}/activate")
+    async def activate_memory(memory_id: str):
+        try:
+            with get_db().connect() as conn:
+                cur = conn.execute(
+                    "UPDATE long_term_memories SET status = 'active' WHERE memory_id = ?",
+                    (memory_id,),
+                )
+            if cur.rowcount == 0:
+                return {"error": "not found"}, 404
+            return {"status": "activated"}
         except Exception as e:
             return {"error": str(e)}, 500
 

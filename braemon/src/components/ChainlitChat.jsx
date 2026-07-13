@@ -7,7 +7,7 @@ import {
 	sessionIdState,
 } from "@chainlit/react-client";
 import { useRecoilState } from "recoil";
-import { createChat, endChat, forkChat } from "../api";
+import { endChat, forkChat } from "../api";
 import { useNavigate } from "react-router-dom";
 import { v4 as uuidv4 } from "uuid";
 
@@ -210,7 +210,7 @@ function Message({ msg }) {
 	);
 }
 
-export default function ChainlitChat({ chatId }) {
+export default function ChainlitChat({ chatId, onConsolidate }) {
 	const { setIdToResume, sendMessage, uploadFile } = useChatInteract();
 	const { connect, disconnect, idToResume } = useChatSession();
 	const { messages } = useChatMessages();
@@ -332,14 +332,9 @@ export default function ChainlitChat({ chatId }) {
 		}
 	};
 
-	const handleNewChat = async () => {
-		try {
-			const { chat_id } = await createChat();
-			navigate(`/chat/${chat_id}`);
-		} catch (err) {
-			console.error(err);
-			alert("Failed to create new chat");
-		}
+	const handleConsolidate = () => {
+		if (!chatId) return;
+		onConsolidate?.(chatId);
 	};
 
 	const handleEndChat = async () => {
@@ -461,11 +456,14 @@ export default function ChainlitChat({ chatId }) {
 							Fork Chat
 						</button>
 						<button
-							onClick={handleNewChat}
-							className="bg-almond-silk text-primary-container px-3 py-1 rounded-sm text-label-sm flex items-center gap-xs"
+							onClick={handleConsolidate}
+							disabled={!connected || loading}
+							className="bg-dusty-grape/20 border border-lilac-ash/30 text-almond-silk px-3 py-1 rounded-sm text-label-sm flex items-center gap-xs hover:bg-dusty-grape/40 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
 						>
-							<span className="material-symbols-outlined text-[14px]">add</span>
-							New Chat
+							<span className="material-symbols-outlined text-[14px]">
+								psychology
+							</span>
+							Consolidate
 						</button>
 					</div>
 					{attachedFile && (

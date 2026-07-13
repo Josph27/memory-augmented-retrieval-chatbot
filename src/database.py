@@ -807,7 +807,7 @@ class Database:
         error: str | None = None,
     ) -> None:
         """Transition persisted document lifecycle state truthfully."""
-        if status not in {"Uploading", "Indexing", "Ready", "Failed"}:
+        if status not in {"Uploading", "Indexing", "Ready", "Failed", "deleted"}:
             raise ValueError(f"invalid document status: {status}")
         timestamp = utc_now()
         with self.connect() as connection:
@@ -860,11 +860,11 @@ class Database:
         return self._document_from_row(row) if row else None
 
     def delete_document(self, document_id: str) -> None:
-        """Delete one document record. Returns silently if not found."""
+        """Soft-delete one document record. Returns silently if not found."""
         with self.connect() as connection:
             connection.execute(
-                "DELETE FROM document_records WHERE id = ?",
-                (document_id,),
+                "UPDATE document_records SET status = 'deleted', updated_at = ? WHERE id = ?",
+                (utc_now(), document_id),
             )
 
     def list_all_documents(
@@ -872,10 +872,11 @@ class Database:
     ) -> list[StoredDocument]:
         """List all document records regardless of chat association."""
         parameters: list[object] = []
-        status_clause = ""
         if status:
-            status_clause = "WHERE status = ?"
+            conditions = ["status = ?"]
             parameters.append(status)
+        else:
+            conditions = ["status != 'deleted'"]
         parameters.append(limit)
         with self.connect() as connection:
             rows = connection.execute(
@@ -883,7 +884,7 @@ class Database:
                 SELECT id, file_name, status, source, chunk_count, error,
                        created_at, updated_at, metadata_json
                 FROM document_records
-                {status_clause}
+                WHERE {" AND ".join(conditions)}
                 ORDER BY updated_at DESC, id DESC
                 LIMIT ?
                 """,
@@ -899,11 +900,12 @@ class Database:
     ) -> list[StoredDocument]:
         """List documents associated with a chat in most-recent-first order."""
         parameters: list[object] = [chat_id]
-        status_clause = ""
+        conditions = ["documents.status != 'deleted'"]
         if statuses:
             placeholders = ", ".join("?" for _ in statuses)
-            status_clause = f"AND documents.status IN ({placeholders})"
+            conditions.append(f"documents.status IN ({placeholders})")
             parameters.extend(statuses)
+        status_clause = "AND " + " AND ".join(conditions)
         with self.connect() as connection:
             rows = connection.execute(
                 f"""
@@ -1394,8 +1396,8 @@ class Database:
             gist_processed=bool(row["gist_processed"]),
         )
 
-    def list_all_memories(self, limit: int = 200) -> list[dict]:
-        """List all active long-term memory entries across all namespaces."""
+    def list_all_memories(self, limit: int = 200, status: str | None = None) -> list[dict]:
+        """List long-term memory entries, optionally filtered by status."""
         with self.connect() as connection:
             columns = {
                 row["name"]
@@ -1415,16 +1417,18 @@ class Database:
             missing = expected - columns
             if missing:
                 raise RuntimeError(f"long_term_memories schema mismatch: missing columns {missing}")
+
+            target_status = status or "active"
             rows = connection.execute(
-                """
+                f"""
                 SELECT memory_id, key, value, category, confidence, status,
                        source_chat_id, created_at, updated_at
                 FROM long_term_memories
-                WHERE status = 'active'
+                WHERE status = ?
                 ORDER BY updated_at DESC, memory_id ASC
                 LIMIT ?
                 """,
-                (limit,),
+                (target_status, limit),
             ).fetchall()
         return [dict(row) for row in rows]
 

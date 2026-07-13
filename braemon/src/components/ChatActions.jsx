@@ -4,6 +4,8 @@ export default function ChatActions({
 	chatId,
 	active,
 	onStateChange,
+	onConsolidate,
+	showDelete,
 	onDelete,
 }) {
 	const handleEnd = async (e) => {
@@ -18,6 +20,12 @@ export default function ChatActions({
 		e.stopPropagation();
 		await reactivateChat(chatId);
 		onStateChange?.(chatId, true);
+	};
+
+	const handleConsolidate = (e) => {
+		e.preventDefault();
+		e.stopPropagation();
+		onConsolidate?.(chatId);
 	};
 
 	const handleDelete = async (e) => {
@@ -54,14 +62,25 @@ export default function ChatActions({
 				</button>
 			)}
 			<button
-				onClick={handleDelete}
-				title="Delete chat"
-				className="hover:bg-error/10 p-1 rounded transition-colors"
+				onClick={handleConsolidate}
+				title="Consolidate memories"
+				className="hover:bg-surface-container-highest/50 p-1 rounded transition-colors"
 			>
-				<span className="material-symbols-outlined text-[14px] text-on-surface-variant hover:text-error">
-					delete
+				<span className="material-symbols-outlined text-[14px] text-on-surface-variant hover:text-primary">
+					psychology
 				</span>
 			</button>
+			{showDelete && (
+				<button
+					onClick={handleDelete}
+					title="Delete chat"
+					className="hover:bg-error/10 p-1 rounded transition-colors"
+				>
+					<span className="material-symbols-outlined text-[14px] text-on-surface-variant hover:text-error">
+						delete
+					</span>
+				</button>
+			)}
 		</div>
 	);
 }

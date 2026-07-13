@@ -23,6 +23,7 @@ class ModelWrapper:
         self.client = OpenAI(
             api_key=config.openai_api_key,
             base_url=config.openai_base_url,
+            max_retries=0,
             timeout=httpx.Timeout(
                 self._timeout,
                 connect=self._timeout,

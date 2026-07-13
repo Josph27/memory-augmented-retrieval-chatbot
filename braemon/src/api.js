@@ -49,6 +49,14 @@ export async function deleteChat(chatId) {
 	return res.json();
 }
 
+export async function consolidateChat(chatId) {
+	const res = await fetch(`${BASE}/chats/${chatId}/consolidate`, {
+		method: "POST",
+	});
+	if (!res.ok) throw new Error(`Failed to consolidate chat: ${res.status}`);
+	return res.json();
+}
+
 export async function fetchDocuments({ status } = {}) {
 	const params = new URLSearchParams();
 	if (status) params.set("status", status);
@@ -97,9 +105,45 @@ export async function deleteDocument(docId) {
 	return res.json();
 }
 
-export async function fetchMemories() {
-	const res = await fetch(`${BASE}/memories`);
+export async function deactivateDocument(docId) {
+	const res = await fetch(`${BASE}/documents/${docId}/deactivate`, {
+		method: "POST",
+	});
+	if (!res.ok) throw new Error(`Failed to deactivate document: ${res.status}`);
+	return res.json();
+}
+
+export async function activateDocument(docId) {
+	const res = await fetch(`${BASE}/documents/${docId}/activate`, {
+		method: "POST",
+	});
+	if (!res.ok) throw new Error(`Failed to activate document: ${res.status}`);
+	return res.json();
+}
+
+export async function fetchMemories({ status } = {}) {
+	const params = new URLSearchParams();
+	if (status) params.set("status", status);
+	const qs = params.toString();
+	const url = qs ? `${BASE}/memories?${qs}` : `${BASE}/memories`;
+	const res = await fetch(url);
 	if (!res.ok) throw new Error(`Failed to fetch memories: ${res.status}`);
+	return res.json();
+}
+
+export async function deactivateMemory(memoryId) {
+	const res = await fetch(`${BASE}/memories/${memoryId}/deactivate`, {
+		method: "POST",
+	});
+	if (!res.ok) throw new Error(`Failed to deactivate memory: ${res.status}`);
+	return res.json();
+}
+
+export async function activateMemory(memoryId) {
+	const res = await fetch(`${BASE}/memories/${memoryId}/activate`, {
+		method: "POST",
+	});
+	if (!res.ok) throw new Error(`Failed to activate memory: ${res.status}`);
 	return res.json();
 }
 
