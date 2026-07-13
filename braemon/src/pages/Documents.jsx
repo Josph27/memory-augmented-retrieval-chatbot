@@ -60,7 +60,6 @@ function Documents() {
 			loadDocuments();
 		} catch (err) {
 			console.error(err);
-			alert("Failed to delete document.");
 		}
 	};
 

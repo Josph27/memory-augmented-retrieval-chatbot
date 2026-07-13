@@ -31,7 +31,6 @@ export default function Chats() {
 			navigate(`/chat/${chat_id}`);
 		} catch (err) {
 			console.error(err);
-			alert("Failed to create a new session.");
 		}
 	};
 

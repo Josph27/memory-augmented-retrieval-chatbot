@@ -86,6 +86,65 @@ available as explicit configuration, not defaults.
 records selected and dropped candidates. The latest user message is supplied
 exactly once at the end of the prompt.
 
+## Context pipeline
+
+The context pipeline transforms ranked `MemoryCandidate` objects into
+model-ready messages through five deterministic layers:
+
+1. **Model Profile**: Resolves the effective context window for the configured
+   model (currently gemma-4-31B-it with 262K native window). Accepts
+   endpoint-level overrides via environment variables.
+
+2. **Dynamic Working Memory Budget**: Picks a route-specific cap (base 4096,
+   document 16384, global summary up to 131072 tokens). Expands past the cap
+   when required evidence demands it.
+
+3. **Budget Allocation**: Splits the working budget across memory sources using
+   profile ratios. Five profiles (`general_chat`, `memory_recall`,
+   `document_question`, `mixed_memory_document`, `global_summary`). Each source
+   gets a minimum token reservation.
+
+4. **Evidence-Constrained Selection**: Requirement-first selection. Required
+   evidence (raw spans for exact quotes, scope evidence for document/chat/durable
+   queries) is selected before optional candidates. Deduplicates exact duplicates
+   and folds overlapping spans. Gist parents are dropped when their raw-span
+   child is selected, reclaiming tokens. Optional candidates compete under
+   marginal-utility scoring.
+
+5. **Context Building**: Groups selected candidates by source, builds
+   model-shaped messages. Structured memory is merged into the single system
+   message. Retrieved context is prepended to the latest user message. Handles
+   overflow by dropping lowest-ranked non-recent candidates.
+
+The pipeline is fully deterministic — no LLM calls for budgeting or selection.
+See `src/context/.doc.md` for detailed layer documentation.
+
+## Retrieval pipeline
+
+Seven source retrievers feed `MemoryCandidate` objects into the pipeline
+through a central dispatcher:
+
+`RetrieverDispatcher` iterates `RoutePlan.sources`, invokes the corresponding
+retriever for each enabled source. All retrievers implement the same interface:
+`retrieve(chat_id, source_plan) → list[MemoryCandidate]`.
+
+After dispatching, `GistRawSpanExpander` runs on retrieved candidates. Gist
+candidates (lossy orientation summaries) are expanded into bounded
+`raw_message_span` candidates with exact SQLite evidence and source-message
+provenance. This implements the core pattern: gists are orientation, raw spans
+are proof.
+
+`MemoryReranker` scores and reorders all candidates. The default deterministic
+mode uses 11 weighted features (lexical overlap, source priority, confidence,
+recency, redundancy penalty, etc.). Optional modes: cross-encoder semantic
+scoring, LLM listwise reranking, or hybrid (cross-encoder + gated LLM). Source
+priorities rank `structured_memory` above `recent_messages` above gists above
+documents above raw spans.
+
+The ranked candidates flow into the context pipeline for budget-constrained
+selection and message assembly. See `src/retrieval/.doc.md` for detailed
+retriever documentation.
+
 ## Answer generation
 
 `AnswerAgent` receives the final prompt messages derived from `ContextPacket`.

@@ -19,6 +19,14 @@ current and intentional unless otherwise noted.
 - There is no background reconciliation job for stale document states.
 - There is no coordinated automatic deletion of Chroma chunks when document
   metadata is removed or superseded.
+- `LONG_TERM_MEMORY_CHROMA_PERSIST_DIR` defaults to the same path as
+  `LANGCHAIN_CHROMA_PERSIST_DIR`. If a single Chroma directory holds both
+  document chunks and long-term memory vectors, collection collision is
+  possible.
+- Memory update is LLM-backed (LangMem). When the model call fails, the error
+  is caught silently — the user receives a successful answer but no new
+  structured memories are extracted that turn. Unprocessed messages remain
+  queued for the next successful turn.
 
 ## Orchestration
 
@@ -34,6 +42,41 @@ current and intentional unless otherwise noted.
 - MAB and LongMemEval runs show quality weaknesses in retrieval, context
   selection, and answer use on hard held-out cases.
 - LongMemEval support is a pilot adapter, not an official leaderboard scorer.
+- Cross-encoder and LLM reranking are not enabled by default. Only the
+  deterministic reranker runs unless `RERANKER_MODE` is explicitly configured
+  and additional dependencies (e.g. sentence-transformers) are installed.
+- Token counting relies on a Gemma-specific tokenizer loaded from Hugging
+  Face. On any load or tokenization error, the estimator silently falls back
+  to approximate character-based counting (4 chars/token), which can cause
+  significant over- or under-estimation of context usage.
+
+## Configuration and defaults
+
+- Only one model profile is registered: `gemma-4-31B-it`. Unknown models get a
+  conservative profile with a 4096-token safe fallback and no sliding window,
+  which reduces context budget accuracy for other models.
+- Both `CURRENT_CHAT_GIST_GENERATION_ENABLED` and
+  `PREVIOUS_CHAT_GIST_GENERATION_ENABLED` default to `False`. Gists are
+  orientation summaries that enable longer-context orientation without
+  carrying raw evidence. Without them, the system loses low-token orientation
+  for long chats and multi-chat scenarios.
+- The richer deterministic `SemanticRouter` (512 lines) is not wired into the
+  native production path. It runs only within LangGraph orchestration modes.
+  The native path uses the simpler `QueryAnalyzer` + `RoutePlanner` pipeline.
+
+## Prompt and model compatibility
+
+- For Qwen 3.5: structured memory is merged into the system message and
+  retrieved context is prepended to the latest user message. This is a
+  workaround because Qwen's chat template rejects multiple system messages.
+  If the model changes to one with different template constraints, prompt
+  assembly may need revisiting.
+
+## Frontend
+
+- Workflow traces are embedded as HTML comments (`<!--breamon-trace:...-->`)
+  inside assistant message output strings. Any post-processing that strips
+  HTML comments would lose trace data.
 
 ## Evaluation
 
