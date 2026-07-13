@@ -198,7 +198,7 @@ class Database:
                     id TEXT PRIMARY KEY,
                     file_name TEXT NOT NULL,
                     status TEXT NOT NULL CHECK (
-                        status IN ('Uploading', 'Indexing', 'Ready', 'Failed')
+                        status IN ('Uploading', 'Indexing', 'Ready', 'Failed', 'deleted')
                     ),
                     source TEXT,
                     chunk_count INTEGER NOT NULL DEFAULT 0,
@@ -251,6 +251,7 @@ class Database:
             self._ensure_chats_model_name_column(connection)
             self._ensure_chats_active_column(connection)
             self._drop_legacy_document_tables(connection)
+            self._ensure_document_status_check_allows_deleted(connection)
             connection.execute(
                 """
                 CREATE INDEX IF NOT EXISTS idx_messages_chat_summarized
@@ -332,6 +333,40 @@ class Database:
         columns = {row["name"] for row in connection.execute("PRAGMA table_info(chats)").fetchall()}
         if "active" not in columns:
             connection.execute("ALTER TABLE chats ADD COLUMN active INTEGER NOT NULL DEFAULT 1")
+
+    def _ensure_document_status_check_allows_deleted(self, connection: sqlite3.Connection) -> None:
+        """Widen the document_records CHECK constraint to accept 'deleted' status."""
+        create_sql_row = connection.execute(
+            "SELECT sql FROM sqlite_master WHERE type='table' AND name='document_records'"
+        ).fetchone()
+        if create_sql_row is None:
+            return  # Table does not exist yet
+        create_sql = create_sql_row[0]
+        if "'deleted'" in create_sql or "deleted" in create_sql:
+            return  # Already migrated
+
+        # Rebuild table with wider CHECK constraint. FK from chat_documents is
+        # ON DELETE CASCADE which references the row by id, not the table name.
+        connection.executescript(
+            """
+            CREATE TABLE document_records_migrated (
+                id TEXT PRIMARY KEY,
+                file_name TEXT NOT NULL,
+                status TEXT NOT NULL CHECK (
+                    status IN ('Uploading', 'Indexing', 'Ready', 'Failed', 'deleted')
+                ),
+                source TEXT,
+                chunk_count INTEGER NOT NULL DEFAULT 0,
+                error TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                metadata_json TEXT NOT NULL DEFAULT '{}'
+            );
+            INSERT INTO document_records_migrated SELECT * FROM document_records;
+            DROP TABLE document_records;
+            ALTER TABLE document_records_migrated RENAME TO document_records;
+            """
+        )
 
     def create_chat(
         self,
@@ -1403,26 +1438,28 @@ class Database:
                 row["name"]
                 for row in connection.execute("PRAGMA table_info(long_term_memories)").fetchall()
             }
-            expected = {
+            core_required = {
                 "memory_id",
                 "key",
                 "value",
                 "category",
                 "confidence",
                 "status",
-                "source_chat_id",
                 "created_at",
                 "updated_at",
             }
-            missing = expected - columns
+            missing = core_required - columns
             if missing:
                 raise RuntimeError(f"long_term_memories schema mismatch: missing columns {missing}")
+
+            has_source_chat_id = "source_chat_id" in columns
+            source_col = ", source_chat_id" if has_source_chat_id else ""
 
             target_status = status or "active"
             rows = connection.execute(
                 f"""
-                SELECT memory_id, key, value, category, confidence, status,
-                       source_chat_id, created_at, updated_at
+                SELECT memory_id, key, value, category, confidence, status{source_col},
+                       created_at, updated_at
                 FROM long_term_memories
                 WHERE status = ?
                 ORDER BY updated_at DESC, memory_id ASC
@@ -1430,7 +1467,13 @@ class Database:
                 """,
                 (target_status, limit),
             ).fetchall()
-        return [dict(row) for row in rows]
+            results = []
+            for row in rows:
+                rec = dict(row)
+                if not has_source_chat_id:
+                    rec.setdefault("source_chat_id", None)
+                results.append(rec)
+            return results
 
     def _chat_gist_from_row(self, row: sqlite3.Row) -> StoredChatGist:
         return StoredChatGist(

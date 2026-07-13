@@ -14,20 +14,38 @@ export default function Memories() {
 
 	const loadMemories = useCallback(() => {
 		setLoading(true);
-		// Fetch both active and deleted, then merge
-		Promise.all([
+		setError(null);
+		// Fetch active and deleted independently so a failure in one
+		// does not discard successful results from the other.
+		Promise.allSettled([
 			fetchMemories({ status: "active" }),
 			fetchMemories({ status: "deleted" }),
-		])
-			.then(([active, deleted]) => {
-				setMemories([...active, ...deleted]);
-				setLoading(false);
-			})
-			.catch((err) => {
-				console.error(err);
+		]).then(([activeResult, deletedResult]) => {
+			const merged = [];
+			const errors = [];
+			if (activeResult.status === "fulfilled") {
+				merged.push(...activeResult.value);
+			} else {
+				console.error("Active memories fetch failed:", activeResult.reason);
+				errors.push("active");
+			}
+			if (deletedResult.status === "fulfilled") {
+				merged.push(...deletedResult.value);
+			} else {
+				console.error("Inactive memories fetch failed:", deletedResult.reason);
+			}
+			setMemories(merged);
+			if (errors.length === 2) {
 				setError("Failed to load memories.");
-				setLoading(false);
-			});
+			} else if (errors.length === 1) {
+				setError(`Could not load ${errors[0]} memories — showing available data.`);
+			}
+			setLoading(false);
+		}).catch((err) => {
+			console.error(err);
+			setError("Failed to load memories.");
+			setLoading(false);
+		});
 	}, []);
 
 	useEffect(() => {
@@ -203,6 +221,19 @@ export default function Memories() {
 				<span className="font-body-md text-body-md text-on-secondary-container">
 					Inactive: {loading ? "..." : inactiveMemories.length}
 				</span>
+			</div>
+
+			<div className="flex items-center gap-sm mb-lg">
+				<button
+					onClick={loadMemories}
+					className="bg-brand-purple/20 border border-brand-purple/30 text-brand-purple px-3 py-1 rounded-sm text-label-sm flex items-center gap-xs hover:bg-brand-purple/40 transition-colors"
+					disabled={loading}
+				>
+					<span className={`material-symbols-outlined text-[14px] ${loading ? "animate-spin" : ""}`}>
+						{loading ? "progress_activity" : "refresh"}
+					</span>
+					Refresh
+				</button>
 			</div>
 
 			{loading && <div className="text-on-surface-variant">Loading...</div>}
