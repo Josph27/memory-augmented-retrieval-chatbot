@@ -142,13 +142,37 @@ async def on_message(message: cl.Message) -> None:
     if upload_result.statuses:
         for status in upload_result.statuses:
             is_error = status.startswith("Could not index")
-            await cl.Message(
-                id=f"error:{uuid4()}" if is_error else None,
-                content=status,
-            ).send()
+            if is_error:
+                await cl.Message(
+                    id=f"error:{uuid4()}",
+                    content=status,
+                ).send()
+            else:
+                name = uploaded_file_name(
+                    message.elements[0] if message.elements else "",
+                )
+                content = f"Indexation successful: {name}"
+                db_msg_id = database.save_message(
+                    chat_id=str(chat_id),
+                    role="system",
+                    content=content,
+                )
+                await cl.Message(
+                    id=f"indexed:{db_msg_id}",
+                    content=content,
+                ).send()
 
     if not content:
         return
+
+    # Signal the frontend that we've moved from indexing to generating
+    await cl.send_window_message(
+        {
+            "source": "memory-chatbot-ui",
+            "command": "processing-stage",
+            "stage": "generating",
+        }
+    )
 
     orchestration_mode = current_orchestration_mode()
     import asyncio as _asyncio
