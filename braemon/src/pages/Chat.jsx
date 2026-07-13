@@ -2,7 +2,7 @@ import { useParams, Link, useNavigate } from "react-router-dom";
 import { useState, useEffect, useCallback } from "react";
 import ChainlitChat from "../components/ChainlitChat";
 import ChatActions from "../components/ChatActions";
-import { fetchChats } from "../api";
+import { fetchChats, createChat } from "../api";
 
 export default function Chat() {
 	const { chatId } = useParams();
@@ -30,6 +30,15 @@ export default function Chat() {
 		[chatId, navigate],
 	);
 
+	const handleNewChat = async () => {
+		try {
+			const { chat_id } = await createChat();
+			navigate(`/chat/${chat_id}`);
+		} catch (err) {
+			console.error(err);
+		}
+	};
+
 	const activeThreads = chats.filter((c) => c.active);
 	const inactiveThreads = chats.filter((c) => !c.active);
 
@@ -45,10 +54,19 @@ export default function Chat() {
 						className="flex flex-col min-h-0"
 						style={{ flex: inactiveOpen ? "1 1 auto" : "1 1 0%" }}
 					>
-						<div className="px-4 py-sm border-b border-outline-variant/20 shrink-0">
+						<div className="px-4 py-sm border-b border-outline-variant/20 shrink-0 flex items-center justify-between">
 							<h2 className="text-headline-md font-bold text-primary text-[16px]">
 								Active Threads
 							</h2>
+							<button
+								onClick={handleNewChat}
+								className="text-almond-silk hover:text-white transition-colors"
+								title="New chat"
+							>
+								<span className="material-symbols-outlined text-[18px]">
+									add
+								</span>
+							</button>
 						</div>
 						<div className="flex-1 overflow-y-auto px-2 py-sm">
 							{activeThreads.map((t) => {

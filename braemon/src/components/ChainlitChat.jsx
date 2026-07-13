@@ -14,6 +14,7 @@ import { v4 as uuidv4 } from "uuid";
 function Message({ msg }) {
 	const isUser = msg.type === "user_message";
 	const isError = typeof msg.id === "string" && msg.id.startsWith("error:");
+	const isIndexed = typeof msg.id === "string" && msg.id.startsWith("indexed:");
 
 	// Extract persisted trace data from embedded comment, fall back to live metadata
 	let displayText = msg.output || "";
@@ -81,130 +82,142 @@ function Message({ msg }) {
 
 	return (
 		<div
-			className={`w-full max-w-4xl mx-auto flex flex-col ${isUser ? "translate-x-[20px]" : isError ? "" : "-translate-x-[20px]"}`}
+			className={`w-full max-w-4xl mx-auto flex flex-col ${isUser ? "translate-x-[20px]" : isError || isIndexed ? "" : "-translate-x-[20px]"}`}
 		>
-			{isError && (
-				<div className="flex items-center gap-xs mb-1">
-					<span className="material-symbols-outlined text-[16px] text-brand-purple">
-						error
+			{isIndexed ? (
+				<div className="bg-brand-purple text-white px-md py-sm rounded-sm flex items-center gap-sm font-label-md text-label-md">
+					<span className="material-symbols-outlined text-[18px]">
+						check_circle
 					</span>
-					<span className="text-label-sm text-brand-purple font-bold uppercase tracking-wider">
-						ERROR:
-					</span>
-				</div>
-			)}
-			<div
-				className={
-					isError
-						? "bg-surface-dim border-[4px] border-brand-purple p-md rounded-sm"
-						: traceSections.length > 0
-							? "bg-surface-dim border-l-[4px] border-brand-purple p-md rounded-tl-sm border-t-outline-variant/40 border-r-outline-variant/40 rounded-tr-sm"
-							: isUser
-								? "bg-surface-container border-r-[4px] border-almond-silk p-md border-t-outline-variant/40 border-b-outline-variant/40 border-l-outline-variant/40 rounded-sm"
-								: "bg-surface-dim border-l-[4px] border-brand-purple p-md border-t-outline-variant/40 border-b-outline-variant/40 border-r-outline-variant/40 rounded-sm"
-				}
-			>
-				<p
-					className={`${isUser ? "font-code" : "font-body-md"} text-on-surface leading-relaxed whitespace-pre-wrap`}
-				>
 					{displayText}
-				</p>
-				{msg.elements && msg.elements.length > 0 && (
-					<div className="mt-sm pt-sm border-t border-outline-variant/20 flex flex-wrap gap-sm">
-						{msg.elements.map((doc, j) => (
-							<span
-								key={doc.id || j}
-								className="bg-surface-container-high text-on-surface-variant px-sm py-1 rounded text-label-sm border border-outline-variant/30 flex items-center gap-1"
-								title={doc.name}
-							>
-								<span className="material-symbols-outlined text-[12px]">
-									{doc.name?.endsWith(".pdf") ? "description" : "draft"}
-								</span>
-								{doc.name}
+				</div>
+			) : (
+				<>
+					{isError && (
+						<div className="flex items-center gap-xs mb-1">
+							<span className="material-symbols-outlined text-[16px] text-brand-purple">
+								error
 							</span>
-						))}
-					</div>
-				)}
-			</div>
-			{traceSections.length > 0 && (
-				<div className="border-t-[3px] border-almond-silk bg-surface-dim rounded-b-sm border-b border-r border-l border-outline-variant/20">
-					<button
-						onClick={toggleExpanded}
-						className="w-full flex items-center justify-between px-md py-xs text-label-sm text-almond-silk hover:text-white transition-colors select-none"
-					>
-						<span>system info</span>
-						<span className="material-symbols-outlined text-[14px]">
-							{expanded ? "expand_less" : "expand_more"}
-						</span>
-					</button>
-					{expanded && (
-						<div className="px-md pb-md max-h-64 overflow-y-auto custom-scrollbar">
-							{traceSections.map((section, i) => (
-								<div key={i} className="mb-md">
-									<div className="text-label-sm text-on-surface-variant font-bold mb-xs uppercase tracking-wider">
-										{section.label}
-									</div>
-									{section.text && (
-										<pre className="text-code text-on-surface-variant whitespace-pre-wrap bg-surface-container-lowest p-sm rounded-sm text-[12px] leading-tight">
-											{section.text}
-										</pre>
-									)}
-									{section.rows && (
-										<table className="w-full text-code text-[12px] leading-tight border-collapse">
-											<thead>
-												<tr className="border-b border-outline-variant/30">
-													{Object.keys(section.rows[0] || {})
-														.slice(0, 6)
-														.map((k) => (
-															<th
-																key={k}
-																className="text-left text-on-surface-variant/70 font-normal py-xs pr-sm whitespace-nowrap"
-															>
-																{k}
-															</th>
-														))}
-												</tr>
-											</thead>
-											<tbody>
-												{section.rows.map((row, j) => (
-													<tr
-														key={j}
-														className="border-b border-outline-variant/10 hover:bg-surface-container-high/50"
-													>
-														{Object.values(row)
-															.slice(0, 6)
-															.map((val, k) => (
-																<td
-																	key={k}
-																	className="py-xs pr-sm text-on-surface-variant max-w-[300px] truncate"
-																>
-																	{typeof val === "string" && val.length > 100
-																		? val.slice(0, 100) + "..."
-																		: String(val ?? "")}
-																</td>
-															))}
-													</tr>
-												))}
-											</tbody>
-										</table>
-									)}
-									{section.items && (
-										<ul className="text-code text-[12px] text-on-surface-variant leading-tight space-y-xs list-disc pl-md">
-											{section.items.map((item, j) => (
-												<li
-													key={j}
-													className="bg-surface-container-lowest p-sm rounded-sm"
-												>
-													{String(item)}
-												</li>
-											))}
-										</ul>
-									)}
-								</div>
-							))}
+							<span className="text-label-sm text-brand-purple font-bold uppercase tracking-wider">
+								ERROR:
+							</span>
 						</div>
 					)}
-				</div>
+					<div
+						className={
+							isError
+								? "bg-surface-dim border-[4px] border-brand-purple p-md rounded-sm"
+								: traceSections.length > 0
+									? "bg-surface-dim border-l-[4px] border-brand-purple p-md rounded-tl-sm border-t-outline-variant/40 border-r-outline-variant/40 rounded-tr-sm"
+									: isUser
+										? "bg-surface-container border-r-[4px] border-almond-silk p-md border-t-outline-variant/40 border-b-outline-variant/40 border-l-outline-variant/40 rounded-sm"
+										: "bg-surface-dim border-l-[4px] border-brand-purple p-md border-t-outline-variant/40 border-b-outline-variant/40 border-r-outline-variant/40 rounded-sm"
+						}
+					>
+						<p
+							className={`${isUser ? "font-code" : "font-body-md"} text-on-surface leading-relaxed whitespace-pre-wrap`}
+						>
+							{displayText}
+						</p>
+						{msg.elements && msg.elements.length > 0 && (
+							<div className="mt-sm pt-sm border-t border-outline-variant/20 flex flex-wrap gap-sm">
+								{msg.elements.map((doc, j) => (
+									<span
+										key={doc.id || j}
+										className="bg-surface-container-high text-on-surface-variant px-sm py-1 rounded text-label-sm border border-outline-variant/30 flex items-center gap-1"
+										title={doc.name}
+									>
+										<span className="material-symbols-outlined text-[12px]">
+											{doc.name?.endsWith(".pdf") ? "description" : "draft"}
+										</span>
+										{doc.name}
+									</span>
+								))}
+							</div>
+						)}
+					</div>
+					{traceSections.length > 0 && (
+						<div className="border-t-[3px] border-almond-silk bg-surface-dim rounded-b-sm border-b border-r border-l border-outline-variant/20">
+							<button
+								onClick={toggleExpanded}
+								className="w-full flex items-center justify-between px-md py-xs text-label-sm text-almond-silk hover:text-white transition-colors select-none"
+							>
+								<span>system info</span>
+								<span className="material-symbols-outlined text-[14px]">
+									{expanded ? "expand_less" : "expand_more"}
+								</span>
+							</button>
+							{expanded && (
+								<div className="px-md pb-md max-h-64 overflow-y-auto custom-scrollbar">
+									{traceSections.map((section, i) => (
+										<div key={i} className="mb-md">
+											<div className="text-label-sm text-on-surface-variant font-bold mb-xs uppercase tracking-wider">
+												{section.label}
+											</div>
+											{section.text && (
+												<pre className="text-code text-on-surface-variant whitespace-pre-wrap bg-surface-container-lowest p-sm rounded-sm text-[12px] leading-tight">
+													{section.text}
+												</pre>
+											)}
+											{section.rows && (
+												<table className="w-full text-code text-[12px] leading-tight border-collapse">
+													<thead>
+														<tr className="border-b border-outline-variant/30">
+															{Object.keys(section.rows[0] || {})
+																.slice(0, 6)
+																.map((k) => (
+																	<th
+																		key={k}
+																		className="text-left text-on-surface-variant/70 font-normal py-xs pr-sm whitespace-nowrap"
+																	>
+																		{k}
+																	</th>
+																))}
+														</tr>
+													</thead>
+													<tbody>
+														{section.rows.map((row, j) => (
+															<tr
+																key={j}
+																className="border-b border-outline-variant/10 hover:bg-surface-container-high/50"
+															>
+																{Object.values(row)
+																	.slice(0, 6)
+																	.map((val, k) => (
+																		<td
+																			key={k}
+																			className="py-xs pr-sm text-on-surface-variant max-w-[300px] truncate"
+																		>
+																			{typeof val === "string" &&
+																			val.length > 100
+																				? val.slice(0, 100) + "..."
+																				: String(val ?? "")}
+																		</td>
+																	))}
+															</tr>
+														))}
+													</tbody>
+												</table>
+											)}
+											{section.items && (
+												<ul className="text-code text-[12px] text-on-surface-variant leading-tight space-y-xs list-disc pl-md">
+													{section.items.map((item, j) => (
+														<li
+															key={j}
+															className="bg-surface-container-lowest p-sm rounded-sm"
+														>
+															{String(item)}
+														</li>
+													))}
+												</ul>
+											)}
+										</div>
+									))}
+								</div>
+							)}
+						</div>
+					)}
+				</>
 			)}
 		</div>
 	);
@@ -224,7 +237,28 @@ export default function ChainlitChat({ chatId }) {
 	const hasConnected = useRef(false);
 	const loadingStart = useRef(null);
 	const [elapsed, setElapsed] = useState(0);
+	const [processingStage, setProcessingStage] = useState("indexing");
+	const processingLabel = loading
+		? processingStage === "indexing"
+			? "Indexing files"
+			: "Generating answer"
+		: null;
 	const navigate = useNavigate();
+
+	// Listen for processing-stage window messages from the backend
+	useEffect(() => {
+		const handler = (event) => {
+			const data = event.data;
+			if (
+				data?.command === "processing-stage" &&
+				data?.source === "memory-chatbot-ui"
+			) {
+				setProcessingStage(data.stage || "indexing");
+			}
+		};
+		window.addEventListener("message", handler);
+		return () => window.removeEventListener("message", handler);
+	}, []);
 
 	useEffect(() => {
 		if (hasConnected.current) return;
@@ -275,6 +309,7 @@ export default function ChainlitChat({ chatId }) {
 
 	useEffect(() => {
 		if (loading) {
+			setProcessingStage("indexing");
 			if (!loadingStart.current) loadingStart.current = Date.now();
 			const interval = setInterval(() => {
 				setElapsed(Math.round((Date.now() - loadingStart.current) / 1000));
@@ -377,13 +412,6 @@ export default function ChainlitChat({ chatId }) {
 	};
 	flatten(messages);
 
-	// Sort by creation time so user messages appear before assistant responses
-	flatMessages.sort((a, b) => {
-		const ta = typeof a.createdAt === "number" ? a.createdAt : 0;
-		const tb = typeof b.createdAt === "number" ? b.createdAt : 0;
-		return ta - tb;
-	});
-
 	return (
 		<div className="flex flex-col h-full bg-background w-full">
 			{/* Messages Area */}
@@ -405,7 +433,7 @@ export default function ChainlitChat({ chatId }) {
 						<span className="material-symbols-outlined animate-spin text-[18px] text-brand-purple">
 							progress_activity
 						</span>
-						<span>Processing</span>
+						<span>{processingLabel}</span>
 						<span className="inline-flex">
 							<span className="animate-[pulse_1s_ease-in-out_infinite]">.</span>
 							<span className="animate-[pulse_1s_ease-in-out_0.2s_infinite]">
@@ -426,7 +454,7 @@ export default function ChainlitChat({ chatId }) {
 					<div className="flex gap-sm items-center">
 						<button
 							onClick={handleEndChat}
-							disabled={!connected}
+							disabled={!connected || loading}
 							className="bg-dusty-grape/20 border border-lilac-ash/30 text-almond-silk px-3 py-1 rounded-sm text-label-sm flex items-center gap-xs hover:bg-dusty-grape/40 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
 						>
 							<span className="material-symbols-outlined text-[14px]">
@@ -436,7 +464,7 @@ export default function ChainlitChat({ chatId }) {
 						</button>
 						<button
 							onClick={() => fileInputRef.current?.click()}
-							disabled={!connected}
+							disabled={!connected || loading}
 							className="bg-dusty-grape/20 border border-lilac-ash/30 text-almond-silk px-3 py-1 rounded-sm text-label-sm flex items-center gap-xs hover:bg-dusty-grape/40 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
 						>
 							<span className="material-symbols-outlined text-[14px]">
@@ -452,7 +480,7 @@ export default function ChainlitChat({ chatId }) {
 						/>
 						<button
 							onClick={handleForkChat}
-							disabled={!connected}
+							disabled={!connected || loading}
 							className="bg-dusty-grape/20 border border-lilac-ash/30 text-almond-silk px-3 py-1 rounded-sm text-label-sm flex items-center gap-xs hover:bg-dusty-grape/40 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
 						>
 							<span className="material-symbols-outlined text-[14px]">
@@ -515,7 +543,7 @@ export default function ChainlitChat({ chatId }) {
 						/>
 						<button
 							onClick={handleSend}
-							disabled={!input.trim() || !connected}
+							disabled={!input.trim() || !connected || loading}
 							className="absolute right-sm text-almond-silk hover:text-white transition-colors disabled:opacity-30"
 						>
 							<span className="material-symbols-outlined">send</span>
