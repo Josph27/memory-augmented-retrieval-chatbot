@@ -55,9 +55,22 @@ class RecordingUpdater:
         )
 
 
+class NoopUpdater:
+    def __init__(self) -> None:
+        self.calls: list[list[int]] = []
+
+    def update(self, existing_memory, messages):  # type: ignore[no-untyped-def]
+        self.calls.append([message.id for message in messages])
+        return MemoryUpdateResult(
+            memory_state=existing_memory,
+            accepted=False,
+            rejection_reason="langmem_no_valid_memories",
+        )
+
+
 def build_memory(
     db: Database,
-    updater: RecordingUpdater,
+    updater,
     *,
     trigger_tokens: int = 6,
     max_input_tokens: int = 20,
@@ -68,6 +81,7 @@ def build_memory(
     replay_max_messages: int = 16,
     recent_messages_max_count: int = 32,
     raw_message_limit: int = 1,
+    memory_update_policy: str = "scheduled",
 ) -> ShortTermMemory:
     return ShortTermMemory(
         database=db,
@@ -83,6 +97,7 @@ def build_memory(
         memory_replay_trigger_tokens=replay_trigger_tokens,
         memory_replay_max_input_tokens=replay_max_input_tokens,
         memory_replay_max_messages=replay_max_messages,
+        memory_update_policy=memory_update_policy,
         token_estimator=WordCounter(),
     )
 
@@ -299,6 +314,91 @@ def test_live_deferred_post_answer_update_keeps_turns_intact(tmp_path: Path) -> 
             (1, "user", "user one two"),
             (2, "assistant", "ok"),
         ]
+    ]
+
+
+def test_agentic_each_turn_policy_updates_latest_completed_turn(tmp_path: Path) -> None:
+    db = Database(tmp_path / "chat.db")
+    db.create_chat("chat")
+    db.save_message("chat", "user", "older user fact")
+    db.save_message("chat", "assistant", "older assistant response")
+    latest_user = db.save_message("chat", "user", "latest user preference")
+    latest_assistant = db.save_message("chat", "assistant", "latest assistant response")
+    updater = RecordingUpdater()
+    memory = build_memory(
+        db,
+        updater,
+        trigger_tokens=10_000,
+        protection_tokens=10_000,
+        memory_update_policy="agentic_each_turn",
+    )
+
+    assert memory.update_memory_if_needed("chat") is True
+
+    assert updater.calls == [[latest_user, latest_assistant]]
+    messages = {message.id: message for message in db.messages_for_chat("chat")}
+    assert messages[latest_user].summarized is True
+    assert messages[latest_assistant].summarized is True
+    assert messages[1].summarized is False
+    assert messages[2].summarized is False
+
+
+def test_agentic_each_turn_marks_valid_noop_as_processed(tmp_path: Path) -> None:
+    db = Database(tmp_path / "chat.db")
+    db.create_chat("chat")
+    user_id = db.save_message("chat", "user", "thanks")
+    assistant_id = db.save_message("chat", "assistant", "you are welcome")
+    updater = NoopUpdater()
+    memory = build_memory(
+        db,
+        updater,
+        memory_update_policy="agentic_each_turn",
+    )
+
+    assert memory.update_memory_if_needed("chat") is True
+
+    assert updater.calls == [[user_id, assistant_id]]
+    assert all(message.summarized for message in db.messages_for_chat("chat"))
+
+
+def test_agentic_each_turn_service_policy_evaluates_every_completed_turn(
+    tmp_path: Path,
+) -> None:
+    db = Database(tmp_path / "chat.db")
+    updater = RecordingUpdater()
+    service = ChatService(
+        database=db,
+        model=FakeModel(),
+        raw_message_limit=1,
+        memory_update_batch_size=2,
+        recent_messages_max_count=32,
+        memory_update_trigger_tokens=10_000,
+        memory_update_max_input_tokens=20,
+        memory_update_max_messages=8,
+        memory_recent_protection_tokens=10_000,
+        memory_update_policy="agentic_each_turn",
+        memory_replay_trigger_tokens=10,
+        memory_replay_max_input_tokens=20,
+        memory_replay_max_messages=16,
+    )
+    service.memory.structured_memory = updater
+    service.memory.token_estimator = WordCounter()
+    chat_id = service.start_chat("chat")
+
+    service.handle_user_turn(chat_id, "first durable preference", defer_post_answer_memory_update=True)
+    service.finalize_post_answer_memory_update(chat_id)
+    service.handle_user_turn(chat_id, "second durable preference", defer_post_answer_memory_update=True)
+    service.finalize_post_answer_memory_update(chat_id)
+
+    assert updater.call_messages == [
+        [
+            (1, "user", "first durable preference"),
+            (2, "assistant", "ok"),
+        ],
+        [
+            (3, "user", "second durable preference"),
+            (4, "assistant", "ok"),
+        ],
     ]
 
 

@@ -106,9 +106,13 @@ Important optional variables:
 | --- | --- | --- |
 | `DATABASE_PATH` | `data/chatbot.db` | SQLite path. |
 | `DOCUMENT_RETRIEVAL_MODE` | `langchain_chroma` | Document retrieval backend. |
+| `DOCUMENT_TOP_K` | `8` | Number of document chunks retrieved per query. |
 | `LANGCHAIN_CHROMA_PERSIST_DIR` | `data/chroma` | Chroma document index. |
 | `EMBEDDING_MODEL_NAME` | `sentence-transformers/all-MiniLM-L6-v2` | Embedding model for vector-backed paths. |
 | `STRUCTURED_MEMORY_RETRIEVAL_MODE` | `sqlite` | Structured-memory retrieval mode: `sqlite`, `vector`, or `hybrid`. |
+| `ROUTING_MODE` | `rule` | `rule` is canonical; `hybrid` optionally lets the LLM add typed retrieval sources while preserving deterministic sources. |
+| `MEMORY_UPDATE_POLICY` | `scheduled` | `agentic_each_turn` makes LangMem evaluate each completed turn; default remains scheduled. |
+| `PREVIOUS_CHAT_GIST_EXTRACTOR` | `deterministic` | Set to `llm` to use model-backed previous-chat gists with deterministic fallback. |
 | `RERANKER_MODE` | `deterministic` | Reranking mode. |
 | `DEMO_MEMORY_TRACE` | `0` | Optional message-level trace display. |
 

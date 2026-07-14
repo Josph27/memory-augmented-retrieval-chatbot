@@ -63,6 +63,31 @@ class DeterministicPreviousChatGistExtractor:
         )
 
 
+class FallbackChatGistExtractor:
+    """Use a primary gist extractor and fall back deterministically on failure."""
+
+    def __init__(
+        self,
+        primary: ChatGistExtractor,
+        fallback: ChatGistExtractor | None = None,
+    ) -> None:
+        self.primary = primary
+        self.fallback = fallback or DeterministicPreviousChatGistExtractor()
+        self.last_used_extractor: str | None = None
+
+    def summarize(self, messages: list[StoredMessage]) -> ChatGistSummary | None:
+        """Return primary output when valid; otherwise return fallback output."""
+        try:
+            summary = self.primary.summarize(messages)
+        except Exception:
+            summary = None
+        if summary is not None and summary.summary.strip():
+            self.last_used_extractor = self.primary.__class__.__name__
+            return summary
+        self.last_used_extractor = self.fallback.__class__.__name__
+        return self.fallback.summarize(messages)
+
+
 class PreviousChatGistGenerator:
     """Generate previous-chat gist rows from existing chat transcripts."""
 
@@ -72,7 +97,7 @@ class PreviousChatGistGenerator:
         extractor: ChatGistExtractor | None = None,
         model: ChatModel | None = None,
         min_messages: int = 2,
-        max_messages_per_gist: int = 80,
+        max_messages_per_gist: int = 30,
     ) -> None:
         self.database = database
         self.extractor = extractor or (LLMChatGistExtractor(model) if model else None)
@@ -208,6 +233,7 @@ class PreviousChatGistGenerator:
                 "corrections": summary.corrections,
                 "source_message_count": len(messages),
                 "summarizer": self.extractor.__class__.__name__ if self.extractor else "",
+                "effective_summarizer": effective_summarizer_name(self.extractor),
                 "status": "active",
                 "chat_title": chat.title,
                 "gist_scope": "previous_chat",
@@ -254,6 +280,15 @@ def extract_keywords(text: str, limit: int = 5) -> list[str]:
     return keywords
 
 
+def previous_chat_gist_extractor_mode() -> str:
+    """Return the configured previous-chat gist extractor mode."""
+    import os
+
+    value = os.getenv("PREVIOUS_CHAT_GIST_EXTRACTOR", "deterministic")
+    normalized = value.strip().lower()
+    return normalized if normalized in {"deterministic", "llm"} else "deterministic"
+
+
 def previous_chat_gist_generation_enabled() -> bool:
     """Return whether automatic previous-chat gist generation is enabled."""
     import os
@@ -264,3 +299,10 @@ def previous_chat_gist_generation_enabled() -> bool:
         "yes",
         "on",
     }
+
+
+def effective_summarizer_name(extractor: ChatGistExtractor | None) -> str:
+    """Return the extractor that actually produced the latest gist if available."""
+    if extractor is None:
+        return ""
+    return getattr(extractor, "last_used_extractor", extractor.__class__.__name__)

@@ -30,7 +30,8 @@ MEMORY_CONTEXT_ROLE = "system"
 CHAT_END_NOOP_REASONS = frozenset({"langmem_no_valid_memories", "no_user_messages"})
 logger = logging.getLogger(__name__)
 
-SchedulingProfileName = Literal["online", "offline_replay"]
+SchedulingProfileName = Literal["online", "offline_replay", "agentic_each_turn"]
+MemoryUpdatePolicyName = Literal["scheduled", "agentic_each_turn", "chat_end_only"]
 
 
 @dataclass(frozen=True)
@@ -123,6 +124,7 @@ class ShortTermMemory:
         memory_replay_trigger_tokens: int = 0,
         memory_replay_max_input_tokens: int = MEMORY_REPLAY_MAX_INPUT_TOKENS,
         memory_replay_max_messages: int | None = None,
+        memory_update_policy: str = "scheduled",
         token_estimator: TokenEstimator | None = None,
     ) -> None:
         self.database = database
@@ -156,6 +158,7 @@ class ShortTermMemory:
             ),
             protected_recent_tokens=0,
         )
+        self.memory_update_policy = normalize_memory_update_policy(memory_update_policy)
         self.structured_memory = structured_memory_updater or LangMemStructuredMemoryState(
             config=LangMemBackendConfig.from_env(model_name=selected_model_name),
             long_term_store=SQLiteLongTermMemoryStore(database),
@@ -221,6 +224,20 @@ class ShortTermMemory:
         scheduling_profile: SchedulingProfileName = "online",
     ) -> bool:
         """Update structured memory from one token-aware batch if threshold is met."""
+        if (
+            scheduling_profile == "online"
+            and self.memory_update_policy == "chat_end_only"
+        ):
+            self.last_saved_memory_rows = []
+            self.last_processed_message_ids = []
+            self.last_schedule_profile = scheduling_profile
+            return False
+        if (
+            scheduling_profile == "online"
+            and self.memory_update_policy == "agentic_each_turn"
+        ):
+            return self.update_memory_for_latest_turn(chat_id)
+
         self.last_saved_memory_rows = []
         self.last_processed_message_ids = []
         self.last_schedule_profile = scheduling_profile
@@ -257,6 +274,39 @@ class ShortTermMemory:
             profile_name=scheduling_profile,
             allow_noop=False,
         )
+
+    def update_memory_for_latest_turn(self, chat_id: str) -> bool:
+        """Run LangMem on the latest completed unsummarized conversational turn."""
+        self.last_saved_memory_rows = []
+        self.last_processed_message_ids = []
+        self.last_schedule_profile = "agentic_each_turn"
+        started = perf_counter()
+        selected = self._select_latest_turn_batch(chat_id)
+        if not selected.messages:
+            print(
+                "memory_update_timing "
+                f"chat_id={chat_id} profile=agentic_each_turn triggered=False "
+                f"eligible_tokens={selected.eligible_tokens} "
+                f"duration_ms={elapsed_ms(started)}"
+            )
+            return False
+        if selected.assistant_only:
+            print(
+                "memory_update_timing "
+                f"chat_id={chat_id} profile=agentic_each_turn triggered=False "
+                f"eligible_tokens={selected.eligible_tokens} "
+                "reason=assistant_only_pending "
+                f"duration_ms={elapsed_ms(started)}"
+            )
+            return False
+        accepted = self._apply_batch(
+            chat_id=chat_id,
+            messages=selected.messages,
+            started=started,
+            profile_name="agentic_each_turn",
+            allow_noop=True,
+        )
+        return accepted or bool(self.last_processed_message_ids)
 
     def process_replay_batches(self, chat_id: str) -> ChatEndMemoryProcessingResult:
         """Process pending replay history using the offline scheduling profile."""
@@ -462,6 +512,29 @@ class ShortTermMemory:
             assistant_only=assistant_only,
         )
 
+    def _select_latest_turn_batch(self, chat_id: str) -> SelectedMemoryBatch:
+        pending = [
+            message
+            for message in self.database.messages_for_chat(chat_id)
+            if not message.summarized
+        ]
+        if not pending:
+            return SelectedMemoryBatch(messages=[], eligible_tokens=0)
+
+        pending_units = self._conversation_units(pending)
+        eligible_tokens = sum(self._message_tokens(message) for message in pending)
+        for unit in reversed(pending_units):
+            if unit.has_user:
+                return SelectedMemoryBatch(
+                    messages=unit.messages,
+                    eligible_tokens=eligible_tokens,
+                )
+        return SelectedMemoryBatch(
+            messages=[],
+            eligible_tokens=eligible_tokens,
+            assistant_only=True,
+        )
+
     def _take_oldest_fitting_batch(
         self,
         eligible_units: list[ConversationUnit],
@@ -567,3 +640,11 @@ class ShortTermMemory:
 def elapsed_ms(started: float) -> float:
     """Return elapsed milliseconds rounded for compact timing logs."""
     return round((perf_counter() - started) * 1000, 2)
+
+
+def normalize_memory_update_policy(policy: str) -> MemoryUpdatePolicyName:
+    """Return a supported live structured-memory update policy."""
+    normalized = (policy or "scheduled").strip().lower()
+    if normalized in {"agentic_each_turn", "chat_end_only"}:
+        return normalized
+    return "scheduled"

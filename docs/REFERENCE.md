@@ -203,6 +203,7 @@ All variables from `AppConfig` (env vars loaded in `src/config.py`). Defaults as
 |---|---|---|
 | `RAW_MESSAGE_LIMIT` | 8 | Max raw messages per batch |
 | `MEMORY_UPDATE_BATCH_SIZE` | 6 | Messages per memory-update batch |
+| `MEMORY_UPDATE_POLICY` | `scheduled` | `scheduled`, `agentic_each_turn`, or `chat_end_only` |
 | `RECENT_MESSAGES_MAX_COUNT` | 32 | Max recent messages in context |
 | `MEMORY_UPDATE_TRIGGER_TOKENS` | 1000 | Unsummarized tokens before triggering update |
 | `MEMORY_UPDATE_MAX_INPUT_TOKENS` | 4000 | Max tokens per update batch |
@@ -211,6 +212,8 @@ All variables from `AppConfig` (env vars loaded in `src/config.py`). Defaults as
 | `MEMORY_REPLAY_TRIGGER_TOKENS` | 4000 | Unsummarized tokens before replay trigger |
 | `MEMORY_REPLAY_MAX_INPUT_TOKENS` | 8000 | Max tokens per replay batch |
 | `MEMORY_REPLAY_MAX_MESSAGES` | 128 | Max messages per replay batch |
+| `PREVIOUS_CHAT_GIST_EXTRACTOR` | `deterministic` | `deterministic` or `llm`; LLM mode falls back deterministically |
+| `PREVIOUS_CHAT_GIST_MAX_MESSAGES_PER_GIST` | 30 | Max messages per previous-chat gist batch |
 
 ### Routing
 
@@ -240,7 +243,7 @@ All variables from `AppConfig` (env vars loaded in `src/config.py`). Defaults as
 |---|---|---|
 | `DOCUMENT_RETRIEVAL_MODE` | `langchain_chroma` | Document retrieval backend |
 | `EMBEDDING_MODEL_NAME` | `sentence-transformers/all-MiniLM-L6-v2` | Embedding model |
-| `DOCUMENT_TOP_K` | 4 | Chunks retrieved per query |
+| `DOCUMENT_TOP_K` | 8 | Chunks retrieved per query |
 | `DOCUMENT_CHUNKER` | `custom` | `custom` or `langchain_recursive` |
 | `DOCUMENT_CHUNK_SIZE` | 1000 | Target characters per chunk |
 | `DOCUMENT_CHUNK_OVERLAP` | 150 | Chunk overlap |

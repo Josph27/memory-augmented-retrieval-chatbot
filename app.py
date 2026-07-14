@@ -148,18 +148,9 @@ async def on_message(message: cl.Message) -> None:
                     content=status,
                 ).send()
             else:
-                name = uploaded_file_name(
-                    message.elements[0] if message.elements else "",
-                )
-                content = f"Indexation successful: {name}"
-                db_msg_id = database.save_message(
-                    chat_id=str(chat_id),
-                    role="system",
-                    content=content,
-                )
                 await cl.Message(
-                    id=f"indexed:{db_msg_id}",
-                    content=content,
+                    id=f"indexed:{uuid4()}",
+                    content=status,
                 ).send()
 
     if not content:
@@ -180,13 +171,14 @@ async def on_message(message: cl.Message) -> None:
     loop = _asyncio.get_event_loop()
     result = await loop.run_in_executor(
         None,
-        chat_service.handle_user_turn,
-        chat_id,
-        content,
-        orchestration_mode,
-        ("document_qa" if upload_result.ready_document_ids else None),
-        persisted_user_message_id,
-        True,  # defer_post_answer_memory_update
+        lambda: chat_service.handle_user_turn(
+            chat_id=chat_id,
+            content=content,
+            orchestration_mode=orchestration_mode,
+            task_context=("document_qa" if upload_result.ready_document_ids else None),
+            persisted_user_message_id=persisted_user_message_id,
+            defer_post_answer_memory_update=True,
+        ),
     )
     if result.metadata.get("answer_status") == "failed":
         await send_product_error(result.answer)
@@ -265,7 +257,21 @@ async def end_chat_handler(action: cl.Action) -> None:
     try:
         model_name = cl.user_session.get("model_name") or model_name_for_chat(chat_id)
         chat_service = chat_service_for_model(model_name)
-        ChatEndAction(database=database, memory=chat_service.memory).execute(chat_id)
+        gist_finalizer_factory = getattr(
+            chat_service,
+            "build_previous_chat_gist_generator",
+            None,
+        )
+        gist_finalizer = gist_finalizer_factory() if callable(gist_finalizer_factory) else None
+        if gist_finalizer is None:
+            action = ChatEndAction(database=database, memory=chat_service.memory)
+        else:
+            action = ChatEndAction(
+                database=database,
+                memory=chat_service.memory,
+                gist_finalizer=gist_finalizer,
+            )
+        action.execute(chat_id)
     except Exception as error:
         await send_product_error(format_action_error("end chat", error))
         return
@@ -711,6 +717,7 @@ def chat_service_for_model(model_name: str) -> ChatService:
             memory_update_max_input_tokens=config.memory_update_max_input_tokens,
             memory_update_max_messages=config.memory_update_max_messages,
             memory_recent_protection_tokens=config.memory_recent_protection_tokens,
+            memory_update_policy=config.memory_update_policy,
             memory_replay_trigger_tokens=config.memory_replay_trigger_tokens,
             memory_replay_max_input_tokens=config.memory_replay_max_input_tokens,
             memory_replay_max_messages=config.memory_replay_max_messages,
@@ -743,12 +750,18 @@ def chat_service_for_model(model_name: str) -> ChatService:
                 config.reranker_llm_require_cross_source_conflict
             ),
             reranker_llm_provenance_queries=config.reranker_llm_provenance_queries,
-            previous_chat_gist_generation_enabled=(config.previous_chat_gist_generation_enabled),
+            previous_chat_gist_generation_enabled=(
+                config.previous_chat_gist_generation_enabled
+            ),
+            previous_chat_gist_extractor=config.previous_chat_gist_extractor,
+            previous_chat_gist_max_messages_per_gist=(
+                config.previous_chat_gist_max_messages_per_gist
+            ),
         )
     return chat_services[model_name]
 
 
-from src.api_routes import register_api_routes
+from src.api_routes import register_api_routes  # noqa: E402
 
 register_api_routes(
     database=database, chat_service_getter=lambda: chat_service_for_model(config.model_name)

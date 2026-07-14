@@ -176,6 +176,76 @@ def test_routing_agent_hybrid_mode_preserves_core_memory_sources() -> None:
     assert decision.use_document_memory is True
 
 
+def test_routing_agent_llm_mode_accepts_enabled_sources_schema() -> None:
+    model = FakeRoutingModel(
+        '{"enabled_sources": ["recent_messages", "document_memory"], '
+        '"reason": "Document evidence needed.", "confidence": 0.91}'
+    )
+
+    decision = RoutingAgent(mode="llm", model=model).route(
+        "Based on the uploaded attachment, what are the limitations?"
+    )
+    trace = decision.to_trace_dict()
+
+    assert decision.routing_mode == "llm"
+    assert decision.fallback_mode is False
+    assert decision.use_recent_messages is True
+    assert decision.use_structured_memory is False
+    assert decision.use_document_memory is True
+    assert trace["llm_routing_used"] is True
+    assert "document_memory" in trace["active_sources"]
+    assert "structured_memory" in trace["disabled_sources"]
+
+
+def test_routing_agent_hybrid_mode_lets_llm_expand_previous_chat_sources() -> None:
+    model = FakeRoutingModel(
+        '{"enabled_sources": ["previous_chat_gist", "raw_message_span"], '
+        '"reason": "Needs prior chat evidence.", "confidence": 0.92}'
+    )
+
+    decision = RoutingAgent(mode="hybrid", model=model).route(
+        "What did we discuss last time about my housing contract?"
+    )
+    trace = decision.to_trace_dict()
+
+    assert decision.routing_mode == "hybrid"
+    assert decision.fallback_mode is False
+    assert "recent_messages" in trace["active_sources"]
+    assert "structured_memory" in trace["active_sources"]
+    assert "previous_chat_gist" in trace["active_sources"]
+    assert "raw_message_span" in trace["active_sources"]
+
+
+def test_routing_agent_hybrid_mode_never_removes_deterministic_sources() -> None:
+    model = FakeRoutingModel(
+        '{"enabled_sources": [], "reason": "Model missed it.", "confidence": 0.95}'
+    )
+
+    decision = RoutingAgent(mode="hybrid", model=model).route(
+        "According to the uploaded report, what is the conclusion?"
+    )
+    trace = decision.to_trace_dict()
+
+    assert decision.routing_mode == "hybrid"
+    assert decision.fallback_mode is False
+    assert "recent_messages" in trace["active_sources"]
+    assert "structured_memory" in trace["active_sources"]
+    assert "document_memory" in trace["active_sources"]
+
+
+def test_routing_agent_llm_mode_falls_back_on_unknown_enabled_source() -> None:
+    model = FakeRoutingModel(
+        '{"enabled_sources": ["secret_memory"], "reason": "bad", "confidence": 0.9}'
+    )
+
+    decision = RoutingAgent(mode="llm", model=model).route("What does the document say?")
+
+    assert decision.routing_mode == "llm"
+    assert decision.fallback_mode is True
+    assert "unknown source" in str(decision.routing_fallback_reason)
+    assert decision.use_document_memory is True
+
+
 def test_routing_agent_llm_mode_falls_back_when_model_missing() -> None:
     decision = RoutingAgent(mode="llm", model=None).route("Hello")
     trace = decision.to_trace_dict()

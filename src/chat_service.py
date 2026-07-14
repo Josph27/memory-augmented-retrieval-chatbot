@@ -18,7 +18,12 @@ from src.context.dynamic_budget import MemoryBudgetPolicy
 from src.database import Database
 from src.inspection.answer_inspector import persist_answer_inspection
 from src.lifecycle.operation_guard import guarded_chat_operation
-from src.memory.previous_chat_gist import PreviousChatGistGenerator
+from src.memory.chat_gist_summarizer import LLMChatGistExtractor
+from src.memory.previous_chat_gist import (
+    DeterministicPreviousChatGistExtractor,
+    FallbackChatGistExtractor,
+    PreviousChatGistGenerator,
+)
 from src.memory.short_term import ShortTermMemory
 from src.model_wrapper import ModelWrapper
 from src.retrieval.reranker import MemoryReranker
@@ -62,6 +67,7 @@ class ChatService:
         memory_update_max_input_tokens: int = 4000,
         memory_update_max_messages: int | None = None,
         memory_recent_protection_tokens: int = 1500,
+        memory_update_policy: str = "scheduled",
         memory_replay_trigger_tokens: int = 4000,
         memory_replay_max_input_tokens: int = 8000,
         memory_replay_max_messages: int = 128,
@@ -78,6 +84,8 @@ class ChatService:
         reranker_llm_require_cross_source_conflict: bool = True,
         reranker_llm_provenance_queries: bool = True,
         previous_chat_gist_generation_enabled: bool = False,
+        previous_chat_gist_extractor: str = "deterministic",
+        previous_chat_gist_max_messages_per_gist: int = 30,
         previous_chat_gist_generator: PreviousChatGistGenerator | None = None,
         endpoint_context_window: int | None = None,
         endpoint_context_limit_source: str | None = None,
@@ -102,6 +110,13 @@ class ChatService:
         self.routing_mode = routing_mode
         self.reranker_mode = reranker_mode
         self.previous_chat_gist_generation_enabled = previous_chat_gist_generation_enabled
+        self.previous_chat_gist_extractor = normalize_previous_chat_gist_extractor(
+            previous_chat_gist_extractor
+        )
+        self.previous_chat_gist_max_messages_per_gist = max(
+            1,
+            previous_chat_gist_max_messages_per_gist,
+        )
         self.previous_chat_gist_generator = previous_chat_gist_generator
         self.document_ingestion_agent = DocumentIngestionAgent(
             indexer=document_indexer,
@@ -116,6 +131,7 @@ class ChatService:
             memory_update_max_input_tokens=memory_update_max_input_tokens,
             memory_update_max_messages=memory_update_max_messages,
             memory_recent_protection_tokens=memory_recent_protection_tokens,
+            memory_update_policy=memory_update_policy,
             memory_replay_trigger_tokens=memory_replay_trigger_tokens,
             memory_replay_max_input_tokens=memory_replay_max_input_tokens,
             memory_replay_max_messages=memory_replay_max_messages,
@@ -188,12 +204,26 @@ class ChatService:
             model_name=getattr(self.model, "model_name", None),
         )
         if self.previous_chat_gist_generation_enabled:
-            generator = self.previous_chat_gist_generator or PreviousChatGistGenerator(
-                database=self.database,
-                model=self.model,
+            generator = self.previous_chat_gist_generator or (
+                self.build_previous_chat_gist_generator()
             )
             generator.generate_for_existing_chats(active_chat_id=chat_id)
         return chat_id
+
+    def build_previous_chat_gist_generator(self) -> PreviousChatGistGenerator:
+        """Build the configured previous-chat gist finalizer/generator."""
+        if self.previous_chat_gist_extractor == "llm":
+            extractor = FallbackChatGistExtractor(
+                primary=LLMChatGistExtractor(self.model),
+                fallback=DeterministicPreviousChatGistExtractor(),
+            )
+        else:
+            extractor = DeterministicPreviousChatGistExtractor()
+        return PreviousChatGistGenerator(
+            database=self.database,
+            extractor=extractor,
+            max_messages_per_gist=self.previous_chat_gist_max_messages_per_gist,
+        )
 
     def ensure_chat_title_from_message(self, chat_id: str, content: str) -> None:
         """Use the first user message as a lightweight thread title."""
@@ -393,3 +423,9 @@ class ChatService:
             return self.memory.update_memory_if_needed(chat_id)
         except OpenAIError:
             return False
+
+
+def normalize_previous_chat_gist_extractor(value: str) -> str:
+    """Return a supported previous-chat gist extractor mode."""
+    normalized = value.strip().lower()
+    return normalized if normalized in {"deterministic", "llm"} else "deterministic"

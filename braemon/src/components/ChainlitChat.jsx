@@ -426,7 +426,7 @@ export default function ChainlitChat({ chatId, onConsolidate }) {
 		return 0;
 	});
 
-	// Strip breamon-trace HTML comments from EVERY message's output so they
+// Strip breamon-trace HTML comments from EVERY message's output so they
 	// never appear as visible text, even if Chainlit's internal markdown
 	// renderer escapes or otherwise surfaces them.
 	// Also extract the trace JSON into msg.metadata so the dropdown still works.
@@ -446,7 +446,6 @@ export default function ChainlitChat({ chatId, onConsolidate }) {
 			}
 		}
 	}
-
 	return (
 		<div className="flex flex-col h-full bg-background w-full">
 			{/* Messages Area */}

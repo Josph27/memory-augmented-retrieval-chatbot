@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -10,6 +11,7 @@ from src.database import Database, StoredMessage
 from src.memory.chat_gist_summarizer import ChatGistSummary
 from src.memory.previous_chat_gist import (
     DeterministicPreviousChatGistExtractor,
+    FallbackChatGistExtractor,
     PreviousChatGistGenerator,
 )
 from src.retrieval.previous_chat_gist_retriever import PreviousChatGistRetriever
@@ -17,13 +19,28 @@ from src.routing.route_planner import RoutePlanner
 
 
 class FakeModel:
+    def __init__(self, response: str = "fake response") -> None:
+        self.response = response
+        self.calls: list[list[dict[str, str]]] = []
+
+    def chat(
+        self,
+        messages: list[dict[str, str]],
+        temperature: float | None = None,
+    ) -> str:
+        del temperature
+        self.calls.append(messages)
+        return self.response
+
+
+class RaisingModel:
     def chat(
         self,
         messages: list[dict[str, str]],
         temperature: float | None = None,
     ) -> str:
         del messages, temperature
-        return "fake response"
+        raise RuntimeError("gist endpoint unavailable")
 
 
 class FakePreviousGistExtractor:
@@ -40,6 +57,12 @@ class EmptyPreviousGistExtractor:
     def summarize(self, messages: list[StoredMessage]) -> ChatGistSummary:
         del messages
         return ChatGistSummary(summary="")
+
+
+class FailingPreviousGistExtractor:
+    def summarize(self, messages: list[StoredMessage]) -> ChatGistSummary:
+        del messages
+        raise RuntimeError("gist endpoint unavailable")
 
 
 class FailingGistInsertDatabase(Database):
@@ -264,6 +287,74 @@ def test_chat_service_runs_previous_gist_generation_only_when_enabled(
 
     assert chat_id == "new-chat"
     assert generator.calls == ["new-chat"]
+
+
+def test_llm_previous_chat_gist_extractor_is_used_when_configured(
+    tmp_path: Path,
+) -> None:
+    database = Database(tmp_path / "chatbot.db")
+    database.create_chat("old-chat", title="Old chat")
+    database.save_message("old-chat", "user", "We chose SQLite for persistence.")
+    database.save_message("old-chat", "assistant", "Recorded.")
+    model = FakeModel(
+        response=(
+            '{"summary":"LLM gist: SQLite persistence decision.",'
+            '"topics":["persistence"],'
+            '"decisions":["Use SQLite"],'
+            '"open_tasks":[],'
+            '"important_facts":["SQLite selected"],'
+            '"corrections":[]}'
+        )
+    )
+    service = ChatService(
+        database=database,
+        model=model,  # type: ignore[arg-type]
+        raw_message_limit=8,
+        memory_update_batch_size=6,
+        previous_chat_gist_extractor="llm",
+        previous_chat_gist_max_messages_per_gist=30,
+    )
+
+    result = service.build_previous_chat_gist_generator().generate_for_existing_chats()
+
+    assert result.created_count == 1
+    assert len(model.calls) == 1
+    gist = database.chat_gist(result.gist_ids[0])
+    assert gist is not None
+    assert gist.gist_text == "LLM gist: SQLite persistence decision."
+    metadata = json.loads(gist.metadata_json)
+    assert metadata["summarizer"] == "FallbackChatGistExtractor"
+    assert metadata["effective_summarizer"] == "LLMChatGistExtractor"
+    assert metadata["source_message_count"] == 2
+
+
+def test_llm_previous_chat_gist_falls_back_to_deterministic_on_failure(
+    tmp_path: Path,
+) -> None:
+    database = Database(tmp_path / "chatbot.db")
+    database.create_chat("old-chat", title="Old chat")
+    database.save_message("old-chat", "user", "Remember the fallback release note.")
+    database.save_message("old-chat", "assistant", "Recorded.")
+    extractor = FallbackChatGistExtractor(
+        primary=FailingPreviousGistExtractor(),
+        fallback=DeterministicPreviousChatGistExtractor(),
+    )
+
+    result = PreviousChatGistGenerator(
+        database=database,
+        extractor=extractor,
+    ).generate_for_existing_chats()
+
+    assert result.created_count == 1
+    gist = database.chat_gist(result.gist_ids[0])
+    assert gist is not None
+    assert "Earlier user request: Remember the fallback release note." in gist.gist_text
+    metadata = json.loads(gist.metadata_json)
+    assert metadata["summarizer"] == "FallbackChatGistExtractor"
+    assert (
+        metadata["effective_summarizer"]
+        == "DeterministicPreviousChatGistExtractor"
+    )
 
 
 def test_deterministic_previous_gist_extractor_requires_no_model() -> None:

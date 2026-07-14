@@ -12,8 +12,14 @@ uses only current application behavior.
    OPENAI_BASE_URL=http://localhost:11434/v1
    MODEL_NAME=qwen2.5:3b
    ORCHESTRATION_MODE=langgraph_demo
+   ROUTING_MODE=hybrid
+   MEMORY_UPDATE_POLICY=agentic_each_turn
+   PREVIOUS_CHAT_GIST_EXTRACTOR=llm
+   PREVIOUS_CHAT_GIST_MAX_MESSAGES_PER_GIST=30
+   PREVIOUS_CHAT_GIST_GENERATION_ENABLED=1
    STRUCTURED_MEMORY_RETRIEVAL_MODE=sqlite
    RERANKER_MODE=deterministic
+   DOCUMENT_TOP_K=8
    ```
 
 2. Start the app:
