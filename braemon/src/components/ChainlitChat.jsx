@@ -16,21 +16,10 @@ function Message({ msg }) {
 	const isError = typeof msg.id === "string" && msg.id.startsWith("error:");
 	const isIndexed = typeof msg.id === "string" && msg.id.startsWith("indexed:");
 
-	// Extract persisted trace data from embedded comment, fall back to live metadata
-	let displayText = msg.output || "";
-	let trace = null;
-	const traceMatch = displayText.match(/<!--breamon-trace:([\s\S]*?)-->/);
-	if (traceMatch) {
-		try {
-			trace = JSON.parse(traceMatch[1]);
-		} catch {}
-		displayText = displayText
-			.replace(/<!--breamon-trace:[\s\S]*?-->/, "")
-			.trim();
-	}
-	if (!trace) {
-		trace = msg.metadata?.trace;
-	}
+	// Trace is pre-extracted from <!--breamon-trace:...--> at the flatMessages
+	// level and stored in msg.metadata.trace.  The output string is already clean.
+	const displayText = msg.output || "";
+	const trace = msg.metadata?.trace || null;
 
 	// Use msg.id — the Chainlit database message ID — as the localStorage
 	// key component.  It is a required string field on IStep and is stable
@@ -436,6 +425,27 @@ export default function ChainlitChat({ chatId, onConsolidate }) {
 		if (a.type !== "user_message" && b.type === "user_message") return 1;
 		return 0;
 	});
+
+	// Strip breamon-trace HTML comments from EVERY message's output so they
+	// never appear as visible text, even if Chainlit's internal markdown
+	// renderer escapes or otherwise surfaces them.
+	// Also extract the trace JSON into msg.metadata so the dropdown still works.
+	for (const msg of flatMessages) {
+		if (msg.output && /<!--breamon-trace:/.test(msg.output)) {
+			const m = msg.output.match(/<!--breamon-trace:([\s\S]*?)-->/);
+			if (m) {
+				try {
+					if (!msg.metadata) msg.metadata = {};
+					msg.metadata.trace = JSON.parse(m[1]);
+				} catch {
+					/* malformed JSON — ignore */
+				}
+				msg.output = msg.output
+					.replace(/<!--breamon-trace:[\s\S]*?-->/, "")
+					.trim();
+			}
+		}
+	}
 
 	return (
 		<div className="flex flex-col h-full bg-background w-full">

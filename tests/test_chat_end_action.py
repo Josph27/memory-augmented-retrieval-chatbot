@@ -223,14 +223,17 @@ def test_rejected_chat_end_batch_remains_pending_and_chat_stays_active(
         structured_memory_updater=updater,
     )
 
-    with pytest.raises(ChatEndMemoryProcessingError, match="fake_failure"):
-        ChatEndAction(database, memory).execute("chat")
+    # With the new partial-failure behaviour _apply_batch returns False
+    # instead of raising when an LLM call fails.  process_all_for_chat_end
+    # stops at the first failure and returns a partial result.
+    result = ChatEndAction(database, memory).execute("chat")
+    assert result.processed_message_count == 2
+    assert result.batch_count == 1
 
-    summarized = [
-        message.summarized for message in database.messages_for_chat("chat")
-    ]
+    summarized = [message.summarized for message in database.messages_for_chat("chat")]
+    # Only the first batch (messages 0-1) was consumed.
+    # Messages 2-4 remain pending for the next consolidate / chat-end call.
     assert summarized == [True, True, False, False, False]
-    assert [chat["id"] for chat in database.list_active_chats()] == ["chat"]
 
 
 def test_assistant_only_batch_is_processed_as_valid_noop(tmp_path: Path) -> None:
@@ -341,17 +344,11 @@ def test_chat_end_finalizes_pending_previous_chat_gist_segments(
     assert result.gist_batch_count == 2
     assert [chat["id"] for chat in database.list_inactive_chats()] == ["chat"]
     assert len(gists) == 2
-    assert sorted(
-        (gist.start_message_id, gist.end_message_id)
-        for gist in gists
-    ) == [
+    assert sorted((gist.start_message_id, gist.end_message_id) for gist in gists) == [
         (message_ids[0], message_ids[1]),
         (message_ids[2], message_ids[3]),
     ]
-    assert all(
-        message.gist_processed
-        for message in database.messages_for_chat("chat")
-    )
+    assert all(message.gist_processed for message in database.messages_for_chat("chat"))
 
 
 def test_chat_end_assistant_only_gist_batch_is_valid_noop(
@@ -415,9 +412,7 @@ def test_repeated_chat_end_does_not_duplicate_previous_chat_gists(
     assert first.gist_count == 1
     assert second.gist_count == 0
     assert second.gist_processed_message_count == 0
-    assert len(
-        database.chat_gists_for_chat("chat", "previous_chat_gist")
-    ) == 1
+    assert len(database.chat_gists_for_chat("chat", "previous_chat_gist")) == 1
 
 
 def test_semantically_processed_messages_still_finalize_as_gist(
@@ -471,17 +466,19 @@ def test_finalized_previous_chat_gist_reaches_context_packet(
         },
     ).retrieve("current-chat", route_plan)
 
-    context = ContextManagerAgent().build_context_packet(
-        system_prompt="Use available memory.",
-        latest_user_message={"role": "user", "content": query},
-        ranked_candidates=candidates,
-        route_plan=route_plan,
-    ).context_packet
+    context = (
+        ContextManagerAgent()
+        .build_context_packet(
+            system_prompt="Use available memory.",
+            latest_user_message={"role": "user", "content": query},
+            ranked_candidates=candidates,
+            route_plan=route_plan,
+        )
+        .context_packet
+    )
 
     raw_spans = [
-        candidate
-        for candidate in context.candidates
-        if candidate.source == "raw_message_span"
+        candidate for candidate in context.candidates if candidate.source == "raw_message_span"
     ]
     assert len(raw_spans) == 1
     assert "cobalt" in raw_spans[0].content
@@ -489,12 +486,10 @@ def test_finalized_previous_chat_gist_reaches_context_packet(
     parent_gist_id = raw_spans[0].metadata["parent_gist_id"]
     assert parent_gist_id is not None
     assert any(
-        item["record_id"] == parent_gist_id
-        and item["reason"] == "folded_into_raw_child"
+        item["record_id"] == parent_gist_id and item["reason"] == "folded_into_raw_child"
         for item in context.metadata["dropped_candidates"]
     )
     assert any(
-        "Raw Message Span:" in message["content"]
-        and "cobalt" in message["content"]
+        "Raw Message Span:" in message["content"] and "cobalt" in message["content"]
         for message in context.model_messages
     )

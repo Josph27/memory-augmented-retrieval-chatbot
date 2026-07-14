@@ -117,7 +117,7 @@ def register_api_routes(database: Database, chat_service_getter: Any) -> None:
             svc = get_chat_svc()
             result = await asyncio.wait_for(
                 asyncio.to_thread(svc.memory.process_all_for_chat_end, chat_id),
-                timeout=6,
+                timeout=30,
             )
             return {
                 "status": "consolidated",

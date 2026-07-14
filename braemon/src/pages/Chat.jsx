@@ -45,10 +45,10 @@ export default function Chat() {
 			consolidateTimeoutRef.current = setTimeout(() => {
 				reject(
 					new Error(
-						"Memory consolidation timed out after 6 seconds — the model may be unresponsive.",
+						"Memory consolidation timed out after 30 seconds — the model may be unresponsive.",
 					),
 				);
-			}, 6000);
+			}, 30000);
 		});
 
 		try {

@@ -209,8 +209,7 @@ class ShortTermMemory:
             )
 
         model_messages.extend(
-            {"role": message.role, "content": message.content}
-            for message in context.raw_messages
+            {"role": message.role, "content": message.content} for message in context.raw_messages
         )
         if latest_user_message is not None:
             model_messages.append(latest_user_message)
@@ -278,7 +277,12 @@ class ShortTermMemory:
         self,
         chat_id: str,
     ) -> ChatEndMemoryProcessingResult:
-        """Process every pending message regardless of trigger threshold."""
+        """Process every pending message regardless of trigger threshold.
+
+        Each batch is a single conversation unit (one user-assistant pair).
+        Successful extractions and graceful noops consume their messages;
+        LLM failures leave messages pending for retry on the next call.
+        """
         self.last_saved_memory_rows = []
         self.last_processed_message_ids = []
         self.last_schedule_profile = "offline_replay"
@@ -296,15 +300,23 @@ class ShortTermMemory:
                     processed_message_count=processed_message_count,
                     batch_count=batch_count,
                 )
-            self._apply_batch(
+            consumed = self._apply_batch(
                 chat_id=chat_id,
                 messages=selected.messages,
                 started=perf_counter(),
                 profile_name="offline_replay",
                 allow_noop=True,
             )
-            processed_message_count += len(selected.messages)
-            batch_count += 1
+            if consumed:
+                processed_message_count += len(selected.messages)
+                batch_count += 1
+            else:
+                # LLM call failed — stop here so the remaining pending
+                # messages are retried on the next consolidate invocation.
+                return ChatEndMemoryProcessingResult(
+                    processed_message_count=processed_message_count,
+                    batch_count=batch_count,
+                )
 
     def _apply_batch(
         self,
@@ -315,6 +327,11 @@ class ShortTermMemory:
         profile_name: SchedulingProfileName,
         allow_noop: bool,
     ) -> bool:
+        """Run one structured-memory extraction batch.
+
+        Returns True when the batch was *consumed* (messages marked
+        summarized), False when it must be retried later.
+        """
         current_memory = load_memory_state(self.database.chat_memory_state(chat_id))
         extraction_started = perf_counter()
         result = self.structured_memory.update(
@@ -323,29 +340,53 @@ class ShortTermMemory:
         )
         extraction_ms = elapsed_ms(extraction_started)
         reason = result.rejection_reason or "unknown"
-        valid_noop = not result.accepted and allow_noop and reason in CHAT_END_NOOP_REASONS
-        if not result.accepted and not valid_noop:
+        noop_reason = not result.accepted and allow_noop and reason in CHAT_END_NOOP_REASONS
+
+        # ── outcome 1: LLM / extraction failure (not a graceful noop) ──
+        if not result.accepted and not noop_reason:
             logger.warning(
-                "structured memory update rejected chat_id=%s profile=%s message_ids=%s reason=%s",
+                "structured memory update failed chat_id=%s profile=%s message_ids=%s reason=%s",
                 chat_id,
                 profile_name,
                 [message.id for message in messages],
                 reason,
             )
+            # Update the in-memory snapshot so follow-up batches see the
+            # latest state, but do NOT mark these messages summarized — they
+            # remain pending and will be retried on the next consolidate call.
             self.database.upsert_chat_memory_state(chat_id, dumps_memory_state(result.memory_state))
-            if allow_noop:
-                raise ChatEndMemoryProcessingError(
-                    f"Chat-end memory processing rejected for {chat_id}: {reason}"
-                )
             print(
                 "memory_update_timing "
                 f"chat_id={chat_id} profile={profile_name} triggered=True accepted=False "
+                f"retryable=True "
                 f"message_ids={[message.id for message in messages]} "
                 f"extraction_ms={extraction_ms} "
                 f"duration_ms={elapsed_ms(started)}"
             )
             return False
 
+        # ── outcome 2: graceful noop (no meaningful memories found) ──
+        if noop_reason:
+            logger.info(
+                "chat end memory noop consumed chat_id=%s message_ids=%s reason=%s",
+                chat_id,
+                [message.id for message in messages],
+                reason,
+            )
+            self.database.upsert_chat_memory_state(chat_id, dumps_memory_state(result.memory_state))
+            self.database.mark_messages_summarized([message.id for message in messages])
+            self.last_processed_message_ids = [message.id for message in messages]
+            print(
+                "memory_update_timing "
+                f"chat_id={chat_id} profile={profile_name} triggered=True accepted=False "
+                f"noop=True "
+                f"message_ids={[message.id for message in messages]} "
+                f"extraction_ms={extraction_ms} "
+                f"duration_ms={elapsed_ms(started)}"
+            )
+            return True
+
+        # ── outcome 3: successful extraction ──
         self.database.upsert_chat_memory_state(chat_id, dumps_memory_state(result.memory_state))
         self.database.mark_messages_summarized([message.id for message in messages])
         saved_records = getattr(self.structured_memory, "last_saved_records", [])
@@ -355,13 +396,6 @@ class ShortTermMemory:
         else:
             self.last_saved_memory_rows = rows
         self.last_processed_message_ids = [message.id for message in messages]
-        if valid_noop:
-            logger.info(
-                "chat end memory batch skipped chat_id=%s message_ids=%s reason=%s",
-                chat_id,
-                [message.id for message in messages],
-                reason,
-            )
         print(
             "memory_update_timing "
             f"chat_id={chat_id} profile={profile_name} triggered=True accepted={result.accepted} "
@@ -378,7 +412,11 @@ class ShortTermMemory:
         profile: MemoryBatchProfile,
         flush_all: bool,
     ) -> SelectedMemoryBatch:
-        pending = [message for message in self.database.messages_for_chat(chat_id) if not message.summarized]
+        pending = [
+            message
+            for message in self.database.messages_for_chat(chat_id)
+            if not message.summarized
+        ]
         if not pending:
             return SelectedMemoryBatch(messages=[], eligible_tokens=0)
 
@@ -434,7 +472,9 @@ class ShortTermMemory:
         if not eligible_units:
             return []
 
-        first_user_index = next((index for index, unit in enumerate(eligible_units) if unit.has_user), None)
+        first_user_index = next(
+            (index for index, unit in enumerate(eligible_units) if unit.has_user), None
+        )
         if first_user_index is None:
             return []
 
