@@ -96,9 +96,7 @@ class AppConfig:
         """Load local `.env` values and fall back to a local Ollama-compatible setup."""
         load_dotenv()
 
-        endpoint_context_window, endpoint_limit_source = (
-            endpoint_context_limit_from_env()
-        )
+        endpoint_context_window, endpoint_limit_source = endpoint_context_limit_from_env()
         return cls(
             openai_api_key=os.getenv("OPENAI_API_KEY", "dummy"),
             openai_base_url=os.getenv("OPENAI_BASE_URL", "http://localhost:11434/v1"),
@@ -107,41 +105,25 @@ class AppConfig:
             endpoint_context_limit_source=endpoint_limit_source,
             application_context_cap=application_context_cap_from_env(),
             base_memory_budget=int(os.getenv("BASE_MEMORY_BUDGET", "4096")),
-            memory_recall_budget_tokens=int(
-                os.getenv("MEMORY_RECALL_BUDGET_TOKENS", "8192")
-            ),
+            memory_recall_budget_tokens=int(os.getenv("MEMORY_RECALL_BUDGET_TOKENS", "8192")),
             chat_memory_cap=int(os.getenv("CHAT_MEMORY_CAP", "8192")),
             document_memory_cap=int(os.getenv("DOCUMENT_MEMORY_CAP", "16384")),
-            multi_scope_memory_cap=int(
-                os.getenv("MULTI_SCOPE_MEMORY_CAP", "16384")
-            ),
-            long_document_memory_cap=int(
-                os.getenv("LONG_DOCUMENT_MEMORY_CAP", "32768")
-            ),
-            global_summary_budget_tokens=int(
-                os.getenv("GLOBAL_SUMMARY_BUDGET_TOKENS", "65536")
-            ),
+            multi_scope_memory_cap=int(os.getenv("MULTI_SCOPE_MEMORY_CAP", "16384")),
+            long_document_memory_cap=int(os.getenv("LONG_DOCUMENT_MEMORY_CAP", "32768")),
+            global_summary_budget_tokens=int(os.getenv("GLOBAL_SUMMARY_BUDGET_TOKENS", "65536")),
             global_summary_max_budget_tokens=int(
                 os.getenv("GLOBAL_SUMMARY_MAX_BUDGET_TOKENS", "131072")
             ),
-            global_summary_reserved_tokens=int(
-                os.getenv("GLOBAL_SUMMARY_RESERVED_TOKENS", "4096")
-            ),
+            global_summary_reserved_tokens=int(os.getenv("GLOBAL_SUMMARY_RESERVED_TOKENS", "4096")),
             required_evidence_headroom_ratio=float(
                 os.getenv("REQUIRED_EVIDENCE_HEADROOM_RATIO", "0.25")
             ),
             minimum_optional_candidate_utility=float(
                 os.getenv("MIN_OPTIONAL_CANDIDATE_UTILITY", "0.15")
             ),
-            gist_retrieval_candidates=int(
-                os.getenv("GIST_RETRIEVAL_CANDIDATES", "8")
-            ),
-            direct_raw_retrieval_candidates=int(
-                os.getenv("DIRECT_RAW_RETRIEVAL_CANDIDATES", "12")
-            ),
-            raw_span_overlap_threshold=float(
-                os.getenv("RAW_SPAN_OVERLAP_THRESHOLD", "0.7")
-            ),
+            gist_retrieval_candidates=int(os.getenv("GIST_RETRIEVAL_CANDIDATES", "8")),
+            direct_raw_retrieval_candidates=int(os.getenv("DIRECT_RAW_RETRIEVAL_CANDIDATES", "12")),
+            raw_span_overlap_threshold=float(os.getenv("RAW_SPAN_OVERLAP_THRESHOLD", "0.7")),
             enable_retrieval_query_simplification=env_bool(
                 "ENABLE_RETRIEVAL_QUERY_SIMPLIFICATION",
                 default=True,
@@ -192,8 +174,10 @@ class AppConfig:
             ),
             memory_update_policy=os.getenv(
                 "MEMORY_UPDATE_POLICY",
-                "scheduled",
-            ).strip().lower(),
+                "agentic_each_turn",
+            )
+            .strip()
+            .lower(),
             memory_replay_trigger_tokens=int(
                 os.getenv(
                     "MEMORY_REPLAY_TRIGGER_TOKENS",
@@ -229,33 +213,31 @@ class AppConfig:
             orchestration_mode=os.getenv(
                 "ORCHESTRATION_MODE",
                 "langgraph_demo",
-            ).strip().lower(),
-            routing_mode=os.getenv("ROUTING_MODE", "rule").strip().lower(),
+            )
+            .strip()
+            .lower(),
+            routing_mode=os.getenv("ROUTING_MODE", "hybrid").strip().lower(),
             reranker_mode=os.getenv(
                 "RERANKER_MODE",
                 "deterministic",
-            ).strip().lower(),
+            )
+            .strip()
+            .lower(),
             reranker_llm_top_k=int(os.getenv("RERANKER_LLM_TOP_K", "10")),
-            reranker_llm_min_confidence=float(
-                os.getenv("RERANKER_LLM_MIN_CONFIDENCE", "0.55")
-            ),
+            reranker_llm_min_confidence=float(os.getenv("RERANKER_LLM_MIN_CONFIDENCE", "0.55")),
             reranker_cross_encoder_model=os.getenv(
                 "RERANKER_CROSS_ENCODER_MODEL",
                 "BAAI/bge-reranker-v2-m3",
             ),
-            reranker_cross_encoder_top_k=int(
-                os.getenv("RERANKER_CROSS_ENCODER_TOP_K", "10")
-            ),
-            reranker_cross_encoder_weight=float(
-                os.getenv("RERANKER_CROSS_ENCODER_WEIGHT", "0.65")
-            ),
+            reranker_cross_encoder_top_k=int(os.getenv("RERANKER_CROSS_ENCODER_TOP_K", "10")),
+            reranker_cross_encoder_weight=float(os.getenv("RERANKER_CROSS_ENCODER_WEIGHT", "0.65")),
             reranker_hybrid_backend=os.getenv(
                 "RERANKER_HYBRID_BACKEND",
                 "auto",
-            ).strip().lower(),
-            reranker_llm_ambiguity_margin=float(
-                os.getenv("RERANKER_LLM_AMBIGUITY_MARGIN", "0.15")
-            ),
+            )
+            .strip()
+            .lower(),
+            reranker_llm_ambiguity_margin=float(os.getenv("RERANKER_LLM_AMBIGUITY_MARGIN", "0.15")),
             reranker_llm_require_cross_source_conflict=env_bool(
                 "RERANKER_LLM_REQUIRE_CROSS_SOURCE_CONFLICT",
                 default=True,
@@ -267,7 +249,9 @@ class AppConfig:
             structured_memory_retrieval_mode=os.getenv(
                 "STRUCTURED_MEMORY_RETRIEVAL_MODE",
                 "sqlite",
-            ).strip().lower(),
+            )
+            .strip()
+            .lower(),
             long_term_memory_chroma_persist_dir=Path(
                 os.getenv(
                     "LONG_TERM_MEMORY_CHROMA_PERSIST_DIR",
@@ -284,17 +268,17 @@ class AppConfig:
             ),
             previous_chat_gist_generation_enabled=env_bool(
                 "PREVIOUS_CHAT_GIST_GENERATION_ENABLED",
-                default=False,
+                default=True,
             ),
             previous_chat_gist_retrieval_enabled=env_bool(
                 "PREVIOUS_CHAT_GIST_RETRIEVAL_ENABLED",
                 default=True,
             ),
             previous_chat_gist_extractor=normalize_previous_chat_gist_extractor(
-                os.getenv("PREVIOUS_CHAT_GIST_EXTRACTOR", "deterministic")
+                os.getenv("PREVIOUS_CHAT_GIST_EXTRACTOR", "llm")
             ),
             previous_chat_gist_max_messages_per_gist=int(
-                os.getenv("PREVIOUS_CHAT_GIST_MAX_MESSAGES_PER_GIST", "30")
+                os.getenv("PREVIOUS_CHAT_GIST_MAX_MESSAGES_PER_GIST", "5")
             ),
         )
 
