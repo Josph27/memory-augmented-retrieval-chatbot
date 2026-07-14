@@ -49,7 +49,15 @@ class DeterministicBrowserModel:
                     )
                     + "\n"
                 )
-        return f"Deterministic answer: {latest}"
+        return f"Deterministic answer: {visible_question_from_prompt(latest)}"
+
+
+def visible_question_from_prompt(content: str) -> str:
+    """Return the user question from the rendered ContextPacket prompt."""
+    marker = "[Question]"
+    if marker not in content:
+        return content
+    return content.rsplit(marker, maxsplit=1)[-1].strip()
 
 
 class DeterministicBrowserIndexer:
