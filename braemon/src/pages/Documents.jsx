@@ -13,9 +13,38 @@ function Documents() {
 
 	const loadDocuments = useCallback(() => {
 		setLoading(true);
-		Promise.all([fetchDocuments(), fetchDocuments({ status: "deleted" })])
-			.then(([active, deleted]) => {
-				setDocs([...active, ...deleted]);
+		setError(null);
+		// Fetch active and deleted independently so a failure in one
+		// does not discard successful results from the other.
+		Promise.allSettled([
+			fetchDocuments(),
+			fetchDocuments({ status: "deleted" }),
+		])
+			.then(([activeResult, deletedResult]) => {
+				const merged = [];
+				const errors = [];
+				if (activeResult.status === "fulfilled") {
+					merged.push(...activeResult.value);
+				} else {
+					console.error("Active documents fetch failed:", activeResult.reason);
+					errors.push("active");
+				}
+				if (deletedResult.status === "fulfilled") {
+					merged.push(...deletedResult.value);
+				} else {
+					console.error(
+						"Inactive documents fetch failed:",
+						deletedResult.reason,
+					);
+				}
+				setDocs(merged);
+				if (errors.length === 2) {
+					setError("Failed to load documents.");
+				} else if (errors.length === 1) {
+					setError(
+						`Could not load ${errors[0]} documents — showing available data.`,
+					);
+				}
 				setLoading(false);
 			})
 			.catch((err) => {
@@ -57,9 +86,13 @@ function Documents() {
 		e.stopPropagation();
 		try {
 			await deleteDocument(docId);
+			// Remove from the local list immediately so the UI updates,
+			// then refresh from the server to stay in sync.
+			setDocs((prev) => prev.filter((d) => d.id !== docId));
 			loadDocuments();
 		} catch (err) {
 			console.error(err);
+			setError("Failed to delete document. Check console for details.");
 		}
 	};
 
@@ -108,6 +141,18 @@ function Documents() {
 				<span className="font-body-md text-body-md text-on-secondary-container">
 					Inactive: {loading ? "..." : inactiveDocs.length}
 				</span>
+				<button
+					onClick={loadDocuments}
+					className="ml-auto bg-brand-purple/20 border border-brand-purple/30 text-brand-purple px-3 py-1 rounded-sm text-label-sm flex items-center gap-xs hover:bg-brand-purple/40 transition-colors"
+					disabled={loading}
+				>
+					<span
+						className={`material-symbols-outlined text-[14px] ${loading ? "animate-spin" : ""}`}
+					>
+						{loading ? "progress_activity" : "refresh"}
+					</span>
+					Refresh
+				</button>
 			</div>
 
 			{loading && <div className="text-on-surface-variant">Loading...</div>}

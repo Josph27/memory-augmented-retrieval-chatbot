@@ -539,19 +539,28 @@ def is_latest_user_candidate(
 
 
 def recent_message_sort_key(candidate: MemoryCandidate) -> tuple[int, str, int]:
-    """Sort recent raw messages by persisted order instead of reranker score."""
+    """Sort recent raw messages by creation time, falling back to message ID.
+
+    Uses created_at (ISO 8601) as primary key for strict time-based ordering.
+    Falls back to source_message_ids when created_at is unavailable
+    (compatibility with test fixtures and older persisted messages).
+    """
+    created_at = str(candidate.metadata.get("created_at", ""))
     source_ids = [source_id for source_id in candidate.source_message_ids if source_id >= 0]
+
+    if created_at:
+        return (0, created_at, min(source_ids) if source_ids else 0)
+
     if source_ids:
-        return (min(source_ids), "", 0)
+        return (1, str(min(source_ids)).zfill(20), 0)
 
     if isinstance(candidate.record_id, int):
-        return (candidate.record_id, "", 0)
+        return (1, str(candidate.record_id).zfill(20), 0)
 
-    created_at = str(candidate.metadata.get("created_at", ""))
     order = candidate.metadata.get("order")
     if not isinstance(order, int):
         order = 0
-    return (10**12, created_at, order)
+    return (2, "", order)
 
 
 def format_source_section(source: str, candidates: list[MemoryCandidate]) -> str:
