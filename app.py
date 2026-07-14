@@ -213,6 +213,11 @@ async def on_message(message: cl.Message) -> None:
     if trace_metadata:
         trace_json = _json.dumps(trace_metadata, default=str)
         answer_text = f"{result.answer}\n\n<!--breamon-trace:{trace_json}-->"
+        # Update the DB copy so the trace survives page reload.
+        # The coordinator saves the raw answer; we overwrite it with
+        # the trace-embedded version here.
+        if result.assistant_message_id is not None:
+            database.update_message_content(result.assistant_message_id, answer_text)
 
     await cl.Message(
         id=f"message:{result.assistant_message_id}",

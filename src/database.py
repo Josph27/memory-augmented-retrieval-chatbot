@@ -556,7 +556,7 @@ class Database:
                 SELECT id, role, content, summarized, gist_processed, created_at
                 FROM messages
                 WHERE chat_id = ?
-                ORDER BY id ASC
+                ORDER BY created_at ASC, id ASC
                 """,
                 (chat_id,),
             ).fetchall()
@@ -699,7 +699,7 @@ class Database:
                     id, chat_id, role, content, created_at, summarized, gist_processed
                 FROM messages
                 WHERE chat_id = ?
-                ORDER BY id ASC
+                ORDER BY created_at ASC, id ASC
                 """,
                 (chat_id,),
             ).fetchall()
@@ -724,7 +724,7 @@ class Database:
                 WHERE chat_id = ?
                   AND id >= ?
                   AND id <= ?
-                ORDER BY id ASC
+                ORDER BY created_at ASC, id ASC
                 """,
                 (chat_id, lower, upper),
             ).fetchall()
@@ -895,11 +895,22 @@ class Database:
         return self._document_from_row(row) if row else None
 
     def delete_document(self, document_id: str) -> None:
-        """Soft-delete one document record. Returns silently if not found."""
+        """Soft-delete one document record (mark as deleted, keep in DB)."""
         with self.connect() as connection:
             connection.execute(
                 "UPDATE document_records SET status = 'deleted', updated_at = ? WHERE id = ?",
                 (utc_now(), document_id),
+            )
+
+    def hard_delete_document(self, document_id: str) -> None:
+        """Permanently remove a document record and its chat associations.
+
+        chat_documents rows are cascade-deleted by the FK constraint.
+        """
+        with self.connect() as connection:
+            connection.execute(
+                "DELETE FROM document_records WHERE id = ?",
+                (document_id,),
             )
 
     def list_all_documents(
@@ -1090,6 +1101,14 @@ class Database:
             )
             return int(cursor.lastrowid)
 
+    def update_message_content(self, message_id: int, content: str) -> None:
+        """Overwrite a message's content after trace metadata is embedded."""
+        with self.connect() as connection:
+            connection.execute(
+                "UPDATE messages SET content = ? WHERE id = ?",
+                (content, message_id),
+            )
+
     def recent_messages(self, chat_id: str, limit: int) -> list[StoredMessage]:
         """Load recent messages for short-term memory."""
         with self.connect() as connection:
@@ -1099,7 +1118,7 @@ class Database:
                     id, chat_id, role, content, created_at, summarized, gist_processed
                 FROM messages
                 WHERE chat_id = ?
-                ORDER BY id DESC
+                ORDER BY created_at DESC, id DESC
                 LIMIT ?
                 """,
                 (chat_id, limit),
@@ -1122,7 +1141,7 @@ class Database:
                 FROM messages
                 WHERE chat_id = ?
                   AND id < ?
-                  ORDER BY id DESC
+                  ORDER BY created_at DESC, id DESC
                 LIMIT ?
                 """,
                 (chat_id, before_message_id, limit),
@@ -1149,10 +1168,10 @@ class Database:
                       SELECT id
                       FROM messages
                       WHERE chat_id = ?
-                      ORDER BY id DESC
+                      ORDER BY created_at DESC, id DESC
                       LIMIT ?
                   )
-                ORDER BY id ASC
+                ORDER BY created_at ASC, id ASC
                 LIMIT ?
                 """,
                 (chat_id, chat_id, raw_message_limit, batch_size),
@@ -1179,10 +1198,10 @@ class Database:
                       SELECT id
                       FROM messages
                       WHERE chat_id = ?
-                      ORDER BY id DESC
+                      ORDER BY created_at DESC, id DESC
                       LIMIT ?
                   )
-                ORDER BY id ASC
+                ORDER BY created_at ASC, id ASC
                 LIMIT ?
                 """,
                 (chat_id, chat_id, raw_message_limit, batch_size),
@@ -1208,10 +1227,10 @@ class Database:
                       SELECT id
                       FROM messages
                       WHERE chat_id = ?
-                      ORDER BY id DESC
+                      ORDER BY created_at DESC, id DESC
                       LIMIT ?
                   )
-                ORDER BY id ASC
+                ORDER BY created_at ASC, id ASC
                 LIMIT ?
                 """,
                 (chat_id, chat_id, raw_message_limit, batch_size),

@@ -32,7 +32,11 @@ function Message({ msg }) {
 		trace = msg.metadata?.trace;
 	}
 
-	// Persist expand state per message ID across reloads
+	// Use msg.id — the Chainlit database message ID — as the localStorage
+	// key component.  It is a required string field on IStep and is stable
+	// across page reloads.  msg.createdAt changes format (number vs string)
+	// between WebSocket streaming and REST reload, so it cannot be relied
+	// on for cross-session persistence.
 	const storageKey = `breamon-expanded-${msg.id}`;
 	const [expanded, setExpanded] = useState(() => {
 		try {
@@ -107,15 +111,17 @@ function Message({ msg }) {
 						className={
 							isError
 								? "bg-surface-dim border-[4px] border-brand-purple p-md rounded-sm"
-								: traceSections.length > 0
-									? "bg-surface-dim border-l-[4px] border-brand-purple p-md rounded-tl-sm border-t-outline-variant/40 border-r-outline-variant/40 rounded-tr-sm"
-									: isUser
-										? "bg-surface-container border-r-[4px] border-almond-silk p-md border-t-outline-variant/40 border-b-outline-variant/40 border-l-outline-variant/40 rounded-sm"
-										: "bg-surface-dim border-l-[4px] border-brand-purple p-md border-t-outline-variant/40 border-b-outline-variant/40 border-r-outline-variant/40 rounded-sm"
+								: isIndexed
+									? "bg-brand-purple text-white px-md py-sm rounded-sm"
+									: traceSections.length > 0
+										? "bg-surface-dim border-l-[4px] border-brand-purple p-md rounded-tl-sm border-t-outline-variant/40 border-r-outline-variant/40 rounded-tr-sm"
+										: isUser
+											? "bg-surface-container border-r-[4px] border-almond-silk p-md border-t-outline-variant/40 border-b-outline-variant/40 border-l-outline-variant/40 rounded-sm"
+											: "bg-surface-dim border-l-[4px] border-brand-purple p-md border-t-outline-variant/40 border-b-outline-variant/40 border-r-outline-variant/40 rounded-sm"
 						}
 					>
 						<p
-							className={`${isUser ? "font-code" : "font-body-md"} text-on-surface leading-relaxed whitespace-pre-wrap`}
+							className={`${isUser ? "font-code text-right" : "font-body-md"} text-on-surface leading-relaxed whitespace-pre-wrap`}
 						>
 							{displayText}
 						</p>
@@ -406,6 +412,30 @@ export default function ChainlitChat({ chatId, onConsolidate }) {
 		});
 	};
 	flatten(messages);
+
+	// Sort by createdAt to fix streaming race conditions where Chainlit
+	// delivers assistant messages before the user echo for the same turn.
+	// The IStep type carries createdAt: number | string during live WebSocket
+	// streaming.  After reload, the REST API returns correct createdAt order
+	// so the stable sort is a no-op.
+	//
+	// Primary sort: createdAt timestamp (preserves multi-turn order).
+	// Secondary sort: user messages before assistant (tiebreaker when
+	// timestamps are equal or missing — e.g. partial streaming states).
+	flatMessages.sort((a, b) => {
+		const parseTs = (v) => {
+			if (typeof v === "number") return v;
+			if (typeof v === "string") return Date.parse(v) || 0;
+			return 0;
+		};
+		const ta = parseTs(a.createdAt);
+		const tb = parseTs(b.createdAt);
+		if (ta !== tb) return ta - tb;
+		// Same timestamp — user messages before assistant/system
+		if (a.type === "user_message" && b.type !== "user_message") return -1;
+		if (a.type !== "user_message" && b.type === "user_message") return 1;
+		return 0;
+	});
 
 	return (
 		<div className="flex flex-col h-full bg-background w-full">

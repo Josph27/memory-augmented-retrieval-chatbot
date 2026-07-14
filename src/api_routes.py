@@ -210,7 +210,7 @@ def register_api_routes(database: Database, chat_service_getter: Any) -> None:
                 chunks_removed = 0
                 warnings.append(f"chroma_cleanup_failed: {err}")
 
-            get_db().delete_document(doc_id)
+            get_db().hard_delete_document(doc_id)
             return {
                 "status": "deleted",
                 "chunks_removed": chunks_removed,
