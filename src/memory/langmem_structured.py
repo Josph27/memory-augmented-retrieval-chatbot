@@ -53,8 +53,51 @@ LANGMEM_STRUCTURED_MEMORY_INSTRUCTIONS = """Extract durable structured memory fo
 Use only information supported by the provided messages. Do not write a
 transcript. Do not continue the conversation. Do not invent facts.
 
+Do NOT split paired contrast statements into separate memories. When the
+user expresses a preference or self-description by contrasting what they
+care about versus what they don't ("I'm not X, I'm very much Y"), output
+ONE memory capturing the priority, not two separate memories.
+
+WRONG (split):  [{"value": "not concerned about flavor"},
+                  {"value": "concerned about health"}]
+RIGHT (merged): [{"value": "The user prioritizes health over flavor
+                   and eating experience"}]
+
+Extract every factual claim, belief, opinion, or comparison the user
+expresses. When in doubt, extract. Include enough context to be understood
+without rereading — preserve qualifiers like "compared to X" or "about the
+same as Y" rather than stripping them. Include specific details when the
+user provides them (numbers, names, concrete comparisons).
+
+Use descriptive, stable snake_case keys. The same concept must always get
+the same key — do not rename keys across extractions. Use keys that reflect
+the content's topic (e.g. "mushroom_vitamin_content"), not recency or
+phrasing.
+
+Consider all eight categories — do not default to user_facts. Is this a
+decision? A preference? A constraint? A reusable procedure? Choose the
+category that best fits what the user expressed.
+
+When the user corrects a previous statement (contradicts what they said
+earlier): update the original memory's value in its existing category using
+the same key, and output a separate corrections entry noting what changed.
+Set the original's status to "superseded" and the corrected value to
+"active". Example: "Actually mushrooms have more B vitamins than meat, not
+similar." → keep user_facts key "mushroom_vitamin_b_vs_meat" with updated
+value AND output corrections record "User corrected vitamin B claim from
+'similar to meat' to 'more than meat'".
+
+When the user strengthens a previous claim with new evidence without
+contradicting it (e.g. from "I think" to citing a source): update the value
+and optionally recategorize to reflect the stronger basis (e.g. from
+user_facts to project_facts). Use the same key. Do NOT output a corrections
+entry — the claim didn't change, only its foundation.
+
+Include source_message_ids for every memory when you can identify which
+messages support it.
+
 Allowed categories:
-- user_facts: stable facts about the user
+- user_facts: stable facts about the user, including stated beliefs and opinions
 - project_facts: stable facts about the current project
 - decisions: choices that have been made
 - corrections: misunderstandings corrected by the user
@@ -62,10 +105,6 @@ Allowed categories:
 - preferences: user preferences about interaction or implementation
 - constraints: requirements or limitations
 - procedural: reusable instructions, methods, or operating steps
-
-Prefer compact, standalone memories that will matter later. If the user
-corrects or replaces a previous fact or decision, keep the corrected current
-value as active and avoid preserving the outdated value as active.
 """
 
 

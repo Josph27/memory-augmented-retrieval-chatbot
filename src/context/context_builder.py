@@ -82,10 +82,11 @@ class ContextBuilder:
                         source_candidates,
                         key=recent_message_sort_key,
                     )
-                used_tokens = sum(
-                    count_text(self.token_estimator, candidate.content)
-                    for candidate in source_candidates
-                )
+                used_tokens = 0
+                for candidate in source_candidates:
+                    candidate_tokens = count_text(self.token_estimator, candidate.content)
+                    candidate.metadata["token_cost"] = candidate_tokens
+                    used_tokens += candidate_tokens
                 selected = SelectedContext(
                     selected=source_candidates,
                     dropped=[],
@@ -235,6 +236,7 @@ class ContextBuilder:
         for candidate in candidates:
             candidate_tokens = count_text(self.token_estimator, candidate.content)
             if candidate_tokens + used_tokens <= budget:
+                candidate.metadata["token_cost"] = candidate_tokens
                 selected.append(candidate)
                 used_tokens += candidate_tokens
                 continue
@@ -506,6 +508,7 @@ def select_newest_recent_suffix(
             first_dropped_index = index
             break
         selected_newest_first.append(candidate)
+        candidate.metadata["token_cost"] = candidate_tokens
         used_tokens += candidate_tokens
 
     selected = list(reversed(selected_newest_first))

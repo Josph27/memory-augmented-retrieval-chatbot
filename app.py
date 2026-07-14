@@ -189,22 +189,15 @@ async def on_message(message: cl.Message) -> None:
         await send_chat_controls(str(chat_id))
         return
 
-    trace_metadata: dict[str, object] = {}
+    trace_metadata: dict[str, object] = build_trace_payload(result, config)
+    trace_metadata["orchestration"] = format_orchestration_trace_summary(result)
     if demo_memory_trace_enabled():
         retrieved = retrieved_memory_rows(result)
         if retrieved:
             trace_metadata["retrieved"] = retrieved
-    if orchestration_mode != NATIVE:
-        trace_metadata["orchestration"] = format_orchestration_trace_markdown(result)
-    if demo_memory_trace_enabled():
         saved = list(getattr(chat_service.memory, "last_saved_memory_rows", []))
         if saved:
             trace_metadata["saved"] = saved
-
-    # Include retrieval errors from coordinator metadata for visibility
-    retrieval_errors = result.metadata.get("retrieval_errors")
-    if retrieval_errors:
-        trace_metadata["retrieval_errors"] = retrieval_errors
 
     # Embed trace data in message content so it survives Chainlit persistence
     import json as _json
@@ -546,56 +539,148 @@ def current_orchestration_mode() -> str:
     return normalize_orchestration_mode(value if isinstance(value, str) else None)
 
 
-def format_orchestration_trace_markdown(result: object) -> str:
-    """Render a compact trace without prompts, secrets, or candidate contents."""
+def format_orchestration_trace_summary(result: object) -> str:
+    """Return a single-line orchestration-mode summary for the trace dropdown."""
     trace = getattr(result, "trace", None)
     metadata = getattr(trace, "metadata", None)
     orchestration = metadata.get("orchestration") if isinstance(metadata, dict) else None
     if not isinstance(orchestration, dict):
-        return "**Orchestration trace unavailable.**"
-    graph = orchestration.get("langgraph_trace")
-    graph = graph if isinstance(graph, dict) else {}
-    routing = graph.get("routing")
+        return "native"
+    requested = str(orchestration.get("requested_mode", "native"))
+    effective = str(orchestration.get("effective_mode", requested))
+    fallback = bool(orchestration.get("fallback_used"))
+    return f"{effective}" + (" (fallback)" if fallback else "")
+
+
+# Legacy alias for backward compatibility with older callers.
+format_orchestration_trace_markdown = format_orchestration_trace_summary
+
+
+def build_trace_payload(
+    result: object,
+    app_config: AppConfig,
+) -> dict[str, object]:
+    """Build a structured trace payload for the breamon-trace dropdown.
+
+    Sections: turnOverview, tokenBudget, retrievalFunnel, timing, configSnapshot.
+    Every field gracefully degrades to null when source data is missing.
+    """
+    trace = getattr(result, "trace", None)
+    if trace is None:
+        return {}
+
+    trace_meta = getattr(trace, "metadata", None)
+    trace_meta = trace_meta if isinstance(trace_meta, dict) else {}
+    route_plan = getattr(trace, "route_plan", None)
+    context_packet = getattr(trace, "context_packet", None)
+    context_budget = getattr(trace, "context_budget", None)
+
+    routing = trace_meta.get("routing_decision")
     routing = routing if isinstance(routing, dict) else {}
-    intents = routing.get("intents")
-    intent = None
-    if isinstance(intents, list) and intents and isinstance(intents[0], dict):
-        intent = intents[0].get("intent")
-    contract = graph.get("evidence_contract")
-    contract = contract if isinstance(contract, dict) else {}
-    lines = [
-        "<details><summary>Orchestration trace</summary>",
-        "",
-        f"- Requested mode: `{orchestration.get('requested_mode')}`",
-        f"- Effective mode: `{orchestration.get('effective_mode')}`",
-        f"- Authoritative context: `{orchestration.get('authoritative_context')}`",
-        f"- Router: `{routing.get('routing_mode', 'native')}`",
-        f"- Intent: `{intent}`",
-        f"- Enabled sources: `{graph.get('route_sources', [])}`",
-        f"- Requires raw span: `{contract.get('requires_raw_span', False)}`",
-        f"- Candidate counts: `{graph.get('candidate_counts_by_source', {})}`",
-        f"- Selected counts: `{graph.get('selected_counts_by_source', {})}`",
-        f"- Dropped counts: `{graph.get('dropped_counts_by_source', {})}`",
-        f"- Drop reasons: `{graph.get('dropped_reasons', [])}`",
-        f"- Source budgets: `{graph.get('source_budgets', {})}`",
-        f"- Actual context tokens: `{graph.get('actual_context_tokens')}`",
-        f"- Provenance valid: `{graph.get('provenance_valid')}`",
-        f"- Node timings ms: `{graph.get('node_timings_ms', {})}`",
-        f"- Fallback used: `{orchestration.get('fallback_used')}`",
-        f"- Error: `{orchestration.get('error')}`",
+    orchestration = trace_meta.get("orchestration")
+    orchestration = orchestration if isinstance(orchestration, dict) else {}
+    context_manager = trace_meta.get("context_manager")
+    context_manager = context_manager if isinstance(context_manager, dict) else {}
+    packet_meta = (
+        context_packet.metadata
+        if context_packet is not None and isinstance(context_packet.metadata, dict)
+        else {}
+    )
+    budget_meta = (
+        context_budget.metadata
+        if context_budget is not None and isinstance(context_budget.metadata, dict)
+        else {}
+    )
+    graph_trace = orchestration.get("langgraph_trace")
+    graph_trace = graph_trace if isinstance(graph_trace, dict) else {}
+    timings = trace_meta.get("timings_ms")
+    timings = timings if isinstance(timings, dict) else {}
+
+    # ── evidence_contract_satisfied ──
+    evidence_satisfied = packet_meta.get("evidence_contract_satisfied")
+    if evidence_satisfied is None and graph_trace:
+        evidence_satisfied = not graph_trace.get("insufficient_evidence", True)
+
+    payload: dict[str, object] = {
+        "turnOverview": {
+            "routingMode": routing.get("routing_mode"),
+            "routingFallback": routing.get("fallback_mode"),
+            "routeIntent": route_plan.intent if route_plan is not None else None,
+            "confidence": route_plan.confidence if route_plan is not None else None,
+            "contextProfile": (route_plan.context_profile if route_plan is not None else None),
+            "enabledSources": (
+                [s.source for s in route_plan.sources if s.enabled]
+                if route_plan is not None
+                else []
+            ),
+            "orchestrationRequested": orchestration.get("requested_mode"),
+            "orchestrationEffective": orchestration.get("effective_mode"),
+            "orchestrationFallback": orchestration.get("fallback_used"),
+            "evidenceContractSatisfied": evidence_satisfied,
+        },
+        "tokenBudget": {
+            "nativeContextWindow": packet_meta.get("native_context_window"),
+            "systemPromptTokens": budget_meta.get("system_prompt_tokens"),
+            "currentQueryTokens": budget_meta.get("current_query_tokens"),
+            "chatTemplateOverhead": budget_meta.get("chat_template_and_fixed_formatting_overhead"),
+            "selectedMemoryTokens": packet_meta.get("selected_memory_tokens"),
+            "finalPromptTokens": packet_meta.get("final_prompt_tokens"),
+        },
+        "retrievalFunnel": {
+            "retrievedCount": len(trace.retrieved_candidates),
+            "selectedCount": (len(context_packet.candidates) if context_packet is not None else 0),
+            "includedBySource": context_manager.get("included_candidate_counts_by_source", {}),
+            "droppedBySource": context_manager.get("dropped_candidate_counts_by_source", {}),
+            "droppedReasons": _summarize_dropped_reasons(packet_meta),
+            "documentFallback": (
+                graph_trace.get("document_fallback_used") if graph_trace else None
+            ),
+            "retrievalErrors": trace_meta.get("retrieval_errors", []),
+        },
+        "timing": {
+            "routePlanningMs": timings.get("route_planning"),
+            "retrievalMs": timings.get("retrieval"),
+            "rerankingMs": timings.get("reranking"),
+            "budgetPlanningMs": budget_meta.get("budget_planning_ms"),
+            "selectionMs": budget_meta.get("selection_ms"),
+            "langgraphOrchestrationMs": timings.get("langgraph_orchestration"),
+            "contextComparisonMs": timings.get("context_comparison"),
+            "mainModelCallMs": timings.get("main_model_call"),
+            "updateMemoryMs": timings.get("update_memory_if_needed"),
+            "totalTurnMs": timings.get("total_turn"),
+        },
+        "configSnapshot": {
+            "routingMode": app_config.routing_mode,
+            "rerankerMode": app_config.reranker_mode,
+            "orchestrationMode": app_config.orchestration_mode,
+            "memoryUpdatePolicy": app_config.memory_update_policy,
+            "documentTopK": app_config.document_top_k,
+            "gistExtractor": app_config.previous_chat_gist_extractor,
+            "gistMaxMessagesPerGist": app_config.previous_chat_gist_max_messages_per_gist,
+            "chunkSize": app_config.document_chunk_size,
+            "chunkOverlap": app_config.document_chunk_overlap,
+            "embeddingModel": app_config.embedding_model_name,
+        },
+    }
+    return payload
+
+
+def _summarize_dropped_reasons(packet_meta: dict[str, object]) -> list[dict[str, object]]:
+    """Aggregate dropped candidate (reason, source) pairs into counts."""
+    dropped = packet_meta.get("dropped_candidates")
+    if not isinstance(dropped, list):
+        return []
+    counts: dict[tuple[str, str], int] = {}
+    for item in dropped:
+        if not isinstance(item, dict):
+            continue
+        reason = str(item.get("reason", "unknown"))
+        source = str(item.get("source", "unknown"))
+        counts[(source, reason)] = counts.get((source, reason), 0) + 1
+    return [
+        {"source": source, "reason": reason, "count": count}
+        for (source, reason), count in sorted(counts.items())
     ]
-    comparison = orchestration.get("comparison")
-    if isinstance(comparison, dict):
-        lines.extend(
-            [
-                f"- Native-only sources: `{comparison.get('native_only_sources', [])}`",
-                f"- Graph-only sources: `{comparison.get('langgraph_only_sources', [])}`",
-                f"- Selected candidate overlap: `{comparison.get('selected_candidate_overlap')}`",
-                f"- Token difference: `{comparison.get('token_difference')}`",
-            ]
-        )
-    lines.extend(["", "</details>"])
-    return "\n".join(lines)
 
 
 class UploadedFilesResult(NamedTuple):
@@ -750,9 +835,7 @@ def chat_service_for_model(model_name: str) -> ChatService:
                 config.reranker_llm_require_cross_source_conflict
             ),
             reranker_llm_provenance_queries=config.reranker_llm_provenance_queries,
-            previous_chat_gist_generation_enabled=(
-                config.previous_chat_gist_generation_enabled
-            ),
+            previous_chat_gist_generation_enabled=(config.previous_chat_gist_generation_enabled),
             previous_chat_gist_extractor=config.previous_chat_gist_extractor,
             previous_chat_gist_max_messages_per_gist=(
                 config.previous_chat_gist_max_messages_per_gist

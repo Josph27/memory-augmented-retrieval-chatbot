@@ -11,6 +11,383 @@ import { endChat, forkChat } from "../api";
 import { useNavigate } from "react-router-dom";
 import { v4 as uuidv4 } from "uuid";
 
+// ── Trace section builders ──
+
+function formatValue(value) {
+	if (value === null || value === undefined) return "—";
+	if (typeof value === "boolean") return value ? "true" : "false";
+	if (typeof value === "number") {
+		if (Number.isInteger(value)) return value.toLocaleString();
+		return value.toFixed(1);
+	}
+	return String(value);
+}
+
+function kvRows(obj, labels) {
+	const rows = [];
+	for (const [key, label] of Object.entries(labels)) {
+		rows.push({ key: label, value: formatValue(obj[key]) });
+	}
+	return rows;
+}
+
+function overviewToRows(ov) {
+	return kvRows(ov, {
+		routingMode: "Routing mode",
+		routingFallback: "Routing fallback",
+		routeIntent: "Intent",
+		confidence: "Confidence",
+		contextProfile: "Context profile",
+		enabledSources: "Enabled sources",
+		orchestrationRequested: "Orch. requested",
+		orchestrationEffective: "Orch. effective",
+		orchestrationFallback: "Orch. fallback",
+		evidenceContractSatisfied: "Evidence satisfied",
+	});
+}
+
+function budgetToRows(tb) {
+	return kvRows(tb, {
+		nativeContextWindow: "Native window",
+		systemPromptTokens: "System tokens",
+		currentQueryTokens: "Query tokens",
+		chatTemplateOverhead: "Template overhead",
+		selectedMemoryTokens: "Memory tokens",
+		finalPromptTokens: "Final prompt tokens",
+	});
+}
+
+function funnelToRows(rf) {
+	const rows = [
+		{ key: "Retrieved", value: formatValue(rf.retrievedCount) },
+		{ key: "Selected", value: formatValue(rf.selectedCount) },
+	];
+	if (rf.includedBySource && Object.keys(rf.includedBySource).length > 0) {
+		rows.push({
+			key: "By source",
+			value: Object.entries(rf.includedBySource)
+				.map(([s, c]) => `${s}: ${c}`)
+				.join(", "),
+		});
+	}
+	if (rf.droppedBySource && Object.keys(rf.droppedBySource).length > 0) {
+		rows.push({
+			key: "Dropped by source",
+			value: Object.entries(rf.droppedBySource)
+				.map(([s, c]) => `${s}: ${c}`)
+				.join(", "),
+		});
+	}
+	if (rf.documentFallback !== undefined && rf.documentFallback !== null) {
+		rows.push({ key: "Doc fallback", value: formatValue(rf.documentFallback) });
+	}
+	return rows;
+}
+
+function timingsToRows(tm) {
+	return kvRows(tm, {
+		routePlanningMs: "Route planning",
+		retrievalMs: "Retrieval",
+		rerankingMs: "Reranking",
+		budgetPlanningMs: "Budget planning",
+		selectionMs: "Selection",
+		langgraphOrchestrationMs: "LangGraph orch.",
+		contextComparisonMs: "Context comparison",
+		mainModelCallMs: "Model call",
+		updateMemoryMs: "Memory update",
+		totalTurnMs: "Total turn",
+	}).filter((row) => row.value !== "—");
+}
+
+function configToRows(cfg) {
+	return kvRows(cfg, {
+		routingMode: "Routing mode",
+		rerankerMode: "Reranker mode",
+		orchestrationMode: "Orch. mode",
+		memoryUpdatePolicy: "Memory policy",
+		documentTopK: "Document top-K",
+		gistExtractor: "Gist extractor",
+		gistMaxMessagesPerGist: "Max msg/gist",
+		chunkSize: "Chunk size",
+		chunkOverlap: "Chunk overlap",
+		embeddingModel: "Embedding model",
+	});
+}
+
+function buildTraceSections(trace) {
+	const sections = [];
+
+	// Section 1: Turn Overview
+	if (trace.turnOverview) {
+		sections.push({
+			label: "Turn Overview",
+			kvRows: overviewToRows(trace.turnOverview),
+		});
+	}
+
+	// Section 2: Token Budget
+	if (trace.tokenBudget) {
+		sections.push({
+			label: "Token Budget",
+			kvRows: budgetToRows(trace.tokenBudget),
+		});
+	}
+
+	// Section 3: Retrieval Funnel
+	if (trace.retrievalFunnel) {
+		const funnelSection = {
+			label: "Retrieval Funnel",
+			kvRows: funnelToRows(trace.retrievalFunnel),
+		};
+		const droppedReasons = trace.retrievalFunnel.droppedReasons;
+		if (Array.isArray(droppedReasons) && droppedReasons.length > 0) {
+			funnelSection.dropReasons = droppedReasons;
+		}
+		const funnelSections = [funnelSection];
+		if (
+			Array.isArray(trace.retrievalFunnel.retrievalErrors) &&
+			trace.retrievalFunnel.retrievalErrors.length > 0
+		) {
+			funnelSections.push({
+				label: "Retrieval Errors",
+				items: trace.retrievalFunnel.retrievalErrors,
+			});
+		}
+		sections.push(...funnelSections);
+	}
+
+	// Section 4: Selected Evidence (existing)
+	if (Array.isArray(trace.retrieved) && trace.retrieved.length > 0) {
+		sections.push({
+			label: "Selected Evidence",
+			rows: trace.retrieved,
+			tokenCostCol: trace.retrieved.some((r) => r.tokenCost !== undefined),
+		});
+	}
+
+	// Section 5: Saved Memories (existing)
+	if (Array.isArray(trace.saved) && trace.saved.length > 0) {
+		sections.push({ label: "Saved Memories", rows: trace.saved });
+	}
+
+	// Section 6: Timing
+	if (trace.timing) {
+		const timingRows = timingsToRows(trace.timing);
+		if (timingRows.length > 0) {
+			sections.push({
+				label: "Timing (ms)",
+				kvRows: timingRows,
+			});
+		}
+	}
+
+	// Section 7: Config Snapshot
+	if (trace.configSnapshot) {
+		sections.push({
+			label: "Config Snapshot",
+			kvRows: configToRows(trace.configSnapshot),
+		});
+	}
+
+	// Backward compat: old orchestration string (only if no turnOverview)
+	if (!trace.turnOverview && trace.orchestration) {
+		sections.push({
+			label: "Orchestration",
+			text: String(trace.orchestration),
+		});
+	}
+
+	// Backward compat: old retrieval_errors key (only if no retrievalFunnel)
+	if (
+		!trace.retrievalFunnel &&
+		Array.isArray(trace.retrieval_errors) &&
+		trace.retrieval_errors.length > 0
+	) {
+		sections.push({
+			label: "Retrieval Errors",
+			items: trace.retrieval_errors,
+		});
+	}
+
+	return sections;
+}
+
+// ── Trace section rendering helpers ──
+
+function DropReasons({ reasons }) {
+	const [open, setOpen] = useState(false);
+	if (!reasons || reasons.length === 0) return null;
+	return (
+		<div className="mt-xs">
+			<button
+				onClick={() => setOpen(!open)}
+				className="text-label-sm text-on-surface-variant/60 hover:text-on-surface-variant transition-colors flex items-center gap-xs"
+			>
+				<span className="material-symbols-outlined text-[12px]">
+					{open ? "expand_less" : "expand_more"}
+				</span>
+				Drop reasons ({reasons.length})
+			</button>
+			{open && (
+				<div className="mt-xs ml-sm text-code text-[12px] leading-tight space-y-0.5">
+					{reasons.map((d, i) => (
+						<div key={i} className="text-on-surface-variant/70">
+							{d.source}/{d.reason}: {d.count}
+						</div>
+					))}
+				</div>
+			)}
+		</div>
+	);
+}
+
+function SectionBlock({ section, bordered = false }) {
+	return (
+		<div
+			className={`mb-md ${bordered ? "border-r border-outline-variant/10 pr-md" : ""}`}
+		>
+			<div className="text-label-sm text-on-surface-variant font-bold mb-xs uppercase tracking-wider">
+				{section.label}
+			</div>
+			{section.text && (
+				<pre className="text-code text-on-surface-variant whitespace-pre-wrap bg-surface-container-lowest p-sm rounded-sm text-[12px] leading-tight">
+					{section.text}
+				</pre>
+			)}
+			{section.kvRows && (
+				<div className="grid grid-cols-[minmax(0,160px)_1fr] gap-x-sm gap-y-0 text-code text-[12px] leading-tight">
+					{section.kvRows.map((row, j) => (
+						<div key={j} className="contents">
+							<div
+								className="py-xs pr-sm text-on-surface-variant/70 truncate"
+								title={row.key}
+							>
+								{row.key}
+							</div>
+							<div className="py-xs text-on-surface-variant truncate">
+								{row.value}
+							</div>
+						</div>
+					))}
+				</div>
+			)}
+			{section.dropReasons && <DropReasons reasons={section.dropReasons} />}
+			{section.rows && (
+				<table className="w-full text-code text-[12px] leading-tight border-collapse">
+					<thead>
+						<tr className="border-b border-outline-variant/30">
+							{Object.keys(section.rows[0] || {})
+								.slice(0, 8)
+								.map((k) => (
+									<th
+										key={k}
+										className="text-left text-on-surface-variant/70 font-normal py-xs pr-sm whitespace-nowrap"
+									>
+										{k}
+									</th>
+								))}
+						</tr>
+					</thead>
+					<tbody>
+						{section.rows.map((row, j) => (
+							<tr
+								key={j}
+								className="border-b border-outline-variant/10 hover:bg-surface-container-high/50"
+							>
+								{Object.values(row)
+									.slice(0, 8)
+									.map((val, k) => (
+										<td
+											key={k}
+											className="py-xs pr-sm text-on-surface-variant max-w-[300px] truncate"
+										>
+											{typeof val === "string" && val.length > 100
+												? val.slice(0, 100) + "..."
+												: String(val ?? "")}
+										</td>
+									))}
+							</tr>
+						))}
+					</tbody>
+				</table>
+			)}
+			{section.items && (
+				<ul className="text-code text-[12px] text-on-surface-variant leading-tight space-y-xs list-disc pl-md">
+					{section.items.map((item, j) => (
+						<li key={j} className="bg-surface-container-lowest p-sm rounded-sm">
+							{String(item)}
+						</li>
+					))}
+				</ul>
+			)}
+		</div>
+	);
+}
+
+function SectionPair({ left, right }) {
+	if (!left && !right) return null;
+	if (!right) return <SectionBlock section={left} />;
+	if (!left) return <SectionBlock section={right} />;
+	return (
+		<div className="border-b border-outline-variant/10 mb-md">
+			<div className="grid grid-cols-2 gap-md">
+				<SectionBlock section={left} bordered />
+				<SectionBlock section={right} />
+			</div>
+		</div>
+	);
+}
+
+function TraceContent({ sections }) {
+	const byLabel = {};
+	for (const s of sections) {
+		byLabel[s.label] = s;
+	}
+
+	const hasConfig = !!byLabel["Config Snapshot"];
+	const hasEvidenceBelow =
+		!!byLabel["Selected Evidence"] ||
+		!!byLabel["Saved Memories"] ||
+		!!byLabel["Orchestration"] ||
+		!!byLabel["Retrieval Errors"];
+
+	return (
+		<>
+			<SectionPair
+				left={byLabel["Turn Overview"]}
+				right={byLabel["Timing (ms)"]}
+			/>
+			<SectionPair
+				left={byLabel["Token Budget"]}
+				right={byLabel["Retrieval Funnel"]}
+			/>
+			{hasConfig && (
+				<div
+					className={
+						hasEvidenceBelow ? "border-b border-outline-variant/10 mb-md" : ""
+					}
+				>
+					<SectionBlock section={byLabel["Config Snapshot"]} />
+				</div>
+			)}
+			{byLabel["Selected Evidence"] && (
+				<SectionBlock section={byLabel["Selected Evidence"]} />
+			)}
+			{byLabel["Saved Memories"] && (
+				<SectionBlock section={byLabel["Saved Memories"]} />
+			)}
+			{byLabel["Orchestration"] && (
+				<SectionBlock section={byLabel["Orchestration"]} />
+			)}
+			{byLabel["Retrieval Errors"] && (
+				<SectionBlock section={byLabel["Retrieval Errors"]} />
+			)}
+		</>
+	);
+}
+
+// ── Message component ──
+
 function Message({ msg }) {
 	const isUser = msg.type === "user_message";
 	const isError = typeof msg.id === "string" && msg.id.startsWith("error:");
@@ -45,33 +422,7 @@ function Message({ msg }) {
 		});
 	};
 
-	const traceSections = [];
-	if (trace) {
-		if (Array.isArray(trace.retrieved) && trace.retrieved.length > 0) {
-			traceSections.push({
-				label: "Retrieved Memories",
-				rows: trace.retrieved,
-			});
-		}
-		if (Array.isArray(trace.saved) && trace.saved.length > 0) {
-			traceSections.push({ label: "Saved Memories", rows: trace.saved });
-		}
-		if (trace.orchestration) {
-			traceSections.push({
-				label: "Orchestration",
-				text: String(trace.orchestration),
-			});
-		}
-		if (
-			Array.isArray(trace.retrieval_errors) &&
-			trace.retrieval_errors.length > 0
-		) {
-			traceSections.push({
-				label: "Retrieval Errors",
-				items: trace.retrieval_errors,
-			});
-		}
-	}
+	const traceSections = trace ? buildTraceSections(trace) : [];
 
 	return (
 		<div
@@ -143,71 +494,8 @@ function Message({ msg }) {
 								</span>
 							</button>
 							{expanded && (
-								<div className="px-md pb-md max-h-64 overflow-y-auto custom-scrollbar">
-									{traceSections.map((section, i) => (
-										<div key={i} className="mb-md">
-											<div className="text-label-sm text-on-surface-variant font-bold mb-xs uppercase tracking-wider">
-												{section.label}
-											</div>
-											{section.text && (
-												<pre className="text-code text-on-surface-variant whitespace-pre-wrap bg-surface-container-lowest p-sm rounded-sm text-[12px] leading-tight">
-													{section.text}
-												</pre>
-											)}
-											{section.rows && (
-												<table className="w-full text-code text-[12px] leading-tight border-collapse">
-													<thead>
-														<tr className="border-b border-outline-variant/30">
-															{Object.keys(section.rows[0] || {})
-																.slice(0, 6)
-																.map((k) => (
-																	<th
-																		key={k}
-																		className="text-left text-on-surface-variant/70 font-normal py-xs pr-sm whitespace-nowrap"
-																	>
-																		{k}
-																	</th>
-																))}
-														</tr>
-													</thead>
-													<tbody>
-														{section.rows.map((row, j) => (
-															<tr
-																key={j}
-																className="border-b border-outline-variant/10 hover:bg-surface-container-high/50"
-															>
-																{Object.values(row)
-																	.slice(0, 6)
-																	.map((val, k) => (
-																		<td
-																			key={k}
-																			className="py-xs pr-sm text-on-surface-variant max-w-[300px] truncate"
-																		>
-																			{typeof val === "string" &&
-																			val.length > 100
-																				? val.slice(0, 100) + "..."
-																				: String(val ?? "")}
-																		</td>
-																	))}
-															</tr>
-														))}
-													</tbody>
-												</table>
-											)}
-											{section.items && (
-												<ul className="text-code text-[12px] text-on-surface-variant leading-tight space-y-xs list-disc pl-md">
-													{section.items.map((item, j) => (
-														<li
-															key={j}
-															className="bg-surface-container-lowest p-sm rounded-sm"
-														>
-															{String(item)}
-														</li>
-													))}
-												</ul>
-											)}
-										</div>
-									))}
+								<div className="px-md pb-md max-h-[32rem] overflow-y-auto custom-scrollbar">
+									<TraceContent sections={traceSections} />
 								</div>
 							)}
 						</div>
@@ -426,7 +714,7 @@ export default function ChainlitChat({ chatId, onConsolidate }) {
 		return 0;
 	});
 
-// Strip breamon-trace HTML comments from EVERY message's output so they
+	// Strip breamon-trace HTML comments from EVERY message's output so they
 	// never appear as visible text, even if Chainlit's internal markdown
 	// renderer escapes or otherwise surfaces them.
 	// Also extract the trace JSON into msg.metadata so the dropdown still works.
