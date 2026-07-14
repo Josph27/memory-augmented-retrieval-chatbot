@@ -706,6 +706,7 @@ def chat_service_for_model(model_name: str) -> ChatService:
             memory_update_max_input_tokens=config.memory_update_max_input_tokens,
             memory_update_max_messages=config.memory_update_max_messages,
             memory_recent_protection_tokens=config.memory_recent_protection_tokens,
+            memory_update_policy=config.memory_update_policy,
             memory_replay_trigger_tokens=config.memory_replay_trigger_tokens,
             memory_replay_max_input_tokens=config.memory_replay_max_input_tokens,
             memory_replay_max_messages=config.memory_replay_max_messages,

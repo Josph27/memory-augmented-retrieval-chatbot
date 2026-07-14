@@ -57,6 +57,7 @@ class AppConfig:
     memory_update_max_input_tokens: int
     memory_update_max_messages: int
     memory_recent_protection_tokens: int
+    memory_update_policy: str
     memory_replay_trigger_tokens: int
     memory_replay_max_input_tokens: int
     memory_replay_max_messages: int
@@ -187,6 +188,10 @@ class AppConfig:
                     str(MEMORY_RECENT_PROTECTION_TOKENS),
                 )
             ),
+            memory_update_policy=os.getenv(
+                "MEMORY_UPDATE_POLICY",
+                "scheduled",
+            ).strip().lower(),
             memory_replay_trigger_tokens=int(
                 os.getenv(
                     "MEMORY_REPLAY_TRIGGER_TOKENS",

@@ -8,6 +8,15 @@ from src.core.contracts import RoutePlan, SourcePlan
 from src.routing.route_planner import RoutePlanner
 
 ROUTING_MODES = {"rule", "llm", "hybrid"}
+LLM_ROUTABLE_SOURCES = {
+    "recent_messages",
+    "structured_memory",
+    "document_memory",
+    "previous_chat_gist",
+    "raw_message_span",
+    "current_chat_span",
+    "current_chat_gist",
+}
 MIN_LLM_ROUTING_CONFIDENCE = 0.5
 
 
@@ -263,10 +272,17 @@ def llm_routing_messages(query: str) -> list[dict[str, str]]:
             "content": (
                 "You are a routing policy for a memory-augmented chatbot. "
                 "Return only valid JSON. Decide which memory sources should be "
-                "active for the user query. Keep current_chat_gist, "
-                "previous_chat_gist, raw_message_span, current_chat_chunks, and "
-                "previous_chat_memory disabled unless explicitly requested by "
-                "the application; they are not enabled for normal routing yet."
+                "active for the user query. Available sources are: "
+                "recent_messages for nearby conversation turns, "
+                "structured_memory for durable user facts/preferences, "
+                "document_memory for uploaded files or attachments, "
+                "previous_chat_gist for prior ended chats, "
+                "raw_message_span for exact prior-chat evidence, "
+                "current_chat_span for earlier turns in the current chat, and "
+                "current_chat_gist for compact current-chat orientation. "
+                "Be conservative: enable only sources that are useful for "
+                "answering the query. The application may keep deterministic "
+                "safety sources enabled in hybrid mode."
             ),
         },
         {
@@ -274,9 +290,12 @@ def llm_routing_messages(query: str) -> list[dict[str, str]]:
             "content": (
                 "Route this query:\n"
                 f"{query}\n\n"
-                "Return JSON with keys: use_recent_messages, "
-                "use_structured_memory, use_document_memory, reason, confidence. "
-                "confidence must be a number from 0 to 1."
+                "Return JSON with keys: enabled_sources, reason, confidence. "
+                "enabled_sources must be a list using only the source names "
+                "from the system message. confidence must be a number from 0 "
+                "to 1. For backward compatibility, use_recent_messages, "
+                "use_structured_memory, and use_document_memory are also "
+                "accepted if enabled_sources is omitted."
             ),
         },
     ]
@@ -302,42 +321,41 @@ def route_plan_from_llm_payload(
     mode: str,
 ) -> RoutePlan:
     """Convert validated LLM routing JSON to a RoutePlan-compatible object."""
-    required = ("use_recent_messages", "use_structured_memory", "use_document_memory")
-    missing = [key for key in required if key not in payload]
-    if missing:
-        raise ValueError(f"LLM routing response missing keys: {', '.join(missing)}")
     confidence = float(payload.get("confidence", 0.0))
     if not 0 <= confidence <= 1:
         raise ValueError("LLM routing confidence must be between 0 and 1")
 
-    use_recent = bool(payload["use_recent_messages"])
-    use_structured = bool(payload["use_structured_memory"])
-    use_document = bool(payload["use_document_memory"])
-    if mode == "hybrid":
-        # Hybrid keeps the deterministic safety baseline for core chat memory,
-        # while allowing the LLM to decide whether document memory is useful.
-        use_recent = source_is_enabled(base_route_plan, "recent_messages")
-        use_structured = source_is_enabled(base_route_plan, "structured_memory")
+    base_enabled_sources = {
+        source.source for source in base_route_plan.sources if source.enabled
+    }
+    if "enabled_sources" in payload:
+        selected_sources = selected_sources_from_llm_payload(
+            payload=payload,
+            base_route_plan=base_route_plan,
+        )
+        if mode == "hybrid":
+            # Hybrid is deterministic-first: the LLM may expand the route, but
+            # cannot remove sources selected by the deterministic planner.
+            selected_sources = base_enabled_sources | selected_sources
+    else:
+        selected_sources = legacy_selected_sources_from_llm_payload(
+            payload=payload,
+            base_route_plan=base_route_plan,
+            mode=mode,
+        )
 
     sources = [
         copy_source_enabled(
             source,
             enabled=(
-                source_enabled_from_llm(
-                    source.source,
-                    use_recent=use_recent,
-                    use_structured=use_structured,
-                    use_document=use_document,
-                )
-                if source.source
-                in {"recent_messages", "structured_memory", "document_memory"}
+                source.source in selected_sources
+                if source.source in LLM_ROUTABLE_SOURCES
                 else source.enabled
             ),
             query=query.strip().lower(),
             reason=(
                 str(payload.get("reason") or "LLM routing policy selected sources.")
-                if source.source
-                in {"recent_messages", "structured_memory", "document_memory"}
+                if source.source in selected_sources
                 else source.reason
             ),
         )
@@ -347,12 +365,12 @@ def route_plan_from_llm_payload(
         query=query.strip().lower(),
         intent=base_route_plan.intent,
         confidence=confidence,
-        requires_retrieval=use_document,
+        requires_retrieval="document_memory" in selected_sources,
         sources=sources,
         ranking_profile=base_route_plan.ranking_profile,
         context_profile=(
             "document_question"
-            if use_document
+            if "document_memory" in selected_sources
             else base_route_plan.context_profile or "general_chat"
         ),
         fallback_policy=base_route_plan.fallback_policy,
@@ -362,24 +380,61 @@ def route_plan_from_llm_payload(
             **base_route_plan.metadata,
             "routing_mode": mode,
             "llm_routing_reason": str(payload.get("reason") or ""),
+            "llm_enabled_sources": ",".join(sorted(selected_sources)),
         },
     )
 
 
-def source_enabled_from_llm(
-    source: str,
-    use_recent: bool,
-    use_structured: bool,
-    use_document: bool,
-) -> bool:
-    """Map LLM source booleans onto known source labels."""
-    if source == "recent_messages":
-        return use_recent
-    if source == "structured_memory":
-        return use_structured
-    if source == "document_memory":
-        return use_document
-    return False
+def selected_sources_from_llm_payload(
+    payload: dict[str, Any],
+    base_route_plan: RoutePlan,
+) -> set[str]:
+    """Return validated source names selected by the LLM router."""
+    raw_sources = payload.get("enabled_sources")
+    if not isinstance(raw_sources, list):
+        raise ValueError("LLM routing enabled_sources must be a list")
+    known_sources = {source.source for source in base_route_plan.sources}
+    selected_sources: set[str] = set()
+    for raw_source in raw_sources:
+        source = str(raw_source).strip()
+        if source not in known_sources:
+            raise ValueError(f"LLM routing selected unknown source: {source}")
+        if source in LLM_ROUTABLE_SOURCES:
+            selected_sources.add(source)
+    return selected_sources
+
+
+def legacy_selected_sources_from_llm_payload(
+    payload: dict[str, Any],
+    base_route_plan: RoutePlan,
+    mode: str,
+) -> set[str]:
+    """Support the older three-boolean LLM routing response shape."""
+    required = ("use_recent_messages", "use_structured_memory", "use_document_memory")
+    missing = [key for key in required if key not in payload]
+    if missing:
+        raise ValueError(f"LLM routing response missing keys: {', '.join(missing)}")
+
+    selected_sources = {
+        source
+        for source, enabled in (
+            ("recent_messages", bool(payload["use_recent_messages"])),
+            ("structured_memory", bool(payload["use_structured_memory"])),
+            ("document_memory", bool(payload["use_document_memory"])),
+        )
+        if enabled
+    }
+    if mode == "hybrid":
+        selected_sources |= {
+            source.source for source in base_route_plan.sources if source.enabled
+        }
+    else:
+        selected_sources |= {
+            source.source
+            for source in base_route_plan.sources
+            if source.enabled and source.source not in LLM_ROUTABLE_SOURCES
+        }
+    return selected_sources
 
 
 def copy_source_enabled(
