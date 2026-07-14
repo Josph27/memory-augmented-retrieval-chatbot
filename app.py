@@ -260,7 +260,11 @@ async def end_chat_handler(action: cl.Action) -> None:
     try:
         model_name = cl.user_session.get("model_name") or model_name_for_chat(chat_id)
         chat_service = chat_service_for_model(model_name)
-        ChatEndAction(database=database, memory=chat_service.memory).execute(chat_id)
+        ChatEndAction(
+            database=database,
+            memory=chat_service.memory,
+            gist_finalizer=chat_service.build_previous_chat_gist_generator(),
+        ).execute(chat_id)
     except Exception as error:
         await send_product_error(format_action_error("end chat", error))
         return
@@ -739,12 +743,18 @@ def chat_service_for_model(model_name: str) -> ChatService:
                 config.reranker_llm_require_cross_source_conflict
             ),
             reranker_llm_provenance_queries=config.reranker_llm_provenance_queries,
-            previous_chat_gist_generation_enabled=(config.previous_chat_gist_generation_enabled),
+            previous_chat_gist_generation_enabled=(
+                config.previous_chat_gist_generation_enabled
+            ),
+            previous_chat_gist_extractor=config.previous_chat_gist_extractor,
+            previous_chat_gist_max_messages_per_gist=(
+                config.previous_chat_gist_max_messages_per_gist
+            ),
         )
     return chat_services[model_name]
 
 
-from src.api_routes import register_api_routes
+from src.api_routes import register_api_routes  # noqa: E402
 
 register_api_routes(
     database=database, chat_service_getter=lambda: chat_service_for_model(config.model_name)

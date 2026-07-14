@@ -88,6 +88,8 @@ class AppConfig:
     current_chat_gist_generation_enabled: bool
     previous_chat_gist_generation_enabled: bool
     previous_chat_gist_retrieval_enabled: bool
+    previous_chat_gist_extractor: str
+    previous_chat_gist_max_messages_per_gist: int
 
     @classmethod
     def from_env(cls) -> "AppConfig":
@@ -215,7 +217,7 @@ class AppConfig:
                 "EMBEDDING_MODEL_NAME",
                 "sentence-transformers/all-MiniLM-L6-v2",
             ),
-            document_top_k=int(os.getenv("DOCUMENT_TOP_K", "4")),
+            document_top_k=int(os.getenv("DOCUMENT_TOP_K", "8")),
             document_chunker=os.getenv("DOCUMENT_CHUNKER", "custom"),
             document_chunk_size=int(os.getenv("DOCUMENT_CHUNK_SIZE", "1000")),
             document_chunk_overlap=int(os.getenv("DOCUMENT_CHUNK_OVERLAP", "150")),
@@ -288,6 +290,12 @@ class AppConfig:
                 "PREVIOUS_CHAT_GIST_RETRIEVAL_ENABLED",
                 default=True,
             ),
+            previous_chat_gist_extractor=normalize_previous_chat_gist_extractor(
+                os.getenv("PREVIOUS_CHAT_GIST_EXTRACTOR", "deterministic")
+            ),
+            previous_chat_gist_max_messages_per_gist=int(
+                os.getenv("PREVIOUS_CHAT_GIST_MAX_MESSAGES_PER_GIST", "30")
+            ),
         )
 
 
@@ -297,3 +305,9 @@ def env_bool(name: str, default: bool = False) -> bool:
     if value is None:
         return default
     return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def normalize_previous_chat_gist_extractor(value: str) -> str:
+    """Return a supported previous-chat gist extractor mode."""
+    normalized = value.strip().lower()
+    return normalized if normalized in {"deterministic", "llm"} else "deterministic"

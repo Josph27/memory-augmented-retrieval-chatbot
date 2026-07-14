@@ -61,7 +61,7 @@ class LangChainChromaRetriever:
             chunk_overlap=int(
                 os.getenv("LANGCHAIN_CHUNK_OVERLAP", str(DEFAULT_CHUNK_OVERLAP))
             ),
-            default_top_k=int(os.getenv("DOCUMENT_TOP_K", "4")),
+            default_top_k=int(os.getenv("DOCUMENT_TOP_K", "8")),
             fallback_retriever=fallback_retriever,
         )
 

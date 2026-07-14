@@ -1,6 +1,5 @@
 from __future__ import annotations
 import asyncio
-from datetime import datetime, timezone
 import chainlit as cl
 from src.database import Database
 from typing import Any
@@ -220,7 +219,7 @@ def register_api_routes(database: Database, chat_service_getter: Any) -> None:
     @app.post("/api/documents/upload")
     async def upload_document():
         """Accept a file upload and index it globally (not scoped to a chat)."""
-        from fastapi import UploadFile, File, HTTPException, Request
+        from fastapi import HTTPException, Request, UploadFile
 
         request: Request = cl.context.request  # type: ignore[assignment]
         try:
