@@ -1,4 +1,3 @@
-import asyncio
 from src.database import Database
 from src.config import AppConfig
 from src.model_wrapper import ModelWrapper
@@ -21,7 +20,7 @@ def main():
     try:
         res = chat_service.handle_user_turn(chat_id, "What is 2+2?", orchestration_mode="native")
         print("Success:", res.answer)
-    except Exception as e:
+    except Exception:
         import traceback
 
         traceback.print_exc()

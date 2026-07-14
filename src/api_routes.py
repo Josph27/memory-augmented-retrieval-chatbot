@@ -23,7 +23,10 @@ def register_api_routes(database: Database, chat_service_getter: Any) -> None:
     _database = database
     _chat_service_getter = chat_service_getter
 
-    app = cl.server.app
+    chainlit_server = getattr(cl, "server", None)
+    app = getattr(chainlit_server, "app", None)
+    if app is None:
+        return
 
     # Store length of routes before adding ours
     initial_route_count = len(app.router.routes)
