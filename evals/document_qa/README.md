@@ -184,6 +184,81 @@ LangChain vector stores such as Chroma or FAISS. It does not change the
 production pipeline, which already uses `LangChainChromaRetriever` through the
 project’s `RetrieverDispatcher`, `MemoryCandidate`, and `ContextPacket` flow.
 
+## File Index
+
+| File | Lines | Role |
+|---|---|---|
+| `run_document_qa_eval.py` | — | Main eval runner. Oracle and model answer modes, hit@k metrics, RAGAS export. |
+| `compare_retrieval_modes.py` | — | Compare retrieval backends (legacy; defaults to `langchain_chroma`). |
+| `compare_topk_curves.py` | — | Hit@K curve tables across k-values. Reports `ctx_evidence`, `ctx_anchor`, `ctx_expected`. |
+| `prepare_squad_subset.py` | — | Prepare SQuAD subset JSONL from HuggingFace. |
+| `prepare_nq_subset.py` | — | Prepare Natural Questions subset JSONL from HuggingFace. |
+| `langchain_baseline.py` | — | Eval-only experimental baseline using LangChain vector stores. |
+| `answer_generation.py` | — | `AnswerGenerator` protocol and `ModelWrapperAnswerGenerator`. Builds grounded QA prompts. |
+| `diagnose_dataset.py` | — | CLI tool: prints dataset diagnostics (cases, chunks, duplicates, anchor distribution). |
+| `metrics.py` | — | Deterministic metric functions: `answer_contains_anchor`, `context_contains_evidence`, `ragas_compatible_row`. |
+| `ragas_export.py` | — | `result_to_ragas_row()` — converts eval results to RAGAS-compatible JSONL rows with metadata. |
+| `run_ragas_eval.py` | — | Optional RAGAS execution over a previously exported JSONL file. |
+
+### `answer_generation.py`
+
+Defines the `AnswerGenerator` protocol and `ModelWrapperAnswerGenerator`
+implementation for document QA eval answer generation.
+
+`ModelWrapperAnswerGenerator` wraps the project's OpenAI-compatible
+`ModelWrapper` and uses a grounded QA prompt that instructs the model to
+answer concisely using only retrieved contexts, with explicit abstention
+instructions for insufficient evidence.
+
+`build_grounded_qa_messages(question, contexts)` constructs the strict
+QA prompt used by both model answer mode and RAGAS evaluation.
+
+### `diagnose_dataset.py`
+
+CLI diagnostic tool for document QA JSONL datasets. Prints:
+
+- Case count, unique documents, duplicate counts
+- Estimated chunks and average document/chunk lengths
+- Answer anchor position distribution (first 500 chars, 500-1000, 1000+)
+- Percentage of answer anchors in the first 500 characters
+
+Useful for verifying dataset quality before running retrieval benchmarks.
+
+```bash
+uv run python evals/document_qa/diagnose_dataset.py \
+  --dataset evals/document_qa/datasets/nq_subset.jsonl
+```
+
+### `metrics.py`
+
+Deterministic metric functions used across the document QA eval suite:
+
+- `answer_contains_anchor(answer, answer_anchor)` — substring match
+- `answer_contains_expected(answer, expected_answer)` — substring match
+- `context_contains_evidence(contexts, supporting_evidence)` — check any context
+- `context_contains_answer_anchor(contexts, answer_anchor)` — check any context
+- `ragas_compatible_row(...)` — build a RAGAS-compatible dict with question,
+  contexts, answer, ground_truth, and metadata
+
+All checks use a fuzzy `contains_text()` helper that normalizes whitespace
+before comparison.
+
+### `ragas_export.py`
+
+Converts document QA eval results to RAGAS-compatible JSONL rows.
+
+`result_to_ragas_row()` enriches a `RagasExportResult` with:
+
+- Retrieval metadata: `retrieval_mode`, `retrieval_scope`, `top_k`,
+  `vector_backend`
+- Answer metadata: `answer_mode`, `model_name`
+- Case metadata: `source`, `document_id`, `category`, `case_id`
+- Hit flags: `context_evidence_hit`, `context_answer_anchor_hit`,
+  `context_expected_answer_hit`
+
+The resulting row is suitable for the `run_ragas_eval.py` consumer or any
+RAGAS-compatible evaluation pipeline.
+
 ## Limitations
 
 - No PDF parsing pipeline beyond the optional local file loader.

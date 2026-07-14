@@ -42,7 +42,7 @@ Planned source for context retrieval.
 
 ### `RoutePlan`
 
-Routing decision for one user turn. Produced by `RoutingAgent.route()`.
+Routing decision for one user turn. Produced by `RoutingAgent.route()` (returns `RoutingDecision`). See `RoutingDecision.to_trace_dict()` for the trace payload.
 
 | Field | Type | Description |
 |---|---|---|
@@ -52,7 +52,7 @@ Routing decision for one user turn. Produced by `RoutingAgent.route()`.
 | `confidence` | `float \| None` | Routing confidence |
 | `requires_retrieval` | `bool \| None` | Whether retrieval is needed at all |
 | `ranking_profile` | `str \| None` | Which ranking profile to use |
-| `context_profile` | `str \| None` | Which context/budget profile: `general_chat`, `memory_recall`, `document_question`, `global_summary`, `mixed_memory_document` |
+| `context_profile` | `str \| None` | Which context/budget profile: `general_chat`, `memory_recall`, `document_question`, `global_summary` |
 | `fallback_policy` | `str \| None` | Fallback behavior |
 | `update_policy` | `str \| None` | Memory update policy |
 | `termination_policy` | `str \| None` | When to stop |
@@ -203,7 +203,7 @@ All variables from `AppConfig` (env vars loaded in `src/config.py`). Defaults as
 |---|---|---|
 | `RAW_MESSAGE_LIMIT` | 8 | Max raw messages per batch |
 | `MEMORY_UPDATE_BATCH_SIZE` | 6 | Messages per memory-update batch |
-| `MEMORY_UPDATE_POLICY` | `scheduled` | `scheduled`, `agentic_each_turn`, or `chat_end_only` |
+| `MEMORY_UPDATE_POLICY` | `agentic_each_turn` | `scheduled`, `agentic_each_turn`, or `chat_end_only` |
 | `RECENT_MESSAGES_MAX_COUNT` | 32 | Max recent messages in context |
 | `MEMORY_UPDATE_TRIGGER_TOKENS` | 1000 | Unsummarized tokens before triggering update |
 | `MEMORY_UPDATE_MAX_INPUT_TOKENS` | 4000 | Max tokens per update batch |
@@ -211,15 +211,15 @@ All variables from `AppConfig` (env vars loaded in `src/config.py`). Defaults as
 | `MEMORY_RECENT_PROTECTION_TOKENS` | 1500 | Recent tokens protected from summarization |
 | `MEMORY_REPLAY_TRIGGER_TOKENS` | 4000 | Unsummarized tokens before replay trigger |
 | `MEMORY_REPLAY_MAX_INPUT_TOKENS` | 8000 | Max tokens per replay batch |
-| `MEMORY_REPLAY_MAX_MESSAGES` | 128 | Max messages per replay batch |
-| `PREVIOUS_CHAT_GIST_EXTRACTOR` | `deterministic` | `deterministic` or `llm`; LLM mode falls back deterministically |
-| `PREVIOUS_CHAT_GIST_MAX_MESSAGES_PER_GIST` | 30 | Max messages per previous-chat gist batch |
+| `MEMORY_REPLAY_MAX_MESSAGES` | 2 | Max messages per replay batch |
+| `PREVIOUS_CHAT_GIST_EXTRACTOR` | `llm` | `deterministic` or `llm`; LLM mode falls back deterministically |
+| `PREVIOUS_CHAT_GIST_MAX_MESSAGES_PER_GIST` | 5 | Max messages per previous-chat gist batch |
 
 ### Routing
 
 | Env var | Default | Controls |
 |---|---|---|
-| `ROUTING_MODE` | `rule` | `rule`, `llm`, or `hybrid` |
+| `ROUTING_MODE` | `hybrid` | `rule`, `llm`, or `hybrid` |
 | `ENABLE_RETRIEVAL_QUERY_SIMPLIFICATION` | `true` | Whether to simplify retrieval queries |
 
 ### Reranking
@@ -264,7 +264,7 @@ All variables from `AppConfig` (env vars loaded in `src/config.py`). Defaults as
 | Env var | Default | Controls |
 |---|---|---|
 | `CURRENT_CHAT_GIST_GENERATION_ENABLED` | `false` | Enable current-chat gist compaction |
-| `PREVIOUS_CHAT_GIST_GENERATION_ENABLED` | `false` | Enable previous-chat gist generation |
+| `PREVIOUS_CHAT_GIST_GENERATION_ENABLED` | `true` | Enable previous-chat gist generation |
 | `PREVIOUS_CHAT_GIST_RETRIEVAL_ENABLED` | `true` | Retrieve previous-chat gists in context |
 | `GIST_RETRIEVAL_CANDIDATES` | 8 | Max gist candidates |
 | `DIRECT_RAW_RETRIEVAL_CANDIDATES` | 12 | Max direct raw retrieval candidates |

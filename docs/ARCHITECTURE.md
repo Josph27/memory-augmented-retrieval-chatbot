@@ -1,174 +1,478 @@
-# Architecture
+# Architecture — System Overview
 
-This document describes the current implementation only. Historical design
-notes and migration plans are intentionally not kept as canonical docs.
+> **Generated:** 2026-07-14 | **Source:** deterministic AST extraction from 69 Python files
+> **View:** paste the Mermaid blocks into [mermaid.live](https://mermaid.live) or open in VS Code with a Mermaid preview extension
 
-## System spine
+---
 
-```text
-Chainlit UI
--> ChatService
--> CoordinatorAgent
--> Native fallback preparation
--> LangGraph route/retrieve/expand/rerank/context/validate
--> authoritative ContextPacket
--> AnswerAgent / model endpoint
--> message persistence
--> structured-memory update
+## TL;DR
+
+The system is a **multi-agent typed-memory RAG chatbot**. One user turn flows through 12 phases:
+
+```
+User → Route → Persist → Retrieve → Rerank → Build Context
+     → LangGraph (optional) → Legacy Context → Compare → Validate → Generate → Memory Update
 ```
 
-The project is multi-agent at the responsibility boundary: routing,
-retrieval coordination, memory management, context orchestration, and answer
-generation are separate roles. Many roles are deterministic services or thin
-wrappers rather than independent free-form LLM calls.
+Two storage backends: **SQLite** (chats, messages, structured memories, gists) and **Chroma** (document chunks, long-term memory vectors). All memory sources normalize into `MemoryCandidate`, all context assembles into `ContextPacket`.
 
-## Live orchestration modes
+---
 
-`ORCHESTRATION_MODE=langgraph_demo` is the application default.
+## 1. System Component Map
 
-- `langgraph_demo`: the graph-built `ContextPacket` is authoritative.
-- `native`: the imperative coordinator path is authoritative.
-- `langgraph_shadow`: graph runs read-only for comparison while Native remains
-  authoritative.
+```mermaid
+graph TB
+    subgraph Presentation["📱 Presentation"]
+        chainlit["Chainlit UI<br/>app.py"]
+        chat_service["ChatService<br/>chat_service.py"]
+        data_layer["SQLiteChainlitDataLayer<br/>chainlit_data_layer.py"]
+    end
 
-In `langgraph_demo`, Native preparation still happens first so the app has a
-safe fallback if graph execution or packet validation fails. Graph failure is
-recorded in trace metadata and the Native packet is used instead.
+    subgraph Agents["🧠 Agent Layer"]
+        coordinator["CoordinatorAgent<br/>agents/coordinator_agent.py"]
+        chat["ChatAgent<br/>agents/chat_agent.py"]
+        doc_ingest["DocumentIngestionAgent<br/>agents/document_ingestion_agent.py"]
+        stm_agent["ShortTermMemoryAgent<br/>agents/short_term_memory_agent.py"]
+        ctx_builder_agent["ContextBuilderAgent<br/>agents/context_builder_agent.py"]
+    end
 
-## Typed memory sources
+    subgraph Routing["🔀 Routing"]
+        routing_agent["RoutingAgent<br/>routing/routing_agent.py"]
+        route_planner["RoutePlanner<br/>routing/route_planner.py"]
+        query_analyzer["QueryAnalyzer<br/>routing/query_analyzer.py"]
+        semantic["SemanticRouter<br/>routing/semantic_router.py"]
+    end
 
-All retrievers return `MemoryCandidate` objects. Source semantics remain
-distinct:
+    subgraph Retrieval["🔍 Retrieval"]
+        dispatcher["RetrieverDispatcher<br/>retrieval/retriever_dispatcher.py"]
+        recent["RecentMessages<br/>recent_messages_retriever.py"]
+        struct_ret["StructuredMemory<br/>structured_memory_retriever.py"]
+        doc_ret["LangChainChroma<br/>langchain_chroma_retriever.py"]
+        gist["CurrentChatGist<br/>current_chat_gist_retriever.py"]
+        span["CurrentChatSpan<br/>current_chat_span_retriever.py"]
+        prev_gist["PreviousChatGist<br/>previous_chat_gist_retriever.py"]
+        raw_span["RawMessageSpan<br/>raw_message_span_retriever.py"]
+        expander["GistRawSpanExpander<br/>gist_raw_span_expander.py"]
+    end
 
-| Source | Meaning |
-| --- | --- |
-| `recent_messages` | newest same-chat raw messages |
-| `structured_memory` | durable facts, preferences, decisions, corrections, tasks, constraints |
-| `document_memory` | uploaded document chunks from Chroma |
-| `previous_chat_gist` | lossy orientation for ended chats |
-| `raw_message_span` | exact transcript evidence, including gist expansion and direct raw retrieval |
-| `current_chat_span` | older exact evidence from the active chat |
-| `current_chat_gist` | active-chat lossy orientation scaffold, default-off for answer retrieval |
+    subgraph Reranking["📊 Reranking"]
+        reranker["MemoryReranker<br/>retrieval/reranker.py"]
+        cross_enc["CrossEncoderBackend<br/>cross_encoder_reranker.py"]
+    end
 
-`RetrieverDispatcher` invokes only enabled sources from the route plan. Document
-retrieval is scoped with `DocumentRegistry` before the Chroma retriever runs.
+    subgraph ContextAssembly["📋 Context Assembly"]
+        ctx_mgr["ContextManagerAgent<br/>agents/context_manager_agent.py"]
+        budget_plan["DynamicBudgetPlanner<br/>context/dynamic_budget.py"]
+        budget_alloc["ContextBudgetAllocator<br/>context/context_budget_allocator.py"]
+        selector["EvidenceSelector<br/>context/evidence_selector.py"]
+        builder["ContextBuilder<br/>context/context_builder.py"]
+    end
 
-## Routing
+    subgraph Validation["✅ Validation & Fallback"]
+        comparator["ContextComparator<br/>context/context_comparator.py"]
+        prompt_valid["PromptMessages<br/>context/prompt_messages.py"]
+    end
 
-Semantic Router v2 produces typed intent, temporal scope, source plans, context
-profile, query-rewrite metadata, and evidence-contract information. It remains
-deterministic where reliability matters. Optional LLM routing exists behind the
-routing agent but falls back to deterministic routing when unavailable or
-invalid.
+    subgraph Orchestration["🔧 Orchestration"]
+        demo["Demo Orchestration<br/>orchestration/demo_orchestration.py"]
+        langgraph["LangGraph Pipeline<br/>orchestration/langgraph_memory_pipeline.py"]
+    end
 
-## Retrieval and expansion
+    subgraph MemorySystem["🧩 Memory System"]
+        short_term["ShortTermMemory<br/>memory/short_term.py"]
+        langmem["LangMemStructured<br/>memory/langmem_structured.py"]
+        lt_store["LongTermMemoryStore<br/>memory/long_term_store.py"]
+        lt_vector["VectorIndex<br/>memory/long_term_vector_index.py"]
+        gist_sum["ChatGistSummarizer<br/>memory/chat_gist_summarizer.py"]
+        prev_gist_gen["PreviousChatGistGen<br/>memory/previous_chat_gist.py"]
+    end
 
-Retrieval is source-specific:
+    subgraph Storage["💾 Storage"]
+        sqlite[("SQLite<br/>database.py<br/>9 tables")]
+        chroma[("Chroma<br/>vector DB")]
+        llm[("LLM Provider<br/>OpenAI-compatible")]
+    end
 
-- SQLite for recent messages, raw spans, gists, and structured-memory records;
-- Chroma for document chunks;
-- optional vector/hybrid lookup for structured memories.
+    subgraph Lifecycle["🔄 Lifecycle"]
+        end_chat["ChatEndAction<br/>actions/chat_end.py"]
+        fork_chat["ChatForkAction<br/>actions/chat_fork.py"]
+    end
 
-Gists are orientation, not proof. When a gist has source-message provenance,
-`GistRawSpanExpander` can derive bounded `raw_message_span` candidates so the
-final context contains exact transcript evidence.
+    subgraph Contracts["📐 Core Contracts"]
+        contracts["MemoryCandidate<br/>ContextPacket<br/>RoutePlan<br/>WorkflowTrace<br/>core/contracts.py"]
+    end
 
-Direct raw retrieval can retrieve bounded raw spans without depending on a gist.
-Candidates preserve typed provenance and retrieval-path metadata.
+    %% Edges — solid = direct import, dotted = data flow / delegation / sync
 
-## Reranking and context selection
+    %% Coordinator → agents
+    coordinator --> routing_agent
+    coordinator --> route_planner
+    coordinator --> dispatcher
+    coordinator --> reranker
+    coordinator --> ctx_mgr
+    coordinator --> ctx_builder_agent
+    coordinator --> stm_agent
+    coordinator --> chat
+    coordinator --> builder
+    coordinator --> budget_alloc
+    coordinator --> contracts
+    coordinator --> comparator
+    coordinator --> prompt_valid
 
-The default reranker is deterministic. CrossEncoder, LLM, and hybrid modes are
-available as explicit configuration, not defaults.
+    %% Routing internal
+    routing_agent --> route_planner
+    route_planner --> query_analyzer
+    routing_agent -.-> semantic
 
-`ContextManagerAgent` applies dynamic budget profiles and builds a validated
-`ContextPacket`. Context selection is evidence-constrained, overlap-aware, and
-records selected and dropped candidates. The latest user message is supplied
-exactly once at the end of the prompt.
+    %% Dispatcher → all retrievers + expander
+    dispatcher --> recent
+    dispatcher --> struct_ret
+    dispatcher --> doc_ret
+    dispatcher --> gist
+    dispatcher --> span
+    dispatcher --> prev_gist
+    dispatcher --> raw_span
+    dispatcher --> expander
 
-## Context pipeline
+    %% Reranker
+    reranker --> cross_enc
+    reranker --> contracts
 
-The context pipeline transforms ranked `MemoryCandidate` objects into
-model-ready messages through five deterministic layers:
+    %% Context assembly
+    ctx_mgr --> budget_plan
+    ctx_mgr --> budget_alloc
+    ctx_mgr --> selector
+    ctx_mgr --> builder
+    builder --> contracts
 
-1. **Model Profile**: Resolves the effective context window for the configured
-   model (currently gemma-4-31B-it with 262K native window). Accepts
-   endpoint-level overrides via environment variables.
+    %% Validation
+    coordinator --> comparator
+    coordinator --> prompt_valid
 
-2. **Dynamic Working Memory Budget**: Picks a route-specific cap (base 4096,
-   document 16384, global summary up to 131072 tokens). Expands past the cap
-   when required evidence demands it.
+    %% Orchestration
+    coordinator --> demo
+    demo --> langgraph
 
-3. **Budget Allocation**: Splits the working budget across memory sources using
-   profile ratios. Five profiles (`general_chat`, `memory_recall`,
-   `document_question`, `mixed_memory_document`, `global_summary`). Each source
-   gets a minimum token reservation.
+    %% Memory system
+    short_term --> langmem
+    short_term --> lt_store
+    langmem --> lt_store
+    lt_store -.-> lt_vector
+    stm_agent --> short_term
 
-4. **Evidence-Constrained Selection**: Requirement-first selection. Required
-   evidence (raw spans for exact quotes, scope evidence for document/chat/durable
-   queries) is selected before optional candidates. Deduplicates exact duplicates
-   and folds overlapping spans. Gist parents are dropped when their raw-span
-   child is selected, reclaiming tokens. Optional candidates compete under
-   marginal-utility scoring.
+    %% Retrieval → storage
+    struct_ret --> lt_store
+    struct_ret --> lt_vector
+    doc_ret --> chroma
+    doc_ingest --> chroma
 
-5. **Context Building**: Groups selected candidates by source, builds
-   model-shaped messages. Structured memory is merged into the single system
-   message. Retrieved context is prepended to the latest user message. Handles
-   overflow by dropping lowest-ranked non-recent candidates.
+    %% Storage connections
+    coordinator --> sqlite
+    short_term --> sqlite
+    lt_store --> sqlite
+    lt_vector --> chroma
+    prev_gist_gen --> sqlite
+    gist_sum --> sqlite
 
-The pipeline is fully deterministic — no LLM calls for budgeting or selection.
-See `src/context/.doc.md` for detailed layer documentation.
+    %% Answer generation (ModelWrapper is the actual API client)
+    chat --> model_wrapper["ModelWrapper<br/>model_wrapper.py"]
+    model_wrapper --> llm
+    langmem --> llm
 
-## Retrieval pipeline
+    %% Lifecycle
+    coordinator --> end_chat
+    end_chat --> prev_gist_gen
+    end_chat --> short_term
 
-Seven source retrievers feed `MemoryCandidate` objects into the pipeline
-through a central dispatcher:
+    %% Chainlit & Presentation
+    chainlit --> chat_service
+    chainlit --> data_layer
+    chat_service --> coordinator
+    chat_service --> stm_agent
+    data_layer --> sqlite
 
-`RetrieverDispatcher` iterates `RoutePlan.sources`, invokes the corresponding
-retriever for each enabled source. All retrievers implement the same interface:
-`retrieve(chat_id, source_plan) → list[MemoryCandidate]`.
+    %% Legend
+    classDef container fill:#1a1a2e,stroke:#6c63ff,stroke-width:2px,color:#e0e0ff
+    class sqlite,chroma,llm container
+```
 
-After dispatching, `GistRawSpanExpander` runs on retrieved candidates. Gist
-candidates (lossy orientation summaries) are expanded into bounded
-`raw_message_span` candidates with exact SQLite evidence and source-message
-provenance. This implements the core pattern: gists are orientation, raw spans
-are proof.
+### Layer Import Rules (verified from AST extraction)
 
-`MemoryReranker` scores and reorders all candidates. The default deterministic
-mode uses 11 weighted features (lexical overlap, source priority, confidence,
-recency, redundancy penalty, etc.). Optional modes: cross-encoder semantic
-scoring, LLM listwise reranking, or hybrid (cross-encoder + gated LLM). Source
-priorities rank `structured_memory` above `recent_messages` above gists above
-documents above raw spans.
+| Layer | Imports From |
+|-------|-------------|
+| **agents/** | context, core, documents, memory, orchestration, retrieval, routing |
+| **routing/** | core |
+| **retrieval/** | core, documents, memory |
+| **context/** | core |
+| **memory/** | context, core, retrieval |
+| **orchestration/** | agents, core, retrieval, routing |
+| **documents/** | retrieval |
+| **actions/** | lifecycle, memory |
+| **inspection/** | core |
 
-The ranked candidates flow into the context pipeline for budget-constrained
-selection and message assembly. See `src/retrieval/.doc.md` for detailed
-retriever documentation.
+Direction is top-down: agents → retrieval/context/routing → memory → core. `memory → retrieval` allows the structured memory retriever to query both SQLite and Chroma. `memory → context` is for token estimation during batch scheduling.
 
-## Answer generation
+---
 
-`AnswerAgent` receives the final prompt messages derived from `ContextPacket`.
-The answer prompt asks the model to answer directly when supplied context is
-sufficient, abstain when evidence is insufficient, qualify partial evidence,
-and report unresolved conflicts rather than guessing.
+## 2. One-Turn Sequence
 
-## Writes and duplicate-write safety
+```mermaid
+sequenceDiagram
+    actor User
+    participant Chainlit as Chainlit<br/>app.py
+    participant CS as ChatService<br/>chat_service.py
+    participant Coord as CoordinatorAgent<br/>coordinator_agent.py
+    participant Route as RoutingAgent<br/>routing_agent.py
+    participant Dispatch as RetrieverDispatcher<br/>retriever_dispatcher.py
+    participant Retrievers as Source Retrievers
+    participant Expander as GistRawSpanExpander
+    participant Reranker as MemoryReranker<br/>reranker.py
+    participant CtxMgr as ContextManagerAgent
+    participant Selector as EvidenceSelector
+    participant Builder as ContextBuilder
+    participant LangGraph as LangGraph Pipeline
+    participant STM_Agent as ShortTermMemoryAgent
+    participant CtxBuilder as ContextBuilderAgent<br/>(legacy)
+    participant Comparator as ContextComparator
+    participant PromptValid as PromptMessages<br/>prompt_messages.py
+    participant Chat as ChatAgent<br/>chat_agent.py
+    participant Model as ModelWrapper<br/>model_wrapper.py
+    participant STM as ShortTermMemory<br/>short_term.py
+    participant LangMem as LangMemStructured<br/>langmem_structured.py
+    participant LTStore as LongTermStore<br/>long_term_store.py
+    participant DB as SQLite<br/>database.py
+    participant Chroma as Chroma
 
-Graph nodes are read-only. Persistent writes happen outside the graph:
+    User->>Chainlit: sends message
+    Chainlit->>CS: handle_user_turn(content)
+    CS->>Coord: run_turn(chat_id, content)
 
-- user message persistence before retrieval;
-- assistant message persistence after answer generation;
-- structured-memory update after answer emission;
-- chat-end finalization through lifecycle actions;
-- document lifecycle metadata and chat associations during upload.
+    rect rgb(30,30,60)
+        Note over Coord,Route: Phase 1 — Route
+        Coord->>Route: route(content)
+        Route->>Route: QueryAnalyzer.analyze()
+        Route->>Route: RoutePlanner.plan()
+        Route-->>Coord: RoutePlan (intent + source enables)
+    end
 
-This separation avoids duplicate message, memory, gist, document, or lifecycle
-writes when Native fallback preparation and LangGraph execution both run.
+    rect rgb(30,30,60)
+        Note over Coord,DB: Phase 2 — Persist user message
+        Coord->>DB: save_message(chat_id, "user", content)
+    end
 
-## Answer Inspector
+    rect rgb(30,30,60)
+        Note over Coord,Chroma: Phase 3 — Retrieve (includes gist expansion)
+        Coord->>Dispatch: retrieve(chat_id, route_plan)
+        loop Each enabled source
+            Dispatch->>Retrievers: retrieve(chat_id, source_plan)
+            Retrievers->>DB: query messages/gists
+            Retrievers->>Chroma: vector search
+            Retrievers-->>Dispatch: MemoryCandidate[]
+        end
+        Dispatch->>Expander: expand(candidates)
+        Expander->>DB: fetch raw spans for gist candidates
+        Expander-->>Dispatch: expanded MemoryCandidate[]
+        Dispatch-->>Coord: MemoryCandidate[]
+    end
 
-The Answer Inspector is read-only. It persists compact answer-level
-observability tied to an assistant message: requested/effective orchestration,
-route, sources, selected evidence summaries, provenance, token diagnostics, and
-fallback status. It never exposes hidden chain-of-thought and does not let users
-edit memory, documents, budgets, reranking, or prompts.
+    rect rgb(30,30,60)
+        Note over Coord,Reranker: Phase 4 — Rerank
+        Coord->>Reranker: rank_with_trace(candidates, profile, query)
+        Reranker->>Reranker: deterministic scoring (11 features)
+        opt cross-encoder / LLM hybrid
+            Reranker->>Reranker: semantic rescore / gated LLM reranking
+        end
+        Reranker-->>Coord: ranked MemoryCandidate[] + score_breakdown
+    end
+
+    rect rgb(30,30,60)
+        Note over Coord,Builder: Phase 5 — Build Context Packet (new pipeline)
+        Coord->>CtxMgr: build_context_packet(ranked, route_plan)
+        CtxMgr->>CtxMgr: BudgetAllocator.allocate() → initial budget
+        CtxMgr->>Selector: select() with INFINITE budget (preflight)
+        Selector-->>CtxMgr: required evidence floor
+        CtxMgr->>CtxMgr: DynamicBudgetPlanner.plan() with floor → working cap
+        CtxMgr->>Selector: select() with actual working budget
+        Selector->>Selector: required-evidence first → deduplicate → fold
+        Selector->>Selector: marginal utility selection
+        Selector-->>CtxMgr: selected candidates + satisfaction status
+        CtxMgr->>Builder: build(prompt, candidates, budget)
+        Builder->>Builder: group by source → budget fit → model messages
+        Builder-->>CtxMgr: ContextPacket
+        CtxMgr-->>Coord: ContextPacket + metadata
+    end
+
+    rect rgb(30,30,60)
+        Note over Coord,LangGraph: Phase 6 — [Optional] LangGraph orchestration
+        Coord->>LangGraph: run_read_only_langgraph_orchestration()
+        LangGraph->>LangGraph: route → retrieve → expand → rerank → context → validate
+        alt LANGGRAPH_DEMO: graph is authoritative
+            LangGraph-->>Coord: authoritative ContextPacket
+        else LANGGRAPH_SHADOW: comparison only
+            LangGraph-->>Coord: comparison results
+        else Error: fallback to native ContextPacket
+        end
+    end
+
+    rect rgb(35,25,55)
+        Note over Coord,CtxBuilder: Phase 7 — Build legacy context (for comparison)
+        Coord->>STM_Agent: build_context(chat_id)
+        STM_Agent->>STM: load recent messages + structured state
+        STM-->>STM_Agent: ShortTermContext
+        STM_Agent-->>Coord: short-term context
+        Coord->>CtxBuilder: build(chat_id, prompt, context)
+        CtxBuilder-->>Coord: legacy model_messages + ContextPacket
+    end
+
+    rect rgb(35,25,55)
+        Note over Coord,Comparator: Phase 8 — Compare context pipelines
+        Coord->>Comparator: compare(old=legacy, new=trace)
+        Comparator->>Comparator: source overlap, candidate overlap, token diffs
+        Comparator-->>Coord: ContextComparison + warnings
+    end
+
+    rect rgb(35,25,55)
+        Note over Coord,PromptValid: Phase 9 — Validate & decide fallback
+        Coord->>PromptValid: context_packet_to_model_messages(packet, user_msg)
+        PromptValid->>PromptValid: system present? empty content? roles valid?
+        PromptValid->>PromptValid: severe comparison warnings?
+        PromptValid->>PromptValid: latest user message present exactly once and final?
+        PromptValid-->>Coord: PromptAssemblyResult (valid + messages)
+        alt Packet invalid: fallback to legacy
+            Coord->>Coord: use legacy short-term memory messages
+        else Packet valid: use trace pipeline messages
+        end
+    end
+
+    rect rgb(30,30,60)
+        Note over Coord,Model: Phase 10 — Generate answer
+        Coord->>Chat: generate(final_model_messages)
+        Chat->>Model: chat(messages)
+        Model-->>Chat: answer string
+        Chat-->>Coord: answer
+    end
+
+    rect rgb(30,30,60)
+        Note over Coord,DB: Phase 11 — Persist assistant message
+        Coord->>DB: save_message(chat_id, "assistant", answer)
+        Coord-->>CS: AgentTurnResult
+    end
+
+    rect rgb(40,20,20)
+        Note over CS,DB: Phase 11b — Persist answer inspection (ChatService scope)
+        CS->>DB: persist_answer_inspection(result)
+    end
+
+    rect rgb(40,20,20)
+        Note over Coord,LTStore: Phase 12 — Post-answer memory update (inline path)
+        Coord->>STM_Agent: update_memory_if_needed(chat_id)
+        STM_Agent->>STM: update_memory_if_needed(chat_id)
+        STM->>STM: select pending un-summarized messages
+        STM->>STM: form ConversationUnits (user/assistant pairs)
+        STM->>LangMem: update(existing_memory, messages)
+        LangMem->>LangMem: LLM extraction → normalize → validate
+        LangMem->>LTStore: upsert(records)
+        LTStore->>DB: write to SQLite (long_term_memories)
+        LTStore->>Chroma: sync vectors (long_term_memory index)
+        STM->>DB: mark messages as summarized
+        STM-->>STM_Agent: MemoryUpdateResult
+        STM_Agent-->>Coord: update complete
+    end
+
+    CS-->>Chainlit: answer + workflow trace
+    Note over CS: deferred path (perform_memory_update=False):
+    Note over CS: CS.finalize_post_answer_memory_update()
+    Note over CS: → STM.update_memory_if_needed() directly
+    Chainlit-->>User: displays answer
+```
+
+---
+
+## 3. Data Flow Summary
+
+### What Moves Between Phases
+
+| Phase | Input | Output |
+|-------|-------|--------|
+| Route | user query string | `RoutePlan` (intent + source enables) |
+| Retrieve | `RoutePlan` + `chat_id` | `MemoryCandidate[]` (retrieved + gist-expanded) |
+| Rerank | `MemoryCandidate[]` + query + ranking profile | ranked `MemoryCandidate[]` + score breakdown |
+| Build Context | ranked candidates + `RoutePlan` + system prompt + latest user message | `ContextPacket` (model-ready messages + token budget) |
+| LangGraph | query + services | alternative `ContextPacket` (demo mode) or comparison (shadow mode) |
+| Legacy Context | `chat_id` + prompt | legacy model_messages + ContextPacket |
+| Compare | legacy messages + trace packet | `ContextComparison` (overlap, diffs, warnings) |
+| Validate | `ContextPacket` + user message | `PromptAssemblyResult` (valid/invalid + final messages) |
+| Generate | final model_messages | answer string |
+| Memory Update | chat messages | structured memory records in SQLite + Chroma |
+
+### Core Data Types (all in `src/core/contracts.py`)
+
+| Type | Purpose |
+|------|---------|
+| `MemoryCandidate` | One retrieved memory item (source, content, score, provenance) |
+| `ContextPacket` | Final assembled context (system prompt, candidates, model messages, budget) |
+| `RoutePlan` | Which sources to query, intent, confidence, context profile |
+| `WorkflowTrace` | Full turn trace (route, retrieved, ranked, budget, packet, errors) |
+| `AgentTurnResult` | Final turn output (answer, trace, metadata) |
+
+### Architecture Layers (top → down)
+
+```
+Presentation    chainlit (app.py, chainlit_data_layer.py, chat_service.py)
+       │
+Agents          CoordinatorAgent, ChatAgent, ShortTermMemoryAgent,
+                ContextManagerAgent, ContextBuilderAgent, DocumentIngestionAgent
+       │
+Routing         RoutingAgent → RoutePlanner → QueryAnalyzer
+                SemanticRouter (parallel, default-off)
+       │
+Retrieval       RetrieverDispatcher → 7 source retrievers → GistRawSpanExpander
+       │
+Reranking       MemoryReranker (deterministic / cross-encoder / LLM hybrid)
+       │
+Context         DynamicBudgetPlanner → BudgetAllocator → EvidenceSelector → ContextBuilder
+       │
+Validation      ContextComparator + PromptMessages (legacy vs new comparison + fallback gate)
+       │
+Orchestration   Demo orchestration modes + LangGraph read-only StateGraph pipeline
+       │
+Memory          ShortTermMemory → LangMemStructured → LongTermMemoryStore
+                ↓ VectorSync → LongTermMemoryVectorIndex
+       │
+Documents       Loaders, splitters, registry, inspection
+       │
+Actions         ChatEndAction, ChatForkAction (lifecycle finalization)
+       │
+Inspection      Per-answer observability (answer_inspector.py)
+       │
+Storage         SQLite (9 tables) + Chroma (vector DB) + LLM Provider (via ModelWrapper)
+```
+
+### Memory Sources → Storage Mapping
+
+| Source | Storage | Retriever |
+|--------|---------|-----------|
+| `recent_messages` | SQLite `messages` | `RecentMessagesRetriever` |
+| `structured_memory` | SQLite `long_term_memories` + Chroma | `StructuredMemoryRetriever` |
+| `document_memory` | Chroma | `LangChainChromaRetriever` |
+| `current_chat_gist` | SQLite `chat_gists` | `CurrentChatGistRetriever` |
+| `current_chat_span` | SQLite `messages` | `CurrentChatSpanRetriever` |
+| `previous_chat_gist` | SQLite `chat_gists` | `PreviousChatGistRetriever` |
+| `raw_message_span` | SQLite `messages` | `RawMessageSpanRetriever` |
+
+### Orchestration Modes
+
+| Mode | Behavior |
+|------|----------|
+| `native` | CoordinatorAgent's imperative pipeline only |
+| `langgraph_demo` | LangGraph StateGraph pipeline is authoritative; native is fallback |
+| `langgraph_shadow` | Both run; native is authoritative; LangGraph is comparison-only |
+
+### Fallback Chain
+
+The system has a safety net: if the new trace-context pipeline produces an invalid
+`PromptAssemblyResult` (e.g., missing latest user message, empty content), or if
+`ContextComparator` detects severe warnings (e.g., `missing_latest_user_message`),
+the answer automatically falls back to the legacy `ShortTermMemory` +
+`ContextBuilderAgent` message path. This prevents context budgeting bugs and
+pipeline misconfiguration from breaking user-visible answers.

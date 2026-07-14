@@ -86,6 +86,20 @@ architecture.
 5. Open the local URL printed by Chainlit, usually
    `http://localhost:8000`.
 
+## Custom Frontend (Optional)
+
+While the app serves a fully functional Chainlit UI on port 8000, there is also an experimental standalone React frontend located in the `braemon/` directory. It uses the `@chainlit/react-client` SDK to connect to the Python backend.
+
+To run it:
+
+```bash
+cd braemon
+npm install
+npm run dev
+```
+
+It will proxy API and WebSocket traffic to `localhost:8000`.
+
 The runtime SQLite database defaults to `data/chatbot.db`, and Chroma defaults
 to `data/chroma/`. Both are ignored local runtime state.
 

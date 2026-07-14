@@ -1,0 +1,167 @@
+sequenceDiagram
+    actor User
+    participant Chainlit as Chainlit<br/>app.py
+    participant CS as ChatService<br/>chat_service.py
+    participant Coord as CoordinatorAgent<br/>coordinator_agent.py
+    participant Route as RoutingAgent<br/>routing_agent.py
+    participant Dispatch as RetrieverDispatcher<br/>retriever_dispatcher.py
+    participant Retrievers as Source Retrievers
+    participant Expander as GistRawSpanExpander
+    participant Reranker as MemoryReranker<br/>reranker.py
+    participant CtxMgr as ContextManagerAgent
+    participant Selector as EvidenceSelector
+    participant Builder as ContextBuilder
+    participant LangGraph as LangGraph Pipeline
+    participant STM_Agent as ShortTermMemoryAgent
+    participant CtxBuilder as ContextBuilderAgent<br/>(legacy)
+    participant Comparator as ContextComparator
+    participant PromptValid as PromptMessages<br/>prompt_messages.py
+    participant Chat as ChatAgent<br/>chat_agent.py
+    participant Model as ModelWrapper<br/>model_wrapper.py
+    participant STM as ShortTermMemory<br/>short_term.py
+    participant LangMem as LangMemStructured<br/>langmem_structured.py
+    participant LTStore as LongTermStore<br/>long_term_store.py
+    participant DB as SQLite<br/>database.py
+    participant Chroma as Chroma
+
+    User->>Chainlit: sends message
+    Chainlit->>CS: handle_user_turn(content)
+    CS->>Coord: run_turn(chat_id, content)
+
+    rect rgb(30,30,60)
+        Note over Coord,Route: Phase 1 — Route
+        Coord->>Route: route(content)
+        Route->>Route: QueryAnalyzer.analyze()
+        Route->>Route: RoutePlanner.plan()
+        Route-->>Coord: RoutePlan (intent + source enables)
+    end
+
+    rect rgb(30,30,60)
+        Note over Coord,DB: Phase 2 — Persist user message
+        Coord->>DB: save_message(chat_id, "user", content)
+    end
+
+    rect rgb(30,30,60)
+        Note over Coord,Chroma: Phase 3 — Retrieve (includes gist expansion)
+        Coord->>Dispatch: retrieve(chat_id, route_plan)
+        loop Each enabled source
+            Dispatch->>Retrievers: retrieve(chat_id, source_plan)
+            Retrievers->>DB: query messages/gists
+            Retrievers->>Chroma: vector search
+            Retrievers-->>Dispatch: MemoryCandidate[]
+        end
+        Dispatch->>Expander: expand(candidates)
+        Expander->>DB: fetch raw spans for gist candidates
+        Expander-->>Dispatch: expanded MemoryCandidate[]
+        Dispatch-->>Coord: MemoryCandidate[]
+    end
+
+    rect rgb(30,30,60)
+        Note over Coord,Reranker: Phase 4 — Rerank
+        Coord->>Reranker: rank_with_trace(candidates, profile, query)
+        Reranker->>Reranker: deterministic scoring (11 features)
+        opt cross-encoder / LLM hybrid
+            Reranker->>Reranker: semantic rescore / gated LLM reranking
+        end
+        Reranker-->>Coord: ranked MemoryCandidate[] + score_breakdown
+    end
+
+    rect rgb(30,30,60)
+        Note over Coord,Builder: Phase 5 — Build Context Packet (new pipeline)
+        Coord->>CtxMgr: build_context_packet(ranked, route_plan)
+        CtxMgr->>CtxMgr: BudgetAllocator.allocate() → initial budget
+        CtxMgr->>Selector: select() with INFINITE budget (preflight)
+        Selector-->>CtxMgr: required evidence floor
+        CtxMgr->>CtxMgr: DynamicBudgetPlanner.plan() with floor → working cap
+        CtxMgr->>Selector: select() with actual working budget
+        Selector->>Selector: required-evidence first → deduplicate → fold
+        Selector->>Selector: marginal utility selection
+        Selector-->>CtxMgr: selected candidates + satisfaction status
+        CtxMgr->>Builder: build(prompt, candidates, budget)
+        Builder->>Builder: group by source → budget fit → model messages
+        Builder-->>CtxMgr: ContextPacket
+        CtxMgr-->>Coord: ContextPacket + metadata
+    end
+
+    rect rgb(30,30,60)
+        Note over Coord,LangGraph: Phase 6 — [Optional] LangGraph orchestration
+        Coord->>LangGraph: run_read_only_langgraph_orchestration()
+        LangGraph->>LangGraph: route → retrieve → expand → rerank → context → validate
+        alt LANGGRAPH_DEMO: graph is authoritative
+            LangGraph-->>Coord: authoritative ContextPacket
+        else LANGGRAPH_SHADOW: comparison only
+            LangGraph-->>Coord: comparison results
+        else Error: fallback to native ContextPacket
+        end
+    end
+
+    rect rgb(35,25,55)
+        Note over Coord,CtxBuilder: Phase 7 — Build legacy context (for comparison)
+        Coord->>STM_Agent: build_context(chat_id)
+        STM_Agent->>STM: load recent messages + structured state
+        STM-->>STM_Agent: ShortTermContext
+        STM_Agent-->>Coord: short-term context
+        Coord->>CtxBuilder: build(chat_id, prompt, context)
+        CtxBuilder-->>Coord: legacy model_messages + ContextPacket
+    end
+
+    rect rgb(35,25,55)
+        Note over Coord,Comparator: Phase 8 — Compare context pipelines
+        Coord->>Comparator: compare(old=legacy, new=trace)
+        Comparator->>Comparator: source overlap, candidate overlap, token diffs
+        Comparator-->>Coord: ContextComparison + warnings
+    end
+
+    rect rgb(35,25,55)
+        Note over Coord,PromptValid: Phase 9 — Validate & decide fallback
+        Coord->>PromptValid: context_packet_to_model_messages(packet, user_msg)
+        PromptValid->>PromptValid: system present? empty content? roles valid?
+        PromptValid->>PromptValid: severe comparison warnings?
+        PromptValid->>PromptValid: latest user message present exactly once and final?
+        PromptValid-->>Coord: PromptAssemblyResult (valid + messages)
+        alt Packet invalid: fallback to legacy
+            Coord->>Coord: use legacy short-term memory messages
+        else Packet valid: use trace pipeline messages
+        end
+    end
+
+    rect rgb(30,30,60)
+        Note over Coord,Model: Phase 10 — Generate answer
+        Coord->>Chat: generate(final_model_messages)
+        Chat->>Model: chat(messages)
+        Model-->>Chat: answer string
+        Chat-->>Coord: answer
+    end
+
+    rect rgb(30,30,60)
+        Note over Coord,DB: Phase 11 — Persist assistant message
+        Coord->>DB: save_message(chat_id, "assistant", answer)
+        Coord-->>CS: AgentTurnResult
+    end
+
+    rect rgb(40,20,20)
+        Note over CS,DB: Phase 11b — Persist answer inspection (ChatService scope)
+        CS->>DB: persist_answer_inspection(result)
+    end
+
+    rect rgb(40,20,20)
+        Note over Coord,LTStore: Phase 12 — Post-answer memory update (inline path)
+        Coord->>STM_Agent: update_memory_if_needed(chat_id)
+        STM_Agent->>STM: update_memory_if_needed(chat_id)
+        STM->>STM: select pending un-summarized messages
+        STM->>STM: form ConversationUnits (user/assistant pairs)
+        STM->>LangMem: update(existing_memory, messages)
+        LangMem->>LangMem: LLM extraction → normalize → validate
+        LangMem->>LTStore: upsert(records)
+        LTStore->>DB: write to SQLite (long_term_memories)
+        LTStore->>Chroma: sync vectors (long_term_memory index)
+        STM->>DB: mark messages as summarized
+        STM-->>STM_Agent: MemoryUpdateResult
+        STM_Agent-->>Coord: update complete
+    end
+
+    CS-->>Chainlit: answer + workflow trace
+    Note over CS: deferred path (perform_memory_update=False):
+    Note over CS: CS.finalize_post_answer_memory_update()
+    Note over CS: → STM.update_memory_if_needed() directly
+    Chainlit-->>User: displays answer

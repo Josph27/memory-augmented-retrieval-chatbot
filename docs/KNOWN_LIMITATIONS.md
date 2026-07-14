@@ -55,12 +55,12 @@ current and intentional unless otherwise noted.
 - Only one model profile is registered: `gemma-4-31B-it`. Unknown models get a
   conservative profile with a 4096-token safe fallback and no sliding window,
   which reduces context budget accuracy for other models.
-- Both `CURRENT_CHAT_GIST_GENERATION_ENABLED` and
-  `PREVIOUS_CHAT_GIST_GENERATION_ENABLED` default to `False`. Gists are
+- `CURRENT_CHAT_GIST_GENERATION_ENABLED` defaults to `False`;
+  `PREVIOUS_CHAT_GIST_GENERATION_ENABLED` defaults to `True`. Gists are
   orientation summaries that enable longer-context orientation without
-  carrying raw evidence. Without them, the system loses low-token orientation
-  for long chats and multi-chat scenarios.
-- The richer deterministic `SemanticRouter` (512 lines) is not wired into the
+  carrying raw evidence. Without current-chat gists, the system loses
+  low-token orientation for long chats.
+- The richer deterministic `SemanticRouter` (592 lines) is not wired into the
   native production path. It runs only within LangGraph orchestration modes.
   The native path uses the simpler `QueryAnalyzer` + `RoutePlanner` pipeline.
 

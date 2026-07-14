@@ -1,0 +1,173 @@
+graph TB
+    subgraph Presentation["📱 Presentation"]
+        chainlit["Chainlit UI<br/>app.py"]
+        data_layer["SQLiteChainlitDataLayer<br/>chainlit_data_layer.py"]
+        chat_service["ChatService<br/>chat_service.py"]
+    end
+
+    subgraph Agents["🧠 Agent Layer"]
+        coordinator["CoordinatorAgent<br/>agents/coordinator_agent.py"]
+        chat["ChatAgent<br/>agents/chat_agent.py"]
+        doc_ingest["DocumentIngestionAgent<br/>agents/document_ingestion_agent.py"]
+        stm_agent["ShortTermMemoryAgent<br/>agents/short_term_memory_agent.py"]
+        ctx_builder_agent["ContextBuilderAgent<br/>agents/context_builder_agent.py"]
+    end
+
+    subgraph Routing["🔀 Routing"]
+        routing_agent["RoutingAgent<br/>routing/routing_agent.py"]
+        route_planner["RoutePlanner<br/>routing/route_planner.py"]
+        query_analyzer["QueryAnalyzer<br/>routing/query_analyzer.py"]
+        semantic["SemanticRouter<br/>routing/semantic_router.py"]
+    end
+
+    subgraph Retrieval["🔍 Retrieval"]
+        dispatcher["RetrieverDispatcher<br/>retrieval/retriever_dispatcher.py"]
+        recent["RecentMessages<br/>recent_messages_retriever.py"]
+        struct_ret["StructuredMemory<br/>structured_memory_retriever.py"]
+        doc_ret["LangChainChroma<br/>langchain_chroma_retriever.py"]
+        gist["CurrentChatGist<br/>current_chat_gist_retriever.py"]
+        span["CurrentChatSpan<br/>current_chat_span_retriever.py"]
+        prev_gist["PreviousChatGist<br/>previous_chat_gist_retriever.py"]
+        raw_span["RawMessageSpan<br/>raw_message_span_retriever.py"]
+        expander["GistRawSpanExpander<br/>gist_raw_span_expander.py"]
+    end
+
+    subgraph Reranking["📊 Reranking"]
+        reranker["MemoryReranker<br/>retrieval/reranker.py"]
+        cross_enc["CrossEncoderBackend<br/>cross_encoder_reranker.py"]
+    end
+
+    subgraph ContextAssembly["📋 Context Assembly"]
+        ctx_mgr["ContextManagerAgent<br/>agents/context_manager_agent.py"]
+        budget_plan["DynamicBudgetPlanner<br/>context/dynamic_budget.py"]
+        budget_alloc["ContextBudgetAllocator<br/>context/context_budget_allocator.py"]
+        selector["EvidenceSelector<br/>context/evidence_selector.py"]
+        builder["ContextBuilder<br/>context/context_builder.py"]
+    end
+
+    subgraph Validation["✅ Validation & Fallback"]
+        comparator["ContextComparator<br/>context/context_comparator.py"]
+        prompt_valid["PromptMessages<br/>context/prompt_messages.py"]
+    end
+
+    subgraph Orchestration["🔧 Orchestration"]
+        demo["Demo Orchestration<br/>orchestration/demo_orchestration.py"]
+        langgraph["LangGraph Pipeline<br/>orchestration/langgraph_memory_pipeline.py"]
+    end
+
+    subgraph MemorySystem["🧩 Memory System"]
+        short_term["ShortTermMemory<br/>memory/short_term.py"]
+        langmem["LangMemStructured<br/>memory/langmem_structured.py"]
+        lt_store["LongTermMemoryStore<br/>memory/long_term_store.py"]
+        lt_vector["VectorIndex<br/>memory/long_term_vector_index.py"]
+        gist_sum["ChatGistSummarizer<br/>memory/chat_gist_summarizer.py"]
+        prev_gist_gen["PreviousChatGistGen<br/>memory/previous_chat_gist.py"]
+    end
+
+    subgraph Storage["💾 Storage"]
+        sqlite[("SQLite<br/>database.py<br/>9 tables")]
+        chroma[("Chroma<br/>vector DB")]
+        llm[("LLM Provider<br/>OpenAI-compatible")]
+    end
+
+    subgraph Lifecycle["🔄 Lifecycle"]
+        end_chat["ChatEndAction<br/>actions/chat_end.py"]
+        fork_chat["ChatForkAction<br/>actions/chat_fork.py"]
+    end
+
+    subgraph Contracts["📐 Core Contracts"]
+        contracts["MemoryCandidate<br/>ContextPacket<br/>RoutePlan<br/>WorkflowTrace<br/>core/contracts.py"]
+    end
+
+    %% Edges — solid = direct import, dotted = data flow / delegation / sync
+
+    %% Coordinator → agents
+    coordinator --> routing_agent
+    coordinator --> route_planner
+    coordinator --> dispatcher
+    coordinator --> reranker
+    coordinator --> ctx_mgr
+    coordinator --> ctx_builder_agent
+    coordinator --> stm_agent
+    coordinator --> chat
+    coordinator --> builder
+    coordinator --> budget_alloc
+    coordinator --> contracts
+    coordinator --> comparator
+    coordinator --> prompt_valid
+
+    %% Routing internal
+    routing_agent --> route_planner
+    route_planner --> query_analyzer
+    routing_agent -.-> semantic
+
+    %% Dispatcher → all retrievers + expander
+    dispatcher --> recent
+    dispatcher --> struct_ret
+    dispatcher --> doc_ret
+    dispatcher --> gist
+    dispatcher --> span
+    dispatcher --> prev_gist
+    dispatcher --> raw_span
+    dispatcher --> expander
+
+    %% Reranker
+    reranker --> cross_enc
+    reranker --> contracts
+
+    %% Context assembly
+    ctx_mgr --> budget_plan
+    ctx_mgr --> budget_alloc
+    ctx_mgr --> selector
+    ctx_mgr --> builder
+    builder --> contracts
+
+    %% Validation
+    coordinator --> comparator
+    coordinator --> prompt_valid
+
+    %% Orchestration
+    coordinator --> demo
+    demo --> langgraph
+
+    %% Memory system
+    short_term --> langmem
+    short_term --> lt_store
+    langmem --> lt_store
+    lt_store -.-> lt_vector
+    stm_agent --> short_term
+
+    %% Retrieval → storage
+    struct_ret --> lt_store
+    struct_ret --> lt_vector
+    doc_ret --> chroma
+    doc_ingest --> chroma
+
+    %% Storage connections
+    coordinator --> sqlite
+    short_term --> sqlite
+    lt_store --> sqlite
+    lt_vector --> chroma
+    prev_gist_gen --> sqlite
+    gist_sum --> sqlite
+
+    %% Answer generation (ModelWrapper is the actual API client)
+    chat --> model_wrapper["ModelWrapper<br/>model_wrapper.py"]
+    model_wrapper --> llm
+    langmem --> llm
+
+    %% Lifecycle
+    coordinator --> end_chat
+    end_chat --> prev_gist_gen
+    end_chat --> short_term
+
+    %% Chainlit
+    chainlit --> chat_service
+    chainlit --> data_layer
+    chat_service --> coordinator
+    chat_service --> stm_agent
+    data_layer --> sqlite
+
+    %% Legend
+    classDef container fill:#1a1a2e,stroke:#6c63ff,stroke-width:2px,color:#e0e0ff
+    class sqlite,chroma,llm container

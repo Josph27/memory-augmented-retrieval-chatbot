@@ -50,7 +50,7 @@ source retrievers
 -> MemoryCandidate[]
 -> reranking / budgeting
 -> ContextPacket
--> AnswerAgent / LLM
+-> ChatAgent / LLM
 -> memory update
 ```
 
@@ -85,12 +85,12 @@ Expected agent roles:
 * `CoordinatorAgent`: orchestrates a user turn
 * `RoutingAgent`: decides which memory sources to use
 * `DocumentIngestionAgent`: loads, chunks, embeds, and indexes documents using deterministic tools
-* `DocumentRetrievalAgent`: retrieves document chunks from Chroma
-* `StructuredMemoryAgent`: retrieves structured long-term memories
-* `MemoryManagerAgent`: writes, updates, or ignores candidate memories
-* `RerankerAgent`: ranks `MemoryCandidate` objects
+* `LangChainChromaRetriever` (formerly DocumentRetrievalAgent): retrieves document chunks from Chroma
+* `StructuredMemoryRetriever` (formerly StructuredMemoryAgent): retrieves structured long-term memories
+* `ShortTermMemoryAgent` / `LangMemStructuredMemoryState`: writes, updates, or ignores candidate memories
+* `MemoryReranker` (formerly RerankerAgent): ranks `MemoryCandidate` objects
 * `ContextManagerAgent`: allocates context budget and builds `ContextPacket`
-* `AnswerAgent`: generates the final response from the context packet
+* `ChatAgent` (formerly AnswerAgent): generates the final response from the context packet
 
 Some of these are currently implemented as deterministic service classes or
 thin wrappers rather than concrete classes with the exact role name. That is
@@ -109,20 +109,20 @@ LangMem-backed through `LangMemStructuredMemoryState`.
 5. Add or update tests for architectural changes.
 6. Keep fallback behavior when LLM-backed routing or memory decisions fail.
 7. Keep traces explicit: selected sources, retrieved candidates, ranking scores, budget decisions, prompt sections, and memory update results.
-8. Do not implement full query decomposition, full gist vector retrieval, cross-encoder reranking, or full Mem0-style rewrite unless explicitly requested later.
+8. Do not implement full query decomposition, full gist vector retrieval, or full Mem0-style rewrite unless explicitly requested later.
 9. If a change touches database schema, provide a reset or migration strategy.
 10. After each implementation step, run available compile, lint, and test commands, and report failures honestly.
 
-## Current Priority
+## Project Achievements
 
-Build a reliable and explainable multi-agent typed-memory system with:
+The system successfully implements a reliable and explainable multi-agent typed-memory system featuring:
 
-* improved query routing
-* deterministic document chunking and indexing
-* traceable retrieval and reranking
-* static context budgeting and prompt construction
-* scoped chat lifecycle actions
-* evaluation support for document retrieval and structured cross-chat memory
+* deterministic routing and fallback LLM routing (`RoutingAgent`, `SemanticRouter`)
+* deterministic document chunking and indexing (`DocumentIngestionAgent`)
+* traceable retrieval and multi-mode reranking (`MemoryReranker`)
+* dynamic context budgeting and evidence-constrained prompt construction (`ContextManagerAgent`)
+* scoped chat lifecycle actions and gist compaction
+* comprehensive evaluation support for document retrieval and structured cross-chat memory
 
 ## Deeper Project Docs
 

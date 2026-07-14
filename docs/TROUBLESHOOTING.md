@@ -215,21 +215,17 @@ grep -i "error\|timeout\|context_length" logs/*.log
 
 ---
 
-## LangGraph demo produces wrong answers
+## LangGraph demo returns insufficient-evidence message
 
-**Symptoms:** In `langgraph_demo` mode, the assistant returns "MOCK ANSWER" or "MOCK INSUFFICIENT EVIDENCE" instead of real answers.
+**Symptoms:** In `langgraph_demo` mode, the assistant returns an insufficient-evidence message (e.g. "MOCK INSUFFICIENT EVIDENCE") instead of a real answer.
 
-**Diagnosis:** This is expected behavior. The LangGraph pipeline generates mock answers — it never calls the real LLM for answer generation. It's an experimental comparison tool.
+**Diagnosis:** `langgraph_demo` is the default production mode and normally produces real answers via `ChatAgent` using the LangGraph-assembled context. The mock strings only appear when the LangGraph pipeline's `validate_evidence` node detects an unsatisfied evidence contract — meaning required raw spans, document citations, or structured memories are absent.
 
-**Fix:** Switch to native mode:
+**Fix:** Check the workflow trace for which evidence requirement failed. Consider:
 
-```bash
-ORCHESTRATION_MODE=native
-# or
-ORCHESTRATION_MODE=langgraph_shadow
-```
-
-In `langgraph_shadow` mode, the LangGraph runs for comparison but the native answer is shown to the user.
+- The query may not have triggered the right sources — check routing.
+- Required evidence may have been dropped due to token budget constraints — increase `APPLICATION_CONTEXT_CAP` or memory budgets.
+- If you want to bypass evidence enforcement, switch to `ORCHESTRATION_MODE=native`.
 
 ---
 
