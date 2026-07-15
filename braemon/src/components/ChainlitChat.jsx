@@ -62,22 +62,6 @@ function funnelToRows(rf) {
 		{ key: "Retrieved", value: formatValue(rf.retrievedCount) },
 		{ key: "Selected", value: formatValue(rf.selectedCount) },
 	];
-	if (rf.includedBySource && Object.keys(rf.includedBySource).length > 0) {
-		rows.push({
-			key: "By source",
-			value: Object.entries(rf.includedBySource)
-				.map(([s, c]) => `${s}: ${c}`)
-				.join(", "),
-		});
-	}
-	if (rf.droppedBySource && Object.keys(rf.droppedBySource).length > 0) {
-		rows.push({
-			key: "Dropped by source",
-			value: Object.entries(rf.droppedBySource)
-				.map(([s, c]) => `${s}: ${c}`)
-				.join(", "),
-		});
-	}
 	if (rf.documentFallback !== undefined && rf.documentFallback !== null) {
 		rows.push({ key: "Doc fallback", value: formatValue(rf.documentFallback) });
 	}
@@ -139,6 +123,10 @@ function buildTraceSections(trace) {
 			label: "Retrieval Funnel",
 			kvRows: funnelToRows(trace.retrievalFunnel),
 		};
+		const includedBySource = trace.retrievalFunnel.includedBySource;
+		if (includedBySource && Object.keys(includedBySource).length > 0) {
+			funnelSection.includedBySource = includedBySource;
+		}
 		const droppedReasons = trace.retrievalFunnel.droppedReasons;
 		if (Array.isArray(droppedReasons) && droppedReasons.length > 0) {
 			funnelSection.dropReasons = droppedReasons;
@@ -214,6 +202,34 @@ function buildTraceSections(trace) {
 
 // ── Trace section rendering helpers ──
 
+function IncludedBySource({ sources }) {
+	const [open, setOpen] = useState(false);
+	if (!sources || Object.keys(sources).length === 0) return null;
+	const entries = Object.entries(sources);
+	return (
+		<div className="mt-xs">
+			<button
+				onClick={() => setOpen(!open)}
+				className="text-label-sm text-on-surface-variant/60 hover:text-on-surface-variant transition-colors flex items-center gap-xs"
+			>
+				<span className="material-symbols-outlined text-[12px]">
+					{open ? "expand_less" : "expand_more"}
+				</span>
+				By source ({entries.length})
+			</button>
+			{open && (
+				<div className="mt-xs ml-sm text-code text-[12px] leading-tight space-y-0.5">
+					{entries.map(([source, count], i) => (
+						<div key={i} className="text-on-surface-variant/70">
+							{source}: {count}
+						</div>
+					))}
+				</div>
+			)}
+		</div>
+	);
+}
+
 function DropReasons({ reasons }) {
 	const [open, setOpen] = useState(false);
 	if (!reasons || reasons.length === 0) return null;
@@ -270,6 +286,9 @@ function SectionBlock({ section, bordered = false }) {
 						</div>
 					))}
 				</div>
+			)}
+			{section.includedBySource && (
+				<IncludedBySource sources={section.includedBySource} />
 			)}
 			{section.dropReasons && <DropReasons reasons={section.dropReasons} />}
 			{section.rows && (
