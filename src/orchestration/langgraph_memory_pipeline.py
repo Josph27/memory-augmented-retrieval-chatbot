@@ -7,7 +7,7 @@ from typing import Any, TypedDict
 from langgraph.graph import END, START, StateGraph
 
 from src.agents.context_manager_agent import ContextManagerAgent
-from src.core.contracts import ContextPacket, MemoryCandidate, RoutePlan
+from src.core.contracts import ContextPacket, MemoryCandidate, RoutePlan, SourcePlan
 from src.retrieval.reranker import MemoryReranker
 from src.retrieval.retriever_dispatcher import RetrieverDispatcher
 from src.routing.routing_agent import RoutingAgent
@@ -32,6 +32,7 @@ class MemoryGraphState(TypedDict, total=False):
     user_id: str | None
     user_query: str
     task_context: str | None
+    force_enabled_sources: frozenset[str]
     current_message_id: int | None
     route_plan: RoutePlan
     semantic_route_plan: SemanticRoutePlan
@@ -82,9 +83,7 @@ def build_langgraph_memory_pipeline(
         raise ValueError("routing_agent is required unless Semantic Router v2 is enabled")
     services = LangGraphSpikeServices(
         routing_agent=routing_agent,
-        semantic_router=semantic_router or (
-            SemanticRouter() if use_semantic_router else None
-        ),
+        semantic_router=semantic_router or (SemanticRouter() if use_semantic_router else None),
         use_semantic_router=use_semantic_router,
         dispatcher=dispatcher,
         reranker=reranker or MemoryReranker(mode="deterministic"),
@@ -131,6 +130,7 @@ def run_langgraph_memory_pipeline(
     evidence_contract: EvidenceContract | None = None,
     user_id: str | None = None,
     task_context: str | None = None,
+    force_enabled_sources: frozenset[str] | None = None,
     config: dict[str, Any] | None = None,
 ) -> MemoryGraphState:
     """Invoke the explicit spike entry point with no production side effects."""
@@ -140,6 +140,7 @@ def run_langgraph_memory_pipeline(
         "user_id": user_id,
         "user_query": user_query,
         "task_context": task_context,
+        "force_enabled_sources": force_enabled_sources or frozenset(),
         "current_message_id": None,
         "evidence_contract": evidence_contract or EvidenceContract(),
         "candidates": [],
@@ -157,6 +158,50 @@ def run_langgraph_memory_pipeline(
     return graph.invoke(initial, config=config)
 
 
+def _merge_force_enabled_sources(
+    route_plan: RoutePlan,
+    force_sources: frozenset[str],
+) -> RoutePlan:
+    """Ensure every source in force_sources is enabled in the route_plan."""
+    from dataclasses import replace as dc_replace
+
+    updated_sources: list = []
+    changed = False
+    for sp in route_plan.sources:
+        if sp.source in force_sources and not sp.enabled:
+            changed = True
+            updated_sources.append(
+                dc_replace(
+                    sp,
+                    enabled=True,
+                    reason=f"{sp.reason or ''} (force-enabled by coordinator)".strip(),
+                )
+            )
+        else:
+            updated_sources.append(sp)
+
+    existing = {sp.source for sp in updated_sources}
+    for fs in force_sources:
+        if fs not in existing:
+            changed = True
+            updated_sources.append(
+                SourcePlan(
+                    source=fs,
+                    enabled=True,
+                    reason="Force-enabled by coordinator (sticky scope).",
+                )
+            )
+
+    if not changed:
+        return route_plan
+
+    return dc_replace(
+        route_plan,
+        requires_retrieval=True,
+        sources=updated_sources,
+    )
+
+
 def _route_node(services: LangGraphSpikeServices):  # type: ignore[no-untyped-def]
     def route_node(state: MemoryGraphState) -> MemoryGraphState:
         started = perf_counter()
@@ -168,6 +213,9 @@ def _route_node(services: LangGraphSpikeServices):  # type: ignore[no-untyped-de
                 task_context=state.get("task_context"),
             )
             route_plan = services.semantic_router.to_route_plan(semantic_plan)
+            force_sources = state.get("force_enabled_sources", frozenset())
+            if force_sources:
+                route_plan = _merge_force_enabled_sources(route_plan, force_sources)
             return node_update(
                 state,
                 node="route",
@@ -215,9 +263,7 @@ def _retrieve_node(services: LangGraphSpikeServices):  # type: ignore[no-untyped
                     )
                 )
             except Exception as error:
-                errors.append(
-                    f"retrieve:{source_plan.source}:{type(error).__name__}: {error}"
-                )
+                errors.append(f"retrieve:{source_plan.source}:{type(error).__name__}: {error}")
         return node_update(
             state,
             node="retrieve",
@@ -307,10 +353,9 @@ def _validate_evidence_contract_node():  # type: ignore[no-untyped-def]
         started = perf_counter()
         contract = state.get("evidence_contract", EvidenceContract())
         packet = state.get("context_packet")
-        sources = {
-            candidate.source
-            for candidate in packet.candidates
-        } if packet is not None else set()
+        sources = (
+            {candidate.source for candidate in packet.candidates} if packet is not None else set()
+        )
         reason = evidence_failure_reason(contract, sources)
         return node_update(
             state,
@@ -328,8 +373,7 @@ def _mock_answer_node():  # type: ignore[no-untyped-def]
         started = perf_counter()
         sources = context_sources(state.get("context_packet"))
         answer = (
-            "MOCK ANSWER: evidence contract satisfied with sources "
-            f"{', '.join(sources) or 'none'}."
+            f"MOCK ANSWER: evidence contract satisfied with sources {', '.join(sources) or 'none'}."
         )
         return node_update(
             state,
@@ -360,11 +404,7 @@ def _trace_node():  # type: ignore[no-untyped-def]
         started = perf_counter()
         route_plan = state.get("route_plan")
         packet = state.get("context_packet")
-        dropped = (
-            packet.metadata.get("dropped_candidates", [])
-            if packet is not None
-            else []
-        )
+        dropped = packet.metadata.get("dropped_candidates", []) if packet is not None else []
         if not isinstance(dropped, list):
             dropped = []
         trace = {
@@ -376,19 +416,13 @@ def _trace_node():  # type: ignore[no-untyped-def]
             ),
             "routing": dict(state.get("routing_metadata", {})),
             "candidates": candidate_trace(state.get("candidates", [])),
-            "expanded_candidates": candidate_trace(
-                state.get("expanded_candidates", [])
-            ),
+            "expanded_candidates": candidate_trace(state.get("expanded_candidates", [])),
             "reranked_source_order": [
                 candidate.source
-                for candidate in state.get("reranked_candidates", [])[
-                    :MAX_TRACE_CANDIDATES
-                ]
+                for candidate in state.get("reranked_candidates", [])[:MAX_TRACE_CANDIDATES]
             ],
             "context_sources": context_sources(state.get("context_packet")),
-            "candidate_counts_by_source": source_counts(
-                state.get("candidates", [])
-            ),
+            "candidate_counts_by_source": source_counts(state.get("candidates", [])),
             "expanded_candidate_counts_by_source": source_counts(
                 state.get("expanded_candidates", [])
             ),
@@ -408,25 +442,17 @@ def _trace_node():  # type: ignore[no-untyped-def]
             ),
             "source_budgets": dict(state.get("source_budgets", {})),
             "source_token_usage": (
-                dict(packet.metadata.get("source_token_usage", {}))
-                if packet is not None
-                else {}
+                dict(packet.metadata.get("source_token_usage", {})) if packet is not None else {}
             ),
             "actual_context_tokens": (
-                packet.metadata.get("estimated_prompt_tokens")
-                if packet is not None
-                else None
+                packet.metadata.get("estimated_prompt_tokens") if packet is not None else None
             ),
             "provenance_valid": provenance_is_valid(
                 packet.candidates if packet is not None else []
             ),
-            "evidence_contract": asdict(
-                state.get("evidence_contract", EvidenceContract())
-            ),
+            "evidence_contract": asdict(state.get("evidence_contract", EvidenceContract())),
             "insufficient_evidence": state.get("insufficient_evidence", False),
-            "insufficient_evidence_reason": state.get(
-                "insufficient_evidence_reason"
-            ),
+            "insufficient_evidence_reason": state.get("insufficient_evidence_reason"),
             "errors": list(state.get("errors", [])),
             "visited_nodes": [*state.get("visited_nodes", []), "trace"],
             "node_timings_ms": dict(state.get("node_timings_ms", {})),
@@ -451,14 +477,10 @@ def evidence_failure_reason(
 ) -> str | None:
     """Return why included ContextPacket candidates fail the contract."""
     has_raw = bool(RAW_EVIDENCE_SOURCES & context_candidate_sources)
-    has_gist = bool(
-        {"previous_chat_gist", "current_chat_gist"} & context_candidate_sources
-    )
+    has_gist = bool({"previous_chat_gist", "current_chat_gist"} & context_candidate_sources)
     if contract.requires_raw_span and not has_raw:
         return "raw span evidence required but absent from ContextPacket"
-    if contract.requires_document_citation and "document_memory" not in (
-        context_candidate_sources
-    ):
+    if contract.requires_document_citation and "document_memory" not in (context_candidate_sources):
         return "document citation required but absent from ContextPacket"
     if contract.requires_structured_memory and "structured_memory" not in (
         context_candidate_sources
@@ -574,9 +596,7 @@ def semantic_route_trace(plan: SemanticRoutePlan) -> dict[str, Any]:
         ),
         "query_rewrite_applied": retrieval_query is not None,
         "query_rewrite_reason": (
-            retrieval_query.purpose
-            if retrieval_query is not None
-            else "original_query"
+            retrieval_query.purpose if retrieval_query is not None else "original_query"
         ),
         "language": plan.language,
         "intents": [

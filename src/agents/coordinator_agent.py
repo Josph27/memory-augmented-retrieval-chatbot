@@ -76,6 +76,20 @@ class CoordinatorAgent:
         self.context_manager_agent = context_manager_agent
         self.context_comparator = context_comparator or ContextComparator()
 
+    def _chat_has_documents(self, chat_id: str) -> bool:
+        """Return whether the chat has any associated documents."""
+        import os
+
+        if os.getenv("CHAT_DOCUMENT_SCOPE_STICKY", "true").strip().lower() in {
+            "0",
+            "false",
+            "no",
+            "off",
+        }:
+            return False
+        docs = self.database.documents_for_chat(chat_id)
+        return bool(docs)
+
     def run_turn(
         self,
         chat_id: str,
@@ -94,6 +108,11 @@ class CoordinatorAgent:
         routing_decision = self.routing_agent.route(content)
         if task_context == "document_qa":
             routing_decision = require_document_memory(routing_decision)
+        if self._chat_has_documents(chat_id):
+            routing_decision = require_chat_document_memory(routing_decision)
+            force_enabled_sources = frozenset({"document_memory"})
+        else:
+            force_enabled_sources = None
         route_plan = routing_decision.route_plan
         timings["route_planning"] = elapsed_ms(stage_started)
         stage_started = perf_counter()
@@ -177,6 +196,7 @@ class CoordinatorAgent:
                     system_prompt=self.system_prompt,
                     run_id=f"{trace_id}:langgraph",
                     task_context=task_context,
+                    force_enabled_sources=force_enabled_sources,
                 )
                 if langgraph_orchestration.error:
                     raise RuntimeError(langgraph_orchestration.error)
@@ -524,6 +544,57 @@ def require_document_memory(decision: RoutingDecision) -> RoutingDecision:
         metadata={
             **(decision.metadata or {}),
             "same_turn_attachment": True,
+        },
+    )
+
+
+def require_chat_document_memory(decision: RoutingDecision) -> RoutingDecision:
+    """Enable scoped document retrieval when the chat has associated documents.
+
+    Unlike require_document_memory (same-turn attachment), this does NOT
+    override intent or context_profile.  It only enables document_memory and
+    records chat_document_scope_sticky in metadata.
+    """
+    route_plan = decision.route_plan
+    document_found = False
+    sources: list[SourcePlan] = []
+    for source in route_plan.sources:
+        if source.source != "document_memory":
+            sources.append(source)
+            continue
+        document_found = True
+        sources.append(
+            replace(
+                source,
+                enabled=True,
+                reason="Chat has associated documents (sticky scope).",
+            )
+        )
+    if not document_found:
+        sources.append(
+            SourcePlan(
+                source="document_memory",
+                enabled=True,
+                reason="Chat has associated documents (sticky scope).",
+            )
+        )
+    updated_plan = replace(
+        route_plan,
+        requires_retrieval=True,
+        sources=sources,
+        metadata={
+            **route_plan.metadata,
+            "chat_document_scope_sticky": True,
+        },
+    )
+    return replace(
+        decision,
+        route_plan=updated_plan,
+        use_document_memory=True,
+        reason="Chat has associated documents (sticky scope).",
+        metadata={
+            **(decision.metadata or {}),
+            "chat_document_scope_sticky": True,
         },
     )
 

@@ -68,6 +68,7 @@ def run_read_only_langgraph_orchestration(
     system_prompt: str,
     run_id: str | None = None,
     task_context: str | None = None,
+    force_enabled_sources: frozenset[str] | None = None,
 ) -> OrchestrationResult:
     """Build a ContextPacket through the read-only Semantic Router v2 graph."""
     trace_id = run_id or str(uuid4())
@@ -86,6 +87,7 @@ def run_read_only_langgraph_orchestration(
         chat_id=chat_id,
         user_query=query,
         task_context=task_context,
+        force_enabled_sources=force_enabled_sources,
     )
     packet = state["context_packet"]
     route_plan = state["route_plan"]
@@ -109,9 +111,7 @@ def run_read_only_langgraph_orchestration(
             "reranker": dict(state.get("reranker_metadata", {})),
             "context_manager": dict(state.get("context_metadata", {})),
             "insufficient_evidence": state.get("insufficient_evidence", False),
-            "insufficient_evidence_reason": state.get(
-                "insufficient_evidence_reason"
-            ),
+            "insufficient_evidence_reason": state.get("insufficient_evidence_reason"),
         },
     )
     return OrchestrationResult(
@@ -130,9 +130,7 @@ def compare_orchestration(
     native_ids = candidate_identities(native.context_packet.candidates)
     graph_ids = candidate_identities(langgraph.context_packet.candidates)
     native_sources = sorted({candidate.source for candidate in native.context_packet.candidates})
-    graph_sources = sorted(
-        {candidate.source for candidate in langgraph.context_packet.candidates}
-    )
+    graph_sources = sorted({candidate.source for candidate in langgraph.context_packet.candidates})
     native_tokens = estimated_prompt_tokens(native.context_packet)
     graph_tokens = estimated_prompt_tokens(langgraph.context_packet)
     return OrchestrationComparison(
@@ -155,10 +153,7 @@ def compare_orchestration(
 
 def candidate_identities(candidates) -> Counter[tuple[str, str]]:  # type: ignore[no-untyped-def]
     """Return stable source/id identities without candidate text."""
-    return Counter(
-        (candidate.source, str(candidate.record_id))
-        for candidate in candidates
-    )
+    return Counter((candidate.source, str(candidate.record_id)) for candidate in candidates)
 
 
 def estimated_prompt_tokens(packet) -> int | None:  # type: ignore[no-untyped-def]
