@@ -201,15 +201,15 @@ class AppConfig:
                 "EMBEDDING_MODEL_NAME",
                 "sentence-transformers/all-MiniLM-L6-v2",
             ),
-            document_top_k=int(os.getenv("DOCUMENT_TOP_K", "8")),
+            document_top_k=int(os.getenv("DOCUMENT_TOP_K", "40")),
             document_chunker=os.getenv("DOCUMENT_CHUNKER", "custom"),
-            document_chunk_size=int(os.getenv("DOCUMENT_CHUNK_SIZE", "1000")),
-            document_chunk_overlap=int(os.getenv("DOCUMENT_CHUNK_OVERLAP", "150")),
+            document_chunk_size=int(os.getenv("DOCUMENT_CHUNK_SIZE", "256")),
+            document_chunk_overlap=int(os.getenv("DOCUMENT_CHUNK_OVERLAP", "56")),
             langchain_chroma_persist_dir=Path(
                 os.getenv("LANGCHAIN_CHROMA_PERSIST_DIR", "data/chroma")
             ),
-            langchain_chunk_size=int(os.getenv("LANGCHAIN_CHUNK_SIZE", "1000")),
-            langchain_chunk_overlap=int(os.getenv("LANGCHAIN_CHUNK_OVERLAP", "150")),
+            langchain_chunk_size=int(os.getenv("LANGCHAIN_CHUNK_SIZE", "256")),
+            langchain_chunk_overlap=int(os.getenv("LANGCHAIN_CHUNK_OVERLAP", "56")),
             orchestration_mode=os.getenv(
                 "ORCHESTRATION_MODE",
                 "langgraph_demo",

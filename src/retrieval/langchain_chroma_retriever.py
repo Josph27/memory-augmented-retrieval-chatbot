@@ -58,10 +58,8 @@ class LangChainChromaRetriever:
             persist_dir=os.getenv("LANGCHAIN_CHROMA_PERSIST_DIR", DEFAULT_CHROMA_PERSIST_DIR),
             embedding_model_name=os.getenv("EMBEDDING_MODEL_NAME", DEFAULT_EMBEDDING_MODEL),
             chunk_size=int(os.getenv("LANGCHAIN_CHUNK_SIZE", str(DEFAULT_CHUNK_SIZE))),
-            chunk_overlap=int(
-                os.getenv("LANGCHAIN_CHUNK_OVERLAP", str(DEFAULT_CHUNK_OVERLAP))
-            ),
-            default_top_k=int(os.getenv("DOCUMENT_TOP_K", "8")),
+            chunk_overlap=int(os.getenv("LANGCHAIN_CHUNK_OVERLAP", str(DEFAULT_CHUNK_OVERLAP))),
+            default_top_k=int(os.getenv("DOCUMENT_TOP_K", "40")),
             fallback_retriever=fallback_retriever,
         )
 
@@ -109,10 +107,17 @@ class LangChainChromaRetriever:
         return LangChainIndexResult(document_id=document_id, chunk_count=len(prepared_documents))
 
     def retrieve(self, chat_id: str, source_plan: SourcePlan) -> list[MemoryCandidate]:
-        """Retrieve document MemoryCandidates through LangChain-Chroma."""
+        """Retrieve document MemoryCandidates through LangChain-Chroma with hybrid scoring.
+
+        Retrieves 2x the requested limit from Chroma, then blends semantic
+        similarity with a lexical overlap score to boost exact keyword matches.
+        After selecting the top-k, expands each result with its ±1 neighboring
+        chunks (not counted toward the limit) to provide surrounding context.
+        """
         del chat_id
         query = source_plan.query or ""
         limit = source_plan.limit or self.default_top_k
+        fetch_limit = max(limit * 2, limit + 8)
         allowed_ids = source_plan.filters.get("allowed_document_ids")
         if allowed_ids is not None and not allowed_ids:
             return []
@@ -120,21 +125,31 @@ class LangChainChromaRetriever:
             if allowed_ids is None:
                 documents_with_scores = self._similarity_search(
                     query=query,
-                    limit=limit,
+                    limit=fetch_limit,
                 )
             else:
                 documents_with_scores = self._similarity_search(
                     query=query,
-                    limit=limit,
+                    limit=fetch_limit,
                     allowed_document_ids=allowed_ids,
                 )
-            return [
+            candidates = [
                 langchain_document_to_memory_candidate(document, score)
                 for document, score in documents_with_scores
                 if allowed_ids is None
                 or str(getattr(document, "metadata", {}).get("document_id"))
                 in {str(value) for value in allowed_ids}
             ]
+            if query.strip():
+                candidates = _hybrid_rerank(candidates, query, limit)
+            else:
+                candidates = candidates[:limit]
+            candidates = _expand_neighbors(
+                candidates,
+                vectorstore=self._vectorstore(),
+                allowed_document_ids=allowed_ids,
+            )
+            return candidates
         except LangChainChromaUnavailable as error:
             print(f"langchain_chroma_unavailable reason={error}")
             if self.fallback_retriever is None:
@@ -152,9 +167,7 @@ class LangChainChromaRetriever:
         if allowed_document_ids:
             values = [str(value) for value in allowed_document_ids]
             filter_value = (
-                {"document_id": values[0]}
-                if len(values) == 1
-                else {"document_id": {"$in": values}}
+                {"document_id": values[0]} if len(values) == 1 else {"document_id": {"$in": values}}
             )
         if hasattr(vectorstore, "similarity_search_with_score"):
             try:
@@ -182,10 +195,7 @@ class LangChainChromaRetriever:
             )
         except TypeError:
             documents = vectorstore.similarity_search(query, k=limit)
-        return [
-            (document, None)
-            for document in documents
-        ]
+        return [(document, None) for document in documents]
 
     def _vectorstore(self):
         if self._vector_store is not None:
@@ -278,3 +288,111 @@ def normalize_score(score: float | None) -> float | None:
     if 0.0 <= numeric <= 1.0:
         return numeric
     return 1.0 / (1.0 + max(0.0, numeric))
+
+
+def _hybrid_rerank(
+    candidates: list[MemoryCandidate],
+    query: str,
+    limit: int,
+) -> list[MemoryCandidate]:
+    """Blend semantic scores with lexical overlap for hybrid retrieval.
+
+    Computes a simple BM25-like lexical overlap score for each candidate
+    against the query and blends it with the existing semantic score.
+    This helps queries like "problem 3" find chunks containing those exact
+    strings even when the embedding model encodes numbers weakly.
+    """
+    import re
+
+    def _tokenize(text: str) -> set[str]:
+        return set(re.findall(r"[a-z0-9]+", text.lower()))
+
+    def _lexical_score(text: str, q_terms: set[str]) -> float:
+        text_terms = _tokenize(text)
+        overlap = len(q_terms & text_terms)
+        return overlap / max(1, len(q_terms)) if q_terms else 0.0
+
+    query_terms = _tokenize(query)
+    if not query_terms:
+        return candidates[:limit]
+
+    # Blend: 70% semantic, 30% lexical
+    SEMANTIC_WEIGHT = 0.7
+    LEXICAL_WEIGHT = 0.3
+
+    scored: list[tuple[float, MemoryCandidate]] = []
+    for candidate in candidates:
+        semantic = candidate.score if candidate.score is not None else 0.5
+        lexical = _lexical_score(candidate.content, query_terms)
+        blended = SEMANTIC_WEIGHT * semantic + LEXICAL_WEIGHT * lexical
+        scored.append((blended, candidate))
+
+    scored.sort(key=lambda item: item[0], reverse=True)
+    return [candidate for _, candidate in scored[:limit]]
+
+
+def _expand_neighbors(
+    candidates: list[MemoryCandidate],
+    *,
+    vectorstore: object,
+    allowed_document_ids: list[str] | tuple[str, ...] | None = None,
+) -> list[MemoryCandidate]:
+    """Expand each candidate with its ±1 neighboring chunks for context.
+
+    Neighbors are appended after the main candidates and marked with
+    retrieval_mode='neighbor_expansion' so downstream consumers can
+    distinguish them from directly retrieved chunks.
+    """
+    neighbor_ids: set[str] = set()
+    seen_ids = {
+        str(candidate.record_id) for candidate in candidates if candidate.record_id is not None
+    }
+
+    for candidate in candidates:
+        metadata = candidate.metadata
+        document_id = str(metadata.get("document_id") or "")
+        chunk_index = metadata.get("chunk_index")
+        if not document_id or not isinstance(chunk_index, int):
+            continue
+
+        for offset in (-1, 1):
+            neighbor_index = chunk_index + offset
+            if neighbor_index < 0:
+                continue
+            neighbor_record_id = f"{document_id}:{neighbor_index}"
+            if neighbor_record_id in seen_ids or neighbor_record_id in neighbor_ids:
+                continue
+            neighbor_ids.add(neighbor_record_id)
+
+            try:
+                results = vectorstore.get(
+                    ids=[neighbor_record_id],
+                )
+            except Exception:
+                continue
+
+            if not results or not results.get("documents"):
+                continue
+            doc_text = results["documents"][0]
+            doc_meta = dict(results.get("metadatas", [{}])[0] or {})
+            doc_meta.update(
+                {
+                    "retrieval_mode": "neighbor_expansion",
+                    "neighbor_of_chunk": chunk_index,
+                    "neighbor_offset": offset,
+                    "chunk_index": neighbor_index,
+                    "document_id": document_id,
+                    "status": "active",
+                }
+            )
+            candidates.append(
+                MemoryCandidate(
+                    source="document_memory",
+                    content=str(doc_text),
+                    score=0.3,  # Low confidence — not directly matched
+                    record_id=neighbor_record_id,
+                    metadata=doc_meta,
+                )
+            )
+
+    return candidates

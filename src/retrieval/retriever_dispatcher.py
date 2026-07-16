@@ -78,6 +78,11 @@ class RetrieverDispatcher:
                         }
                     )
                     continue
+                # Boost limit for document-oriented intents so more chunks
+                # are retrieved for structured queries (e.g. "problem 3").
+                context_profile = plan.filters.get("context_profile", "")
+                if context_profile == "document_question" and plan.limit is None:
+                    plan = replace(plan, limit=40)
             try:
                 retrieved = retriever.retrieve(chat_id=chat_id, source_plan=plan)
                 if (
@@ -139,8 +144,7 @@ def langchain_chroma_retriever_for_env(database: Database) -> SourceRetriever:
     mode = os.getenv("DOCUMENT_RETRIEVAL_MODE", "langchain_chroma").strip().lower()
     if mode != "langchain_chroma":
         print(
-            "unsupported_document_retrieval_mode "
-            f"mode={mode!r} falling_back_to='langchain_chroma'"
+            f"unsupported_document_retrieval_mode mode={mode!r} falling_back_to='langchain_chroma'"
         )
     del database
     return LangChainChromaRetriever.from_env()

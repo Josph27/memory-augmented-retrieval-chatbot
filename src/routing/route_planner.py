@@ -69,7 +69,7 @@ class RoutePlannerPolicy:
             source="document_memory",
             enabled=False,
             reason="Document memory is enabled only for document-like questions.",
-            limit=4,
+            limit=20,
         ),
     )
     ranking_profile: str = "none_current_order"
@@ -131,9 +131,7 @@ class RoutePlanner:
                 enabled=source_enabled(source_policy, analysis),
                 reason=source_reason(source_policy, analysis),
                 query=(
-                    rewrite.retrieval_query
-                    if source_enabled(source_policy, analysis)
-                    else None
+                    rewrite.retrieval_query if source_enabled(source_policy, analysis) else None
                 ),
                 limit=source_policy.limit,
                 filters={
@@ -200,20 +198,12 @@ def source_enabled(
             and not analysis.signals.asks_about_previous_memory
         )
     if source_policy.source == "previous_chat_gist":
-        return (
-            previous_chat_gist_retrieval_enabled()
-            and (
-                analysis.signals.asks_about_previous_memory
-                or analysis.signals.asks_for_global_summary
-            )
+        return previous_chat_gist_retrieval_enabled() and (
+            analysis.signals.asks_about_previous_memory or analysis.signals.asks_for_global_summary
         )
     if source_policy.source == "raw_message_span":
-        return (
-            previous_chat_gist_retrieval_enabled()
-            and (
-                analysis.signals.asks_about_previous_memory
-                or analysis.signals.asks_for_global_summary
-            )
+        return previous_chat_gist_retrieval_enabled() and (
+            analysis.signals.asks_about_previous_memory or analysis.signals.asks_for_global_summary
         )
     return source_policy.enabled
 
@@ -235,8 +225,7 @@ def source_reason(
         source_policy.source == "previous_chat_gist"
         and previous_chat_gist_retrieval_enabled()
         and (
-            analysis.signals.asks_about_previous_memory
-            or analysis.signals.asks_for_global_summary
+            analysis.signals.asks_about_previous_memory or analysis.signals.asks_for_global_summary
         )
     ):
         return "Previous-chat memory query detected; enabling previous-chat gist retrieval."
@@ -244,8 +233,7 @@ def source_reason(
         source_policy.source == "raw_message_span"
         and previous_chat_gist_retrieval_enabled()
         and (
-            analysis.signals.asks_about_previous_memory
-            or analysis.signals.asks_for_global_summary
+            analysis.signals.asks_about_previous_memory or analysis.signals.asks_for_global_summary
         )
     ):
         return "Previous-chat recall enables direct raw-span evidence."

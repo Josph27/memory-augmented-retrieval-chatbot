@@ -74,6 +74,15 @@ class QueryAnalyzerPolicy:
         "the file from before",
         "look at that report",
         "summarize it",
+        "contents",
+        "overview",
+        "what are the contents",
+        "what is in the document",
+        "what does the document contain",
+        "what does it contain",
+        "what's in the",
+        "tell me about the document",
+        "describe the document",
     )
     decision_terms: tuple[str, ...] = (
         "decide",
@@ -123,9 +132,7 @@ class QueryAnalyzer:
     def analyze(self, query: str) -> QueryAnalysis:
         """Analyze a user query into normalized text, intent, signals, and confidence."""
         normalized = normalize_query(query)
-        inline_summary = bool(
-            re.match(r"^(?:summarize|summary of) this text\s*:", normalized)
-        )
+        inline_summary = bool(re.match(r"^(?:summarize|summary of) this text\s*:", normalized))
         signals = QuerySignals(
             asks_about_current_chat=contains_any(normalized, self.policy.current_chat_terms),
             asks_about_previous_memory=contains_any(
@@ -133,8 +140,7 @@ class QueryAnalyzer:
                 self.policy.previous_memory_terms,
             ),
             asks_about_documents=(
-                contains_any(normalized, self.policy.document_terms)
-                and not inline_summary
+                contains_any(normalized, self.policy.document_terms) and not inline_summary
             ),
             asks_about_decision=contains_any(normalized, self.policy.decision_terms),
             asks_about_task=contains_any(normalized, self.policy.task_terms),
