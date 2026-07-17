@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from dataclasses import asdict, dataclass
 from time import perf_counter
 from typing import Any, TypedDict
@@ -16,8 +17,13 @@ from src.routing.semantic_router import SemanticRouter
 from src.routing.retrieval_query import retrieval_query_for_reranking
 
 
-MAX_BASE_CANDIDATES = 32
-MAX_EXPANDED_CANDIDATES = 16
+# Caps on candidates entering the LangGraph reranker from each pipeline stage.
+# Direct retrieval covers all memory sources: documents, structured, recent, etc.
+# Gist expansion covers previous-chat gists resolved into raw message spans.
+MAX_DIRECT_RETRIEVAL_CANDIDATES = int(
+    os.environ.get("LANGGRAPH_MAX_DIRECT_RETRIEVAL_CANDIDATES", "160")
+)
+MAX_GIST_EXPANSION_CANDIDATES = int(os.environ.get("LANGGRAPH_MAX_GIST_EXPANSION_CANDIDATES", "80"))
 MAX_TRACE_CANDIDATES = 20
 MAX_TRACE_SNIPPET_CHARS = 160
 MAX_TRACE_QUERY_CHARS = 500
@@ -268,7 +274,7 @@ def _retrieve_node(services: LangGraphSpikeServices):  # type: ignore[no-untyped
             state,
             node="retrieve",
             started=started,
-            candidates=candidates[:MAX_BASE_CANDIDATES],
+            candidates=candidates[:MAX_DIRECT_RETRIEVAL_CANDIDATES],
             errors=errors,
         )
 
@@ -291,7 +297,7 @@ def _expand_gists_node(services: LangGraphSpikeServices):  # type: ignore[no-unt
             state,
             node="expand_gists",
             started=started,
-            expanded_candidates=expanded[:MAX_EXPANDED_CANDIDATES],
+            expanded_candidates=expanded[:MAX_GIST_EXPANSION_CANDIDATES],
             errors=errors,
         )
 

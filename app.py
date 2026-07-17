@@ -630,8 +630,12 @@ def build_trace_payload(
             "finalPromptTokens": packet_meta.get("final_prompt_tokens"),
         },
         "retrievalFunnel": {
-            "retrievedCount": len(trace.retrieved_candidates),
-            "selectedCount": (len(context_packet.candidates) if context_packet is not None else 0),
+            # Pre-reranker: all candidates from all memory sources before scoring.
+            "preRerankerCount": len(trace.retrieved_candidates),
+            # Post-budget: candidates selected for the final prompt after token allocation.
+            "inPromptCount": (len(context_packet.candidates) if context_packet is not None else 0),
+            "chatId": getattr(trace, "chat_id", None),
+            "turnIndex": trace_meta.get("turn_index"),
             "includedBySource": context_manager.get("included_candidate_counts_by_source", {}),
             "droppedBySource": context_manager.get("dropped_candidate_counts_by_source", {}),
             "droppedReasons": _summarize_dropped_reasons(packet_meta),

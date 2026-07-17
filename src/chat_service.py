@@ -27,6 +27,7 @@ from src.memory.previous_chat_gist import (
 )
 from src.memory.short_term import ShortTermMemory
 from src.model_wrapper import ModelWrapper
+from src.retrieval.langchain_chroma_retriever import LangChainChromaRetriever
 from src.retrieval.reranker import MemoryReranker
 from src.retrieval.retriever_dispatcher import RetrieverDispatcher
 from src.routing.routing_agent import RoutingAgent
@@ -119,8 +120,13 @@ class ChatService:
             previous_chat_gist_max_messages_per_gist,
         )
         self.previous_chat_gist_generator = previous_chat_gist_generator
+        # Share one LangChainChromaRetriever between ingestion and retrieval
+        # so the Chroma client + embedding model are initialized only once.
+        _shared_doc_retriever = document_indexer or LangChainChromaRetriever.from_env(
+            summary_getter=database,
+        )
         self.document_ingestion_agent = DocumentIngestionAgent(
-            indexer=document_indexer,
+            indexer=_shared_doc_retriever,
             summary_model=model,
             summary_database=database,
         )
@@ -154,6 +160,7 @@ class ChatService:
                 ),
                 direct_raw_candidate_limit=direct_raw_retrieval_candidates,
                 summary_getter=database,
+                retrievers={"document_memory": _shared_doc_retriever},
             ),
             routing_agent=RoutingAgent(mode=routing_mode, model=model),
             memory_reranker=self._build_reranker(

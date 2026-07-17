@@ -59,8 +59,8 @@ function budgetToRows(tb) {
 
 function funnelToRows(rf) {
 	const rows = [
-		{ key: "Retrieved", value: formatValue(rf.retrievedCount) },
-		{ key: "Selected", value: formatValue(rf.selectedCount) },
+		{ key: "Pre-reranker", value: formatValue(rf.preRerankerCount) },
+		{ key: "In prompt", value: formatValue(rf.inPromptCount) },
 	];
 	if (rf.documentFallback !== undefined && rf.documentFallback !== null) {
 		rows.push({ key: "Doc fallback", value: formatValue(rf.documentFallback) });
@@ -119,9 +119,14 @@ function buildTraceSections(trace) {
 
 	// Section 3: Retrieval Funnel
 	if (trace.retrievalFunnel) {
+		const rf = trace.retrievalFunnel;
 		const funnelSection = {
 			label: "Retrieval Funnel",
-			kvRows: funnelToRows(trace.retrievalFunnel),
+			kvRows: funnelToRows(rf),
+			retrievalLogUrl:
+				rf.chatId != null && rf.turnIndex != null
+					? `/retrieval-logs/${rf.chatId}/${rf.turnIndex}`
+					: null,
 		};
 		const includedBySource = trace.retrievalFunnel.includedBySource;
 		if (includedBySource && Object.keys(includedBySource).length > 0) {
@@ -380,6 +385,27 @@ function TraceContent({ sections }) {
 				left={byLabel["Token Budget"]}
 				right={byLabel["Retrieval Funnel"]}
 			/>
+			{byLabel["Retrieval Funnel"]?.retrievalLogUrl && (
+				<div style={{ marginTop: 8, marginBottom: 16 }}>
+					<a
+						href={byLabel["Retrieval Funnel"].retrievalLogUrl}
+						target="_blank"
+						rel="noopener noreferrer"
+						style={{
+							display: "inline-block",
+							padding: "6px 14px",
+							background: "#6c63ff",
+							color: "#fff",
+							borderRadius: 6,
+							textDecoration: "none",
+							fontSize: 13,
+							fontWeight: 600,
+						}}
+					>
+						Open Retrieval Logs
+					</a>
+				</div>
+			)}
 			{hasConfig && (
 				<div
 					className={

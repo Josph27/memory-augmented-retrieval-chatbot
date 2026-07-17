@@ -168,6 +168,12 @@ class StructuredMemoryRetriever:
         print_retrieved_memory_traces(chat_id, records)
         return [hybrid_record_to_candidate(record) for record in records][: source_plan.limit or 10]
 
+    def _vector_index(self) -> LongTermMemoryVectorIndex:
+        """Return the cached long-term memory vector index, creating it once."""
+        if self.vector_index is None:
+            self.vector_index = LongTermMemoryVectorIndex.from_env()
+        return self.vector_index
+
     def _vector_records(
         self,
         chat_id: str,
@@ -175,7 +181,7 @@ class StructuredMemoryRetriever:
     ) -> list[LongTermMemoryRecord]:
         """Load store records referenced by vector search results."""
         query = source_plan.query or ""
-        index = self.vector_index or LongTermMemoryVectorIndex.from_env()
+        index = self._vector_index()
         results = index.search(query=query, limit=source_plan.limit or 10)
         records = []
         allowed_namespaces = {

@@ -105,6 +105,9 @@ class AppConfig:
     previous_chat_gist_extractor: str
     previous_chat_gist_max_messages_per_gist: int
 
+    # ── debug ──
+    retrieval_log_enabled: bool
+
     @classmethod
     def load(cls) -> "AppConfig":
         """Build a frozen config snapshot from canonical settings.
@@ -202,6 +205,8 @@ class AppConfig:
             previous_chat_gist_max_messages_per_gist=(
                 settings.PREVIOUS_CHAT_GIST_MAX_MESSAGES_PER_GIST
             ),
+            # ── debug ──
+            retrieval_log_enabled=settings.RETRIEVAL_LOG_ENABLED,
         )
 
     # Backward-compatible alias — some callers may still reference from_env.

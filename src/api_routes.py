@@ -1,6 +1,7 @@
 from __future__ import annotations
 import asyncio
 import chainlit as cl
+from pathlib import Path
 from src.database import Database
 from typing import Any
 
@@ -326,6 +327,19 @@ def register_api_routes(database: Database, chat_service_getter: Any) -> None:
     async def models_status():
         """Return whether the backend models have finished loading."""
         return {"ready": _models_ready}
+
+    @app.get("/api/retrieval-logs/{chat_id}/{turn_index}")
+    async def get_retrieval_log(chat_id: str, turn_index: int):
+        """Serve a retrieval log dump file."""
+        from fastapi.responses import FileResponse, JSONResponse
+
+        # Reject path traversal attempts — chat_ids are UUIDs/alphanumeric
+        if ".." in chat_id or "/" in chat_id or "\\" in chat_id:
+            return JSONResponse({"error": "invalid chat_id"}, status_code=400)
+        filepath = Path("logs/retrieval") / chat_id / f"turn_{turn_index}.json"
+        if not filepath.is_file():
+            return JSONResponse({"error": "not found"}, status_code=404)
+        return FileResponse(str(filepath), media_type="application/json")
 
     @app.get("/api/stats")
     async def system_stats():

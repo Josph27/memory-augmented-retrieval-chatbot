@@ -179,3 +179,9 @@ export async function fetchStats() {
 	if (!res.ok) throw new Error(await _apiError(res, "Failed to fetch stats"));
 	return res.json();
 }
+
+export async function fetchRetrievalLog(chatId, turnIndex) {
+	const res = await fetch(`${BASE}/retrieval-logs/${chatId}/${turnIndex}`);
+	if (!res.ok) throw new Error(await _apiError(res, "Failed to fetch retrieval log"));
+	return res.json();
+}

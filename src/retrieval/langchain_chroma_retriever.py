@@ -55,6 +55,7 @@ class LangChainChromaRetriever:
         chunk_size: int = DEFAULT_CHUNK_SIZE,
         chunk_overlap: int = DEFAULT_CHUNK_OVERLAP,
         default_top_k: int = 4,
+        fetch_limit: int = 80,
         fallback_retriever: object | None = None,
         summary_getter: object | None = None,
     ) -> None:
@@ -64,6 +65,7 @@ class LangChainChromaRetriever:
         self.chunk_size = chunk_size
         self.chunk_overlap = chunk_overlap
         self.default_top_k = default_top_k
+        self.fetch_limit = fetch_limit
         self.fallback_retriever = fallback_retriever
         self.summary_getter = summary_getter
         self._vector_store = None
@@ -81,6 +83,7 @@ class LangChainChromaRetriever:
             chunk_size=int(os.getenv("LANGCHAIN_CHUNK_SIZE", str(DEFAULT_CHUNK_SIZE))),
             chunk_overlap=int(os.getenv("LANGCHAIN_CHUNK_OVERLAP", str(DEFAULT_CHUNK_OVERLAP))),
             default_top_k=int(os.getenv("DOCUMENT_TOP_K", "40")),
+            fetch_limit=int(os.getenv("DOCUMENT_RETRIEVAL_FETCH_LIMIT", "80")),
             fallback_retriever=fallback_retriever,
             summary_getter=summary_getter,
         )
@@ -131,17 +134,17 @@ class LangChainChromaRetriever:
     def retrieve(self, chat_id: str, source_plan: SourcePlan) -> list[MemoryCandidate]:
         """Retrieve document MemoryCandidates through LangChain-Chroma with hybrid scoring.
 
-        Retrieves 2x the requested limit from Chroma, then blends semantic
-        similarity with a lexical overlap score to boost exact keyword matches.
-        After selecting the top-k, expands each result with its ±1 neighboring
-        chunks (not counted toward the limit) to provide surrounding context.
+        Fetches DOCUMENT_RETRIEVAL_FETCH_LIMIT chunks from Chroma, blends
+        semantic similarity with lexical overlap for all candidates, then
+        expands each with its ±1 neighboring chunks. All candidates are
+        returned — the downstream reranker picks the top-K for final
+        inclusion.
 
         For summary-like queries ("summarize", "contents", "overview"), returns
         the pre-computed document summary as a candidate when available.
         """
         del chat_id
         query = source_plan.query or ""
-        limit = source_plan.limit or self.default_top_k
         allowed_ids = source_plan.filters.get("allowed_document_ids")
 
         # For summary-like queries, try the pre-computed document summary first.
@@ -153,17 +156,16 @@ class LangChainChromaRetriever:
 
         if allowed_ids is not None and not allowed_ids:
             return []
-        fetch_limit = max(limit * 2, limit + 8)
         try:
             if allowed_ids is None:
                 documents_with_scores = self._similarity_search(
                     query=query,
-                    limit=fetch_limit,
+                    limit=self.fetch_limit,
                 )
             else:
                 documents_with_scores = self._similarity_search(
                     query=query,
-                    limit=fetch_limit,
+                    limit=self.fetch_limit,
                     allowed_document_ids=allowed_ids,
                 )
             candidates = [
@@ -173,12 +175,10 @@ class LangChainChromaRetriever:
                 or str(getattr(document, "metadata", {}).get("document_id"))
                 in {str(value) for value in allowed_ids}
             ]
+            # Blend scores for all candidates — no capping.
+            # The downstream reranker decides which candidates survive.
             if query.strip():
-                candidates = _hybrid_rerank(candidates, query, limit)
-            else:
-                candidates = candidates[:limit]
-            # Cap limit to available candidates so small docs don't over-retrieve.
-            limit = min(limit, len(candidates))
+                candidates = _hybrid_rerank(candidates, query, len(candidates))
             if summary_candidate is not None:
                 summary_candidate = MemoryCandidate(
                     source=summary_candidate.source,
@@ -428,62 +428,86 @@ def _expand_neighbors(
     vectorstore: object,
     allowed_document_ids: list[str] | tuple[str, ...] | None = None,
 ) -> list[MemoryCandidate]:
-    """Expand each candidate with its ±1 neighboring chunks for context.
+    """Expand each candidate's content with ±1 neighboring chunks inline.
 
-    Neighbors are appended after the main candidates and marked with
-    retrieval_mode='neighbor_expansion' so downstream consumers can
-    distinguish them from directly retrieved chunks.
+    Instead of creating separate low-score neighbor candidates, this merges
+    the preceding and following chunk text into each candidate's content
+    field.  The result is fewer, richer candidates — each one carries 3× the
+    context of a raw chunk — which improves both reranker signal quality and
+    LLM answer coherence.
     """
-    neighbor_ids: set[str] = set()
-    seen_ids = {
-        str(candidate.record_id) for candidate in candidates if candidate.record_id is not None
-    }
-
-    for candidate in candidates:
-        metadata = candidate.metadata
-        document_id = str(metadata.get("document_id") or "")
-        chunk_index = metadata.get("chunk_index")
+    del allowed_document_ids
+    # Collect all needed neighbor IDs in one pass.
+    needed: dict[
+        str, tuple[int, str, int]
+    ] = {}  # record_id -> (candidate_index, doc_id, chunk_index)
+    for idx, candidate in enumerate(candidates):
+        document_id = str(candidate.metadata.get("document_id") or "")
+        chunk_index = candidate.metadata.get("chunk_index")
         if not document_id or not isinstance(chunk_index, int):
             continue
-
         for offset in (-1, 1):
             neighbor_index = chunk_index + offset
             if neighbor_index < 0:
                 continue
-            neighbor_record_id = f"{document_id}:{neighbor_index}"
-            if neighbor_record_id in seen_ids or neighbor_record_id in neighbor_ids:
-                continue
-            neighbor_ids.add(neighbor_record_id)
+            nid = f"{document_id}:{neighbor_index}"
+            if nid not in needed:
+                needed[nid] = (idx, document_id, neighbor_index)
 
-            try:
-                results = vectorstore.get(
-                    ids=[neighbor_record_id],
-                )
-            except Exception:
-                continue
+    if not needed:
+        return candidates
 
-            if not results or not results.get("documents"):
-                continue
-            doc_text = results["documents"][0]
-            doc_meta = dict(results.get("metadatas", [{}])[0] or {})
-            doc_meta.update(
-                {
-                    "retrieval_mode": "neighbor_expansion",
-                    "neighbor_of_chunk": chunk_index,
-                    "neighbor_offset": offset,
-                    "chunk_index": neighbor_index,
-                    "document_id": document_id,
-                    "status": "active",
-                }
-            )
-            candidates.append(
-                MemoryCandidate(
-                    source="document_memory",
-                    content=str(doc_text),
-                    score=0.3,  # Low confidence — not directly matched
-                    record_id=neighbor_record_id,
-                    metadata=doc_meta,
-                )
-            )
+    # Batch-fetch all neighbor chunks at once.
+    try:
+        results = vectorstore.get(ids=list(needed.keys()))
+    except Exception:
+        return candidates
+
+    if not results or not results.get("documents"):
+        return candidates
+
+    # Build a lookup from record_id → text.
+    neighbor_texts: dict[str, str] = {}
+    for nid, doc in zip(results["ids"], results["documents"]):
+        if doc:
+            neighbor_texts[nid] = str(doc)
+
+    if not neighbor_texts:
+        return candidates
+
+    # Merge neighbor text into each candidate's content inline.
+    # Determine left vs right by comparing neighbor index to candidate's own chunk index.
+    chunk_index_of: dict[int, int] = {}  # candidate_idx -> chunk_index
+    for idx, c in enumerate(candidates):
+        ci = c.metadata.get("chunk_index")
+        if isinstance(ci, int):
+            chunk_index_of[idx] = ci
+
+    for nid, (cand_idx, doc_id, neighbor_index) in needed.items():
+        text = neighbor_texts.get(nid)
+        if not text or cand_idx not in chunk_index_of:
+            continue
+        original_ci = chunk_index_of[cand_idx]
+        is_left = neighbor_index < original_ci
+        candidate = candidates[cand_idx]
+        separator = "\n\n"
+        merged_content = (
+            text + separator + candidate.content
+            if is_left
+            else candidate.content + separator + text
+        )
+        candidates[cand_idx] = candidate.__class__(
+            source=candidate.source,
+            content=merged_content,
+            score=candidate.score,
+            record_id=candidate.record_id,
+            chat_id=candidate.chat_id,
+            source_message_ids=list(candidate.source_message_ids),
+            metadata={
+                **candidate.metadata,
+                "sentence_window_expansion": True,
+                "neighbor_chunks_merged": 1 + candidate.metadata.get("neighbor_chunks_merged", 0),
+            },
+        )
 
     return candidates

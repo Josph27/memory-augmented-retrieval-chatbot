@@ -6,6 +6,7 @@ import Chats from "./pages/Chats";
 import Documents from "./pages/Documents";
 import Memories from "./pages/Memories";
 import Diagnostics from "./pages/Diagnostics";
+import RetrievalLogs from "./pages/RetrievalLogs";
 
 function App() {
 	return (
@@ -18,6 +19,10 @@ function App() {
 					<Route path="/documents" element={<Documents />} />
 					<Route path="/memories" element={<Memories />} />
 					<Route path="/diagnostics" element={<Diagnostics />} />
+					<Route
+						path="/retrieval-logs/:chatId/:turnIndex"
+						element={<RetrievalLogs />}
+					/>
 				</Route>
 			</Routes>
 		</BrowserRouter>

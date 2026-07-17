@@ -41,7 +41,7 @@ class RetrieverDispatcher:
         self.database = database
         self.last_errors: list[dict[str, str]] = []
         self.gist_expander = gist_expander or GistRawSpanExpander(database)
-        self.retrievers: dict[str, SourceRetriever] = retrievers or {
+        _defaults: dict[str, SourceRetriever] = {
             "recent_messages": RecentMessagesRetriever(database, default_limit=raw_message_limit),
             "structured_memory": StructuredMemoryRetriever(database),
             "document_memory": langchain_chroma_retriever_for_env(
@@ -55,6 +55,9 @@ class RetrieverDispatcher:
                 direct_limit=direct_raw_candidate_limit,
             ),
         }
+        if retrievers:
+            _defaults.update(retrievers)
+        self.retrievers = _defaults
 
     def retrieve(self, chat_id: str, route_plan: RoutePlan) -> list[MemoryCandidate]:
         """Retrieve candidates from enabled sources only."""

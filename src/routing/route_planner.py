@@ -69,7 +69,7 @@ class RoutePlannerPolicy:
             source="document_memory",
             enabled=False,
             reason="Document memory is enabled only for document-like questions.",
-            limit=20,
+            limit=None,
         ),
     )
     ranking_profile: str = "none_current_order"

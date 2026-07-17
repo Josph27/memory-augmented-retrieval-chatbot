@@ -44,7 +44,8 @@ RECENT_MESSAGES_MAX_COUNT: int = 8
 # Structured Memory Update Scheduling
 # ═══════════════════════════════════════════════════════════════════════════════
 
-MEMORY_UPDATE_POLICY: str = "agentic_each_turn"  # scheduled | agentic_each_turn | chat_end_only
+# scheduled | agentic_each_turn | chat_end_only
+MEMORY_UPDATE_POLICY: str = "agentic_each_turn"
 MEMORY_UPDATE_BATCH_SIZE: int = 6
 MEMORY_UPDATE_TRIGGER_TOKENS: int = 1000
 MEMORY_UPDATE_MAX_INPUT_TOKENS: int = 4000
@@ -63,6 +64,7 @@ DOCUMENT_CHUNKER: str = "custom"
 DOCUMENT_CHUNK_SIZE: int = 256
 DOCUMENT_CHUNK_OVERLAP: int = 56
 DOCUMENT_TOP_K: int = 40
+DOCUMENT_RETRIEVAL_FETCH_LIMIT: int = 80  # chunks fetched from Chroma before reranking
 EMBEDDING_MODEL_NAME: str = "sentence-transformers/all-MiniLM-L6-v2"
 
 # Chroma storage
@@ -82,9 +84,18 @@ LONG_TERM_MEMORY_COLLECTION: str = "long_term_memory"
 # Reranker
 # ═══════════════════════════════════════════════════════════════════════════════
 
-RERANKER_MODE: str = "cross_encoder"  # deterministic | cross_encoder | hybrid | llm
-RERANKER_CROSS_ENCODER_MODEL: str = "BAAI/bge-reranker-v2-m3"
-RERANKER_CROSS_ENCODER_TOP_K: int = 10
+# deterministic | cross_encoder | hybrid | llm
+RERANKER_MODE: str = "cross_encoder"
+
+# --- Cross-encoder model selection (uncomment ONE) ---
+# Fastest (~130 MB, English-only, ~0.05s/pair):
+RERANKER_CROSS_ENCODER_MODEL: str = "cross-encoder/ms-marco-MiniLM-L12-v2"
+# Balanced (~1.1 GB, multilingual, ~0.5s/pair):
+# RERANKER_CROSS_ENCODER_MODEL: str = "BAAI/bge-reranker-base"
+# Best quality (~2.2 GB, multilingual, ~2s/pair):
+# RERANKER_CROSS_ENCODER_MODEL: str = "BAAI/bge-reranker-v2-m3"
+
+RERANKER_CROSS_ENCODER_TOP_K: int = 40
 RERANKER_CROSS_ENCODER_WEIGHT: float = 0.65
 RERANKER_HYBRID_BACKEND: str = "auto"  # auto | cross_encoder | llm
 RERANKER_LLM_TOP_K: int = 10
@@ -92,6 +103,13 @@ RERANKER_LLM_MIN_CONFIDENCE: float = 0.55
 RERANKER_LLM_AMBIGUITY_MARGIN: float = 0.15
 RERANKER_LLM_REQUIRE_CROSS_SOURCE_CONFLICT: bool = True
 RERANKER_LLM_PROVENANCE_QUERIES: bool = True
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# LangGraph Pipeline Caps
+# ═══════════════════════════════════════════════════════════════════════════════
+
+LANGGRAPH_MAX_DIRECT_RETRIEVAL_CANDIDATES: int = 160
+LANGGRAPH_MAX_GIST_EXPANSION_CANDIDATES: int = 80
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # Routing
@@ -145,6 +163,7 @@ PREVIOUS_CHAT_GIST_MAX_MESSAGES_PER_GIST: int = 5
 # ═══════════════════════════════════════════════════════════════════════════════
 
 DEMO_MEMORY_TRACE: bool = False
+RETRIEVAL_LOG_ENABLED: bool = True
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # Push all settings into os.environ so downstream os.getenv() calls see them.
@@ -168,6 +187,7 @@ _setenv("DOCUMENT_CHUNKER", DOCUMENT_CHUNKER)
 _setenv("DOCUMENT_CHUNK_SIZE", str(DOCUMENT_CHUNK_SIZE))
 _setenv("DOCUMENT_CHUNK_OVERLAP", str(DOCUMENT_CHUNK_OVERLAP))
 _setenv("DOCUMENT_TOP_K", str(DOCUMENT_TOP_K))
+_setenv("DOCUMENT_RETRIEVAL_FETCH_LIMIT", str(DOCUMENT_RETRIEVAL_FETCH_LIMIT))
 _setenv("EMBEDDING_MODEL_NAME", EMBEDDING_MODEL_NAME)
 _setenv("LANGCHAIN_CHROMA_PERSIST_DIR", LANGCHAIN_CHROMA_PERSIST_DIR)
 _setenv("LANGCHAIN_CHUNK_SIZE", str(LANGCHAIN_CHUNK_SIZE))
@@ -190,6 +210,8 @@ _setenv(
 _setenv("RERANKER_LLM_PROVENANCE_QUERIES", "1" if RERANKER_LLM_PROVENANCE_QUERIES else "0")
 _setenv("ROUTING_MODE", ROUTING_MODE)
 _setenv("ORCHESTRATION_MODE", ORCHESTRATION_MODE)
+_setenv("LANGGRAPH_MAX_DIRECT_RETRIEVAL_CANDIDATES", str(LANGGRAPH_MAX_DIRECT_RETRIEVAL_CANDIDATES))
+_setenv("LANGGRAPH_MAX_GIST_EXPANSION_CANDIDATES", str(LANGGRAPH_MAX_GIST_EXPANSION_CANDIDATES))
 _setenv("BASE_MEMORY_BUDGET", str(BASE_MEMORY_BUDGET))
 _setenv("MEMORY_RECALL_BUDGET_TOKENS", str(MEMORY_RECALL_BUDGET_TOKENS))
 _setenv("GLOBAL_SUMMARY_BUDGET_TOKENS", str(GLOBAL_SUMMARY_BUDGET_TOKENS))
@@ -215,4 +237,5 @@ _setenv(
 _setenv("PREVIOUS_CHAT_GIST_EXTRACTOR", PREVIOUS_CHAT_GIST_EXTRACTOR)
 _setenv("PREVIOUS_CHAT_GIST_MAX_MESSAGES_PER_GIST", str(PREVIOUS_CHAT_GIST_MAX_MESSAGES_PER_GIST))
 _setenv("DEMO_MEMORY_TRACE", "1" if DEMO_MEMORY_TRACE else "0")
+_setenv("RETRIEVAL_LOG_ENABLED", "1" if RETRIEVAL_LOG_ENABLED else "0")
 _setenv("CHAT_DOCUMENT_SCOPE_STICKY", "true")

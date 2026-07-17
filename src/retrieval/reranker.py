@@ -695,22 +695,38 @@ def combine_cross_encoder_scores(
         deterministic_scores,
         strict=True,
     ):
-        combined_score = (
-            cross_encoder_weight * float(semantic)
-            + (1.0 - cross_encoder_weight) * deterministic_score
-        )
-        combined_pool.append(
-            replace(
-                candidate,
-                score=combined_score,
-                metadata={
-                    **candidate.metadata,
-                    "cross_encoder_score": float(semantic),
-                    "normalized_deterministic_score": deterministic_score,
-                    "combined_score": combined_score,
-                },
+        if candidate.metadata.get("skip_rerank"):
+            # Preserve original score for skip_rerank candidates (e.g. pre-computed summaries)
+            combined_score = candidate.score or 0.0
+            combined_pool.append(
+                replace(
+                    candidate,
+                    metadata={
+                        **candidate.metadata,
+                        "cross_encoder_score": float(semantic),
+                        "normalized_deterministic_score": deterministic_score,
+                        "combined_score": combined_score,
+                        "cross_encoder_skipped": True,
+                    },
+                )
             )
-        )
+        else:
+            combined_score = (
+                cross_encoder_weight * float(semantic)
+                + (1.0 - cross_encoder_weight) * deterministic_score
+            )
+            combined_pool.append(
+                replace(
+                    candidate,
+                    score=combined_score,
+                    metadata={
+                        **candidate.metadata,
+                        "cross_encoder_score": float(semantic),
+                        "normalized_deterministic_score": deterministic_score,
+                        "combined_score": combined_score,
+                    },
+                )
+            )
     combined_pool.sort(
         key=lambda candidate: (
             -(candidate.score if candidate.score is not None else 0.0),

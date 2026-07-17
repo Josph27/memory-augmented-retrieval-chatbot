@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import json
+import os
 from dataclasses import replace
+from pathlib import Path
 from time import perf_counter
 from uuid import uuid4
 
@@ -144,6 +147,20 @@ class CoordinatorAgent:
         ranked_candidates = rerank_result.candidates
         reranker_metadata = rerank_result.metadata
         timings["reranking"] = elapsed_ms(stage_started)
+
+        # Compute turn index for potential retrieval log (dump happens later after context assembly)
+        turn_index: int | None = None
+        if os.environ.get("RETRIEVAL_LOG_ENABLED", "1").strip().lower() in {
+            "1",
+            "true",
+            "yes",
+            "on",
+        }:
+            try:
+                turn_index = self.database.message_count(chat_id) // 2
+            except Exception:
+                pass
+
         latest_user_message = {"role": "user", "content": content}
         stage_started = perf_counter()
         context_manager = self.context_manager_agent or ContextManagerAgent(
@@ -220,6 +237,14 @@ class CoordinatorAgent:
         retrieved_candidates = list(authoritative_trace.retrieved_candidates)
         ranked_candidates = list(authoritative_trace.ranked_candidates)
         context_budget = trace_context_packet.budget or context_budget
+
+        # Dump retrieval log after context assembly so we know which chunks made it into the prompt
+        if turn_index is not None:
+            try:
+                in_prompt_ids = {str(c.record_id) for c in (trace_context_packet.candidates or [])}
+                _dump_retrieval_log(chat_id, turn_index, ranked_candidates, in_prompt_ids)
+            except Exception:
+                pass
         if authoritative_orchestration.mode == LANGGRAPH_DEMO:
             graph_metadata = authoritative_trace.metadata
             reranker_metadata = dict(graph_metadata.get("reranker", {}))
@@ -401,6 +426,7 @@ class CoordinatorAgent:
                 "retrieved_memory_rows": retrieved_memory_rows,
                 "retrieved_document_rows": retrieved_document_rows,
                 "retrieval_errors": retrieval_errors,
+                "turn_index": turn_index,
             },
         )
         self._log_trace(trace)
@@ -500,6 +526,52 @@ class CoordinatorAgent:
                 f"update_memory_if_needed_ms={timings.get('update_memory_if_needed')} "
                 f"total_turn_ms={timings.get('total_turn')}"
             )
+
+
+def _dump_retrieval_log(
+    chat_id: str,
+    turn_index: int,
+    candidates: list,
+    in_prompt_ids: set[str] | None = None,
+) -> None:
+    """Dump document candidates to a JSON log file for debugging."""
+    log_dir = Path("logs/retrieval") / chat_id
+    log_dir.mkdir(parents=True, exist_ok=True)
+    filepath = log_dir / f"turn_{turn_index}.json"
+    prompt_ids = in_prompt_ids or set()
+
+    rows: list[dict] = []
+    seen_ids: set[str] = set()
+    for rank, candidate in enumerate(candidates):
+        if candidate.source != "document_memory":
+            continue
+        meta = dict(candidate.metadata)
+        cid = f"{meta.get('document_id', '')}:{meta.get('chunk_index', '')}" or str(
+            candidate.record_id
+        )
+        if cid in seen_ids:
+            continue
+        seen_ids.add(cid)
+        in_prompt = cid in prompt_ids or str(candidate.record_id) in prompt_ids
+        rows.append(
+            {
+                "rank": rank,
+                "content": candidate.content,
+                "window_expanded": bool(meta.get("sentence_window_expansion")),
+                "in_prompt": in_prompt,
+                "score": candidate.score,
+                "similarity_score": meta.get("similarity_score"),
+                "cross_encoder_score": meta.get("cross_encoder_score"),
+                "combined_score": meta.get("combined_score"),
+                "document_id": meta.get("document_id"),
+                "chunk_index": meta.get("chunk_index"),
+                "file_name": meta.get("file_name"),
+                "retrieval_mode": meta.get("retrieval_mode"),
+            }
+        )
+
+    with open(filepath, "w") as f:
+        json.dump(rows, f, ensure_ascii=False, indent=2)
 
 
 def require_document_memory(decision: RoutingDecision) -> RoutingDecision:
