@@ -476,3 +476,81 @@ The system has a safety net: if the new trace-context pipeline produces an inval
 the answer automatically falls back to the legacy `ShortTermMemory` +
 `ContextBuilderAgent` message path. This prevents context budgeting bugs and
 pipeline misconfiguration from breaking user-visible answers.
+
+---
+
+## 6. Document Retrieval Pipeline (2026-07-17 Update)
+
+### 6.1 Chunk Size Aligned to Embedding Model
+
+The embedding model `all-MiniLM-L6-v2` caps input at 256 word-pieces and was
+trained at 128 tokens. Chunk size is now 256 characters (was 1000), with 22%
+overlap (56 characters). This ensures the model embeds full chunk content
+without silent truncation.
+
+Env vars: `LANGCHAIN_CHUNK_SIZE` (256), `LANGCHAIN_CHUNK_OVERLAP` (56).
+
+### 6.2 Hybrid Retrieval (Semantic + Lexical)
+
+`LangChainChromaRetriever.retrieve()` fetches 2× the requested limit from
+Chroma, then blends 70% semantic similarity with 30% lexical overlap score via
+`_hybrid_rerank()`. Lexical scoring catches exact string matches (e.g. "Problem
+3") that embedding models encode weakly.
+
+### 6.3 Neighbor Chunk Expansion
+
+After top-k selection, ±1 neighboring chunks are fetched from Chroma and
+appended. Not counted toward the retrieval limit. Marked with
+`retrieval_mode: "neighbor_expansion"` in metadata.
+
+### 6.4 Intent-Aware Top-K
+
+`DOCUMENT_TOP_K` defaults to 40 (was 8), scaled 5× to match the ~4× smaller
+chunks. Route planner `document_memory` source limit is 20. The dispatcher
+boosts to 40 when `context_profile == "document_question"`.
+
+### 6.5 Document Summarization at Ingestion
+
+`DocumentIngestionAgent` generates a pre-computed document summary via LLM
+after indexing. Stored in `document_records.summary_text` (SQLite, with
+migration). For summary-like queries ("summarize", "contents", "overview"),
+the retriever returns the pre-computed summary as a `MemoryCandidate` with
+`skip_rerank: True` — the reranker preserves its original score (0.95).
+
+Summary queries are detected via `SUMMARY_QUERY_TERMS` in
+`langchain_chroma_retriever.py` and via expanded `document_terms` in
+`QueryAnalyzerPolicy` ("contents", "overview", "what is in the document", etc.).
+
+### 6.6 Document Scope Sticky Routing
+
+When a chat has associated documents (in `chat_documents` table),
+`document_memory` is always force-enabled in the route plan. A
+`force_enabled_sources` parameter flows from `CoordinatorAgent.run_turn()`
+through `run_read_only_langgraph_orchestration()` → LangGraph initial state →
+`_route_node()`, which merges forced sources into the semantic router's output.
+Controlled by `CHAT_DOCUMENT_SCOPE_STICKY` env var (default `"true"`).
+
+New functions: `_chat_has_documents()`, `require_chat_document_memory()`,
+`_merge_force_enabled_sources()`.
+
+### 6.7 skip_rerank Mechanism
+
+Candidates with `skip_rerank: True` metadata bypass the deterministic reranker,
+preserving their original score. The reranker attaches required metadata
+(`original_rank`, `reranker_candidate_id`, `score_breakdown`) to these
+candidates so downstream trace builders never hit KeyErrors.
+
+### 6.8 Retrieval Flow (Updated)
+
+```
+User query
+  → RoutingAgent.route() includes sticky document scope check
+  → RetrieverDispatcher.retrieve()
+      → LangChainChromaRetriever.retrieve()
+          → _try_summary_candidate() — pre-computed summary for summary queries
+          → Chroma similarity_search (2× limit)
+          → _hybrid_rerank() — 70% semantic + 30% lexical blend
+          → _expand_neighbors() — ±1 context chunks
+  → MemoryReranker.rank() — skip_rerank candidates preserve score
+  → ContextManagerAgent → ContextPacket → LLM
+```

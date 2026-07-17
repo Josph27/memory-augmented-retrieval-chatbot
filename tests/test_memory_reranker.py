@@ -93,10 +93,7 @@ def test_raw_message_span_gets_provenance_query_boost() -> None:
     )
 
     assert ranked[0].source == "raw_message_span"
-    assert (
-        ranked[0].metadata["score_breakdown"]["features"]["query_source_boost"]
-        == 1.0
-    )
+    assert ranked[0].metadata["score_breakdown"]["features"]["query_source_boost"] == 1.0
 
 
 def test_previous_chat_gist_gets_earlier_discussion_boost() -> None:
@@ -377,9 +374,7 @@ def test_cross_encoder_falls_back_on_backend_exception() -> None:
 
 
 def test_cross_encoder_falls_back_when_backend_is_unavailable() -> None:
-    backend = FakeCrossEncoderBackend(
-        error=CrossEncoderUnavailable("model unavailable")
-    )
+    backend = FakeCrossEncoderBackend(error=CrossEncoderUnavailable("model unavailable"))
     result = MemoryReranker(
         mode="cross_encoder",
         cross_encoder_backend=backend,
@@ -414,9 +409,7 @@ def test_cross_encoder_falls_back_on_empty_scores() -> None:
 
 
 def test_deterministic_mode_never_calls_cross_encoder_backend() -> None:
-    backend = FakeCrossEncoderBackend(
-        error=AssertionError("backend should not be called")
-    )
+    backend = FakeCrossEncoderBackend(error=AssertionError("backend should not be called"))
 
     result = MemoryReranker(
         mode="deterministic",
@@ -566,17 +559,12 @@ def test_hybrid_cross_encoder_backend_never_calls_llm() -> None:
 
     assert result.metadata["cross_encoder_used"] is True
     assert result.metadata["llm_rerank_used"] is False
-    assert (
-        result.metadata["llm_rerank_skip_reason"]
-        == "hybrid_backend_cross_encoder_only"
-    )
+    assert result.metadata["llm_rerank_skip_reason"] == "hybrid_backend_cross_encoder_only"
     assert model.calls == 0
 
 
 def test_hybrid_llm_backend_never_calls_cross_encoder() -> None:
-    backend = FakeCrossEncoderBackend(
-        error=AssertionError("cross encoder must not be called")
-    )
+    backend = FakeCrossEncoderBackend(error=AssertionError("cross encoder must not be called"))
     model = FakeRerankerModel(
         '{"ranked_candidate_ids":["c1","c0"],"confidence":0.9,"reason":"ambiguous"}'
     )
@@ -647,3 +635,86 @@ def test_hybrid_llm_failure_preserves_cross_encoder_order() -> None:
     assert result.metadata["llm_rerank_used"] is False
     assert result.metadata["fallback_used"] is True
     assert "LLM unavailable" in result.metadata["fallback_reason"]
+
+
+def test_skip_rerank_preserves_score_and_rank() -> None:
+    """Candidates with skip_rerank=True keep their score and rank above others."""
+    result = MemoryReranker().rank_with_trace(
+        [
+            candidate("document_memory", "Regular chunk one.", metadata={"similarity_score": 0.5}),
+            MemoryCandidate(
+                source="document_memory",
+                content="Pre-computed summary.",
+                score=0.95,
+                record_id="doc:summary",
+                metadata={
+                    "skip_rerank": True,
+                    "document_id": "doc",
+                    "retrieval_mode": "pre_computed_summary",
+                },
+            ),
+            candidate("document_memory", "Regular chunk two.", metadata={"similarity_score": 0.4}),
+        ],
+        ranking_profile="test",
+        query="summarize the document",
+    )
+    assert result.candidates[0].record_id == "doc:summary"
+    assert result.candidates[0].score == 0.95
+    assert result.candidates[0].metadata["original_rank"] == 1
+    assert result.candidates[0].metadata["reranker_candidate_id"] == "c1"
+    assert "skip_rerank" in result.candidates[0].metadata
+    assert "score_breakdown" in result.candidates[0].metadata
+    assert "final_rank" in result.candidates[0].metadata
+
+
+def test_skip_rerank_trace_has_no_key_errors() -> None:
+    """deterministic_trace must not crash on skip_rerank candidates."""
+    result = MemoryReranker().rank_with_trace(
+        [
+            MemoryCandidate(
+                source="document_memory",
+                content="Pre-computed summary.",
+                score=0.95,
+                record_id="doc:summary",
+                metadata={"skip_rerank": True},
+            ),
+        ],
+        ranking_profile="test",
+        query="summarize",
+    )
+    # If we got here without crashing, the trace was built successfully.
+    assert result.metadata["fallback_used"] is False
+    assert len(result.metadata["deterministic_scores"]) == 1
+    trace_entry = result.metadata["deterministic_scores"][0]
+    assert trace_entry["candidate_id"] == "c0"
+    assert trace_entry["score"] == 0.95
+    # feature_contributions must be present (even if empty for skip_rerank).
+    assert "feature_contributions" in trace_entry
+
+
+def test_skip_rerank_mixed_with_regular_candidates() -> None:
+    """skip_rerank candidate ranks above regular candidates regardless of content."""
+    result = MemoryReranker().rank_with_trace(
+        [
+            candidate(
+                "document_memory",
+                "Highly relevant text that matches query exactly.",
+                metadata={"similarity_score": 0.9},
+            ),
+            MemoryCandidate(
+                source="document_memory",
+                content="Summary with no query overlap.",
+                score=0.95,
+                record_id="doc:summary",
+                metadata={"skip_rerank": True},
+            ),
+        ],
+        ranking_profile="test",
+        query="Highly relevant text that matches query exactly",
+    )
+    # The exact-match regular candidate may outrank the summary (correct!).
+    # But both must be present and the summary's score must be preserved.
+    summary = [c for c in result.candidates if c.record_id == "doc:summary"]
+    assert len(summary) == 1
+    assert summary[0].score == 0.95
+    assert "skip_rerank" in summary[0].metadata

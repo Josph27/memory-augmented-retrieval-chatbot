@@ -36,6 +36,7 @@ class RetrieverDispatcher:
         retrievers: dict[str, SourceRetriever] | None = None,
         gist_expander: GistRawSpanExpander | None = None,
         direct_raw_candidate_limit: int | None = None,
+        summary_getter: object | None = None,
     ) -> None:
         self.database = database
         self.last_errors: list[dict[str, str]] = []
@@ -43,7 +44,9 @@ class RetrieverDispatcher:
         self.retrievers: dict[str, SourceRetriever] = retrievers or {
             "recent_messages": RecentMessagesRetriever(database, default_limit=raw_message_limit),
             "structured_memory": StructuredMemoryRetriever(database),
-            "document_memory": langchain_chroma_retriever_for_env(database),
+            "document_memory": langchain_chroma_retriever_for_env(
+                database, summary_getter=summary_getter
+            ),
             "current_chat_gist": CurrentChatGistRetriever(database),
             "current_chat_span": CurrentChatSpanRetriever(database),
             "previous_chat_gist": PreviousChatGistRetriever(database),
@@ -139,7 +142,10 @@ class RetrieverDispatcher:
         return replace(source_plan, filters=filters)
 
 
-def langchain_chroma_retriever_for_env(database: Database) -> SourceRetriever:
+def langchain_chroma_retriever_for_env(
+    database: Database,
+    summary_getter: object | None = None,
+) -> SourceRetriever:
     """Select the LangChain-Chroma document retrieval backend."""
     mode = os.getenv("DOCUMENT_RETRIEVAL_MODE", "langchain_chroma").strip().lower()
     if mode != "langchain_chroma":
@@ -147,4 +153,4 @@ def langchain_chroma_retriever_for_env(database: Database) -> SourceRetriever:
             f"unsupported_document_retrieval_mode mode={mode!r} falling_back_to='langchain_chroma'"
         )
     del database
-    return LangChainChromaRetriever.from_env()
+    return LangChainChromaRetriever.from_env(summary_getter=summary_getter)

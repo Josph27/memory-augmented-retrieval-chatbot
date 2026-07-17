@@ -9,6 +9,24 @@ from src.core.contracts import MemoryCandidate, SourcePlan
 from src.documents.splitters import DEFAULT_CHUNK_OVERLAP, DEFAULT_CHUNK_SIZE
 
 
+# Queries that should retrieve the pre-computed document summary instead of raw chunks.
+SUMMARY_QUERY_TERMS = frozenset(
+    {
+        "summarize",
+        "summary",
+        "overview",
+        "contents",
+        "what are the contents",
+        "what is in the document",
+        "what does the document contain",
+        "what does it contain",
+        "what's in the",
+        "tell me about the document",
+        "describe the document",
+    }
+)
+
+
 DEFAULT_CHROMA_PERSIST_DIR = "data/chroma"
 DEFAULT_COLLECTION_NAME = "document_memory"
 DEFAULT_EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
@@ -38,6 +56,7 @@ class LangChainChromaRetriever:
         chunk_overlap: int = DEFAULT_CHUNK_OVERLAP,
         default_top_k: int = 4,
         fallback_retriever: object | None = None,
+        summary_getter: object | None = None,
     ) -> None:
         self.persist_dir = Path(persist_dir)
         self.collection_name = collection_name
@@ -46,12 +65,14 @@ class LangChainChromaRetriever:
         self.chunk_overlap = chunk_overlap
         self.default_top_k = default_top_k
         self.fallback_retriever = fallback_retriever
+        self.summary_getter = summary_getter
         self._vector_store = None
 
     @classmethod
     def from_env(
         cls,
         fallback_retriever: object | None = None,
+        summary_getter: object | None = None,
     ) -> "LangChainChromaRetriever":
         """Build a LangChain-Chroma retriever from environment variables."""
         return cls(
@@ -61,6 +82,7 @@ class LangChainChromaRetriever:
             chunk_overlap=int(os.getenv("LANGCHAIN_CHUNK_OVERLAP", str(DEFAULT_CHUNK_OVERLAP))),
             default_top_k=int(os.getenv("DOCUMENT_TOP_K", "40")),
             fallback_retriever=fallback_retriever,
+            summary_getter=summary_getter,
         )
 
     def index_text_document(
@@ -113,14 +135,25 @@ class LangChainChromaRetriever:
         similarity with a lexical overlap score to boost exact keyword matches.
         After selecting the top-k, expands each result with its ±1 neighboring
         chunks (not counted toward the limit) to provide surrounding context.
+
+        For summary-like queries ("summarize", "contents", "overview"), returns
+        the pre-computed document summary as a candidate when available.
         """
         del chat_id
         query = source_plan.query or ""
         limit = source_plan.limit or self.default_top_k
-        fetch_limit = max(limit * 2, limit + 8)
         allowed_ids = source_plan.filters.get("allowed_document_ids")
+
+        # For summary-like queries, try the pre-computed document summary first.
+        summary_candidate = _try_summary_candidate(
+            query=query,
+            allowed_ids=allowed_ids,
+            summary_getter=self.summary_getter,
+        )
+
         if allowed_ids is not None and not allowed_ids:
             return []
+        fetch_limit = max(limit * 2, limit + 8)
         try:
             if allowed_ids is None:
                 documents_with_scores = self._similarity_search(
@@ -144,6 +177,22 @@ class LangChainChromaRetriever:
                 candidates = _hybrid_rerank(candidates, query, limit)
             else:
                 candidates = candidates[:limit]
+            # Cap limit to available candidates so small docs don't over-retrieve.
+            limit = min(limit, len(candidates))
+            if summary_candidate is not None:
+                summary_candidate = MemoryCandidate(
+                    source=summary_candidate.source,
+                    content=summary_candidate.content,
+                    score=summary_candidate.score,
+                    record_id=summary_candidate.record_id,
+                    chat_id=summary_candidate.chat_id,
+                    source_message_ids=list(summary_candidate.source_message_ids),
+                    metadata={
+                        **summary_candidate.metadata,
+                        "skip_rerank": True,
+                    },
+                )
+                candidates.insert(0, summary_candidate)
             candidates = _expand_neighbors(
                 candidates,
                 vectorstore=self._vectorstore(),
@@ -277,6 +326,48 @@ def langchain_document_to_memory_candidate(document, score: float | None = None)
         record_id=metadata.get("chunk_id") or metadata.get("document_id"),
         source_message_ids=[],
         metadata=metadata,
+    )
+
+
+def _try_summary_candidate(
+    query: str,
+    allowed_ids: list[str] | tuple[str, ...] | None,
+    summary_getter: object | None,
+) -> MemoryCandidate | None:
+    """Return a pre-computed document summary candidate for summary-like queries.
+
+    Checks if the query matches summary terms and retrieves the pre-computed
+    document summary from the SQLite store via the summary_getter callable.
+    """
+    query_lower = query.lower().strip()
+    if not any(term in query_lower for term in SUMMARY_QUERY_TERMS):
+        return None
+    if not allowed_ids or summary_getter is None:
+        return None
+
+    doc_id = str(allowed_ids[0])
+    try:
+        if hasattr(summary_getter, "document_summary"):
+            summary_text = summary_getter.document_summary(doc_id)
+        else:
+            summary_text = summary_getter(doc_id)
+    except Exception:
+        return None
+
+    if not summary_text or not str(summary_text).strip():
+        return None
+
+    return MemoryCandidate(
+        source="document_memory",
+        content=str(summary_text),
+        score=0.95,
+        record_id=f"{doc_id}:summary",
+        metadata={
+            "document_id": doc_id,
+            "retrieval_mode": "pre_computed_summary",
+            "retrieval_backend": "langchain_chroma",
+            "status": "active",
+        },
     )
 
 

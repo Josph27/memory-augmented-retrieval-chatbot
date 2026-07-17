@@ -41,14 +41,15 @@ online trigger threshold.
 upload
 -> document_records row
 -> chat_documents association
--> indexing
+-> indexing (256-token chunks, hybrid retrieval)
+-> summary generation (LLM, stored in summary_text)
 -> Ready or Failed
--> scoped retrieval
+-> scoped retrieval (with sticky scope + pre-computed summaries)
 ```
 
 SQLite stores document lifecycle metadata and chat-document associations:
 
-- `document_records`: file name, status, chunk count, error, metadata;
+- `document_records`: file name, status, chunk count, error, summary_text, metadata;
 - `chat_documents`: which chat may retrieve which document;
 - `operation_results`: idempotent upload operation records.
 

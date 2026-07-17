@@ -120,6 +120,8 @@ class ChatService:
         self.previous_chat_gist_generator = previous_chat_gist_generator
         self.document_ingestion_agent = DocumentIngestionAgent(
             indexer=document_indexer,
+            summary_model=model,
+            summary_database=database,
         )
         self.memory = ShortTermMemory(
             database=database,
@@ -150,6 +152,7 @@ class ChatService:
                     else raw_message_limit
                 ),
                 direct_raw_candidate_limit=direct_raw_retrieval_candidates,
+                summary_getter=database,
             ),
             routing_agent=RoutingAgent(mode=routing_mode, model=model),
             memory_reranker=MemoryReranker(
@@ -162,9 +165,7 @@ class ChatService:
                 cross_encoder_weight=reranker_cross_encoder_weight,
                 hybrid_backend=reranker_hybrid_backend,
                 llm_ambiguity_margin=reranker_llm_ambiguity_margin,
-                llm_require_cross_source_conflict=(
-                    reranker_llm_require_cross_source_conflict
-                ),
+                llm_require_cross_source_conflict=(reranker_llm_require_cross_source_conflict),
                 llm_provenance_queries=reranker_llm_provenance_queries,
             ),
             context_manager_agent=ContextManagerAgent.for_model(
@@ -180,17 +181,11 @@ class ChatService:
                     multi_scope_memory_cap=multi_scope_memory_cap,
                     long_document_memory_cap=long_document_memory_cap,
                     global_summary_budget_tokens=global_summary_budget_tokens,
-                    global_summary_max_budget_tokens=(
-                        global_summary_max_budget_tokens
-                    ),
+                    global_summary_max_budget_tokens=(global_summary_max_budget_tokens),
                     global_summary_reserved_tokens=global_summary_reserved_tokens,
-                    required_evidence_headroom_ratio=(
-                        required_evidence_headroom_ratio
-                    ),
+                    required_evidence_headroom_ratio=(required_evidence_headroom_ratio),
                 ),
-                minimum_optional_candidate_utility=(
-                    minimum_optional_candidate_utility
-                ),
+                minimum_optional_candidate_utility=(minimum_optional_candidate_utility),
                 raw_span_overlap_threshold=raw_span_overlap_threshold,
             ),
         )
@@ -257,9 +252,7 @@ class ChatService:
         with guarded_chat_operation(self.database.path, chat_id):
             file_name = display_name or Path(path).name
             previous_operation = (
-                self.database.get_operation_result(operation_id)
-                if operation_id
-                else None
+                self.database.get_operation_result(operation_id) if operation_id else None
             )
             if previous_operation is not None:
                 if (
@@ -294,9 +287,7 @@ class ChatService:
                     if not claimed:
                         existing = self.database.get_document(document_id)
                         if existing is None:
-                            raise RuntimeError(
-                                "upload retry references a missing document record"
-                            )
+                            raise RuntimeError("upload retry references a missing document record")
                         if existing.status == "Ready":
                             self.database.associate_document_with_chat(
                                 chat_id,
@@ -407,11 +398,7 @@ class ChatService:
         content: str,
     ) -> None:
         message = next(
-            (
-                item
-                for item in self.database.messages_for_chat(chat_id)
-                if item.id == message_id
-            ),
+            (item for item in self.database.messages_for_chat(chat_id) if item.id == message_id),
             None,
         )
         if message is None or message.role != "user" or message.content != content:

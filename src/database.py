@@ -67,6 +67,7 @@ class StoredDocument:
     source: str | None
     chunk_count: int
     error: str | None
+    summary_text: str | None
     created_at: str
     updated_at: str
     metadata_json: str
@@ -203,6 +204,7 @@ class Database:
                     source TEXT,
                     chunk_count INTEGER NOT NULL DEFAULT 0,
                     error TEXT,
+                    summary_text TEXT,
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL,
                     metadata_json TEXT NOT NULL DEFAULT '{}'
@@ -252,6 +254,7 @@ class Database:
             self._ensure_chats_active_column(connection)
             self._drop_legacy_document_tables(connection)
             self._ensure_document_status_check_allows_deleted(connection)
+            self._ensure_document_summary_text_column(connection)
             connection.execute(
                 """
                 CREATE INDEX IF NOT EXISTS idx_messages_chat_summarized
@@ -333,6 +336,15 @@ class Database:
         columns = {row["name"] for row in connection.execute("PRAGMA table_info(chats)").fetchall()}
         if "active" not in columns:
             connection.execute("ALTER TABLE chats ADD COLUMN active INTEGER NOT NULL DEFAULT 1")
+
+    def _ensure_document_summary_text_column(self, connection: sqlite3.Connection) -> None:
+        """Add `document_records.summary_text` for pre-computed document summaries."""
+        columns = {
+            row["name"]
+            for row in connection.execute("PRAGMA table_info(document_records)").fetchall()
+        }
+        if "summary_text" not in columns:
+            connection.execute("ALTER TABLE document_records ADD COLUMN summary_text TEXT")
 
     def _ensure_document_status_check_allows_deleted(self, connection: sqlite3.Connection) -> None:
         """Widen the document_records CHECK constraint to accept 'deleted' status."""
@@ -858,6 +870,32 @@ class Database:
                 (status, chunk_count, error, timestamp, document_id),
             )
 
+    def update_document_summary(
+        self,
+        document_id: str,
+        summary_text: str,
+    ) -> None:
+        """Store or replace the pre-computed document summary."""
+        timestamp = utc_now()
+        with self.connect() as connection:
+            connection.execute(
+                """
+                UPDATE document_records
+                SET summary_text = ?, updated_at = ?
+                WHERE id = ?
+                """,
+                (summary_text, timestamp, document_id),
+            )
+
+    def document_summary(self, document_id: str) -> str | None:
+        """Return the pre-computed summary for a document, or None."""
+        with self.connect() as connection:
+            row = connection.execute(
+                "SELECT summary_text FROM document_records WHERE id = ? AND status != 'deleted'",
+                (document_id,),
+            ).fetchone()
+        return str(row["summary_text"]) if row and row["summary_text"] else None
+
     def associate_document_with_chat(
         self,
         chat_id: str,
@@ -1073,6 +1111,7 @@ class Database:
             source=row["source"],
             chunk_count=int(row["chunk_count"]),
             error=row["error"],
+            summary_text=row["summary_text"] if "summary_text" in row.keys() else None,
             created_at=str(row["created_at"]),
             updated_at=str(row["updated_at"]),
             metadata_json=str(row["metadata_json"]),
