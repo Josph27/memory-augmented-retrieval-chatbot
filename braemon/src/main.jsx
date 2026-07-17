@@ -5,6 +5,7 @@ import { ChainlitContext, ChainlitAPI, useAuth } from "@chainlit/react-client";
 import "./index.css";
 import App from "./App.jsx";
 import ErrorBoundary from "./components/ErrorBoundary.jsx";
+import ModelLoadingScreen from "./components/ModelLoadingScreen.jsx";
 
 const CHAINLIT_URL =
 	typeof window !== "undefined"
@@ -53,7 +54,9 @@ createRoot(document.getElementById("root")).render(
 			<ChainlitContext.Provider value={apiClient}>
 				<ErrorBoundary>
 					<AuthWrapper>
-						<App />
+						<ModelLoadingScreen>
+							<App />
+						</ModelLoadingScreen>
 					</AuthWrapper>
 				</ErrorBoundary>
 			</ChainlitContext.Provider>

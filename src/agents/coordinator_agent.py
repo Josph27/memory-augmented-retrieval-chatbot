@@ -6,6 +6,7 @@ from uuid import uuid4
 
 from openai import OpenAIError
 
+from src.connection_guard import InferenceServerUnreachable
 from src.retrieval.langchain_chroma_retriever import LangChainChromaUnavailable
 from src.agents.chat_agent import ChatAgent
 from src.agents.context_builder_agent import ContextBuilderAgent
@@ -293,6 +294,11 @@ class CoordinatorAgent:
                 stage_started = perf_counter()
                 response = self.chat_agent.generate(final_model_messages)
                 timings["main_model_call"] = elapsed_ms(stage_started)
+            except InferenceServerUnreachable as error:
+                timings["main_model_call"] = elapsed_ms(stage_started)
+                errors.append(str(error))
+                answer_failed = True
+                response = str(error)
             except (OpenAIError, TimeoutError) as error:
                 timings["main_model_call"] = elapsed_ms(stage_started)
                 errors.append(str(error))
@@ -322,6 +328,9 @@ class CoordinatorAgent:
                 stage_started = perf_counter()
                 self.memory_agent.update_memory_if_needed(chat_id)
                 timings["update_memory_if_needed"] = elapsed_ms(stage_started)
+            except InferenceServerUnreachable as error:
+                timings["update_memory_if_needed"] = elapsed_ms(stage_started)
+                errors.append(str(error))
             except OpenAIError as error:
                 timings["update_memory_if_needed"] = elapsed_ms(stage_started)
                 errors.append(str(error))

@@ -6,6 +6,11 @@ import httpx
 from openai import OpenAI
 
 from src.config import AppConfig
+from src.connection_guard import (
+    ConnectionGuard,
+    InferenceServerUnreachable,
+    connection_guard_from_env,
+)
 
 _M_REQUEST_TIMEOUT = float(os.environ.get("MODEL_REQUEST_TIMEOUT", "35"))
 
@@ -17,9 +22,18 @@ class ModelWrapper:
     `/v1/chat/completions` endpoint by changing environment variables.
     """
 
-    def __init__(self, config: AppConfig, model_name: str | None = None) -> None:
+    def __init__(
+        self,
+        config: AppConfig,
+        model_name: str | None = None,
+        *,
+        connection_guard: ConnectionGuard | None = None,
+    ) -> None:
         self.model_name = model_name or config.model_name
         self._timeout = _M_REQUEST_TIMEOUT
+        self._guard = connection_guard or ConnectionGuard(
+            config.openai_base_url,
+        )
         self.client = OpenAI(
             api_key=config.openai_api_key,
             base_url=config.openai_base_url,
@@ -43,17 +57,27 @@ class ModelWrapper:
         if temperature is not None:
             kwargs["temperature"] = temperature
 
-        completion = self.client.chat.completions.create(
-            model=self.model_name,
-            messages=messages,
-            timeout=httpx.Timeout(
-                self._timeout,
-                connect=self._timeout,
-                read=self._timeout,
-                write=self._timeout,
-                pool=self._timeout,
-            ),
-            **kwargs,
-        )
+        # Quick pre-flight: fail fast if the server is known-unreachable.
+        self._guard.check()
+
+        try:
+            completion = self.client.chat.completions.create(
+                model=self.model_name,
+                messages=messages,
+                timeout=httpx.Timeout(
+                    self._timeout,
+                    connect=self._timeout,
+                    read=self._timeout,
+                    write=self._timeout,
+                    pool=self._timeout,
+                ),
+                **kwargs,
+            )
+        except (httpx.ConnectError, httpx.TimeoutException) as exc:
+            self._guard.mark_unreachable(reason=f"{type(exc).__name__}: {exc}")
+            raise InferenceServerUnreachable(
+                self._guard.base_url,
+                reason=f"{type(exc).__name__}: {exc}",
+            ) from exc
         content = completion.choices[0].message.content
         return (content or "").strip()

@@ -385,9 +385,13 @@ def test_agentic_each_turn_service_policy_evaluates_every_completed_turn(
     service.memory.token_estimator = WordCounter()
     chat_id = service.start_chat("chat")
 
-    service.handle_user_turn(chat_id, "first durable preference", defer_post_answer_memory_update=True)
+    service.handle_user_turn(
+        chat_id, "first durable preference", defer_post_answer_memory_update=True
+    )
     service.finalize_post_answer_memory_update(chat_id)
-    service.handle_user_turn(chat_id, "second durable preference", defer_post_answer_memory_update=True)
+    service.handle_user_turn(
+        chat_id, "second durable preference", defer_post_answer_memory_update=True
+    )
     service.finalize_post_answer_memory_update(chat_id)
 
     assert updater.call_messages == [
@@ -432,7 +436,8 @@ def test_legacy_raw_message_limit_env_does_not_shrink_recent_retrieval(
     monkeypatch.setenv("RAW_MESSAGE_LIMIT", "1")
     monkeypatch.delenv("RECENT_MESSAGES_MAX_COUNT", raising=False)
 
-    config = AppConfig.from_env()
+    config = AppConfig.load()
 
-    assert config.raw_message_limit == 1
-    assert config.recent_messages_max_count == 32
+    # settings.py is canonical — env vars do not override these values.
+    assert config.raw_message_limit == 8  # from settings.RAW_MESSAGE_LIMIT
+    assert config.recent_messages_max_count == 8  # from settings.RECENT_MESSAGES_MAX_COUNT

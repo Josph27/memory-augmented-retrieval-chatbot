@@ -12,6 +12,7 @@ from src.agents.context_manager_agent import ContextManagerAgent
 from src.agents.coordinator_agent import CoordinatorAgent
 from src.agents.document_ingestion_agent import DocumentIngestionAgent
 from src.agents.short_term_memory_agent import ShortTermMemoryAgent
+from src.connection_guard import InferenceServerUnreachable
 from src.core.contracts import AgentTurnResult
 from src.context.model_profile import DEFAULT_GEMMA_APPLICATION_CONTEXT_CAP
 from src.context.dynamic_budget import MemoryBudgetPolicy
@@ -155,18 +156,18 @@ class ChatService:
                 summary_getter=database,
             ),
             routing_agent=RoutingAgent(mode=routing_mode, model=model),
-            memory_reranker=MemoryReranker(
-                mode=reranker_mode,
-                model=model if reranker_mode in {"hybrid", "llm"} else None,
-                llm_top_k=reranker_llm_top_k,
-                llm_min_confidence=reranker_llm_min_confidence,
-                cross_encoder_model=reranker_cross_encoder_model,
-                cross_encoder_top_k=reranker_cross_encoder_top_k,
-                cross_encoder_weight=reranker_cross_encoder_weight,
-                hybrid_backend=reranker_hybrid_backend,
-                llm_ambiguity_margin=reranker_llm_ambiguity_margin,
-                llm_require_cross_source_conflict=(reranker_llm_require_cross_source_conflict),
-                llm_provenance_queries=reranker_llm_provenance_queries,
+            memory_reranker=self._build_reranker(
+                reranker_mode=reranker_mode,
+                model=model,
+                reranker_llm_top_k=reranker_llm_top_k,
+                reranker_llm_min_confidence=reranker_llm_min_confidence,
+                reranker_cross_encoder_model=reranker_cross_encoder_model,
+                reranker_cross_encoder_top_k=reranker_cross_encoder_top_k,
+                reranker_cross_encoder_weight=reranker_cross_encoder_weight,
+                reranker_hybrid_backend=reranker_hybrid_backend,
+                reranker_llm_ambiguity_margin=reranker_llm_ambiguity_margin,
+                reranker_llm_require_cross_source_conflict=reranker_llm_require_cross_source_conflict,
+                reranker_llm_provenance_queries=reranker_llm_provenance_queries,
             ),
             context_manager_agent=ContextManagerAgent.for_model(
                 getattr(model, "model_name", "unknown"),
@@ -189,6 +190,41 @@ class ChatService:
                 raw_span_overlap_threshold=raw_span_overlap_threshold,
             ),
         )
+
+    @staticmethod
+    def _build_reranker(
+        *,
+        reranker_mode: str,
+        model: ModelWrapper,
+        reranker_llm_top_k: int,
+        reranker_llm_min_confidence: float,
+        reranker_cross_encoder_model: str,
+        reranker_cross_encoder_top_k: int,
+        reranker_cross_encoder_weight: float,
+        reranker_hybrid_backend: str,
+        reranker_llm_ambiguity_margin: float,
+        reranker_llm_require_cross_source_conflict: bool,
+        reranker_llm_provenance_queries: bool,
+    ) -> MemoryReranker:
+        """Build the MemoryReranker and preload the cross-encoder eagerly."""
+        reranker = MemoryReranker(
+            mode=reranker_mode,
+            model=model if reranker_mode in {"hybrid", "llm"} else None,
+            llm_top_k=reranker_llm_top_k,
+            llm_min_confidence=reranker_llm_min_confidence,
+            cross_encoder_model=reranker_cross_encoder_model,
+            cross_encoder_top_k=reranker_cross_encoder_top_k,
+            cross_encoder_weight=reranker_cross_encoder_weight,
+            hybrid_backend=reranker_hybrid_backend,
+            llm_ambiguity_margin=reranker_llm_ambiguity_margin,
+            llm_require_cross_source_conflict=reranker_llm_require_cross_source_conflict,
+            llm_provenance_queries=reranker_llm_provenance_queries,
+        )
+        if reranker_mode in {"cross_encoder", "hybrid"}:
+            print("cross_encoder_preload starting...")
+            reranker.preload()
+            print("cross_encoder_preload complete")
+        return reranker
 
     def start_chat(self, chat_id: str | None = None) -> str:
         """Create a chat id for a Chainlit session."""
@@ -408,7 +444,7 @@ class ChatService:
         """Run the synchronous post-answer memory update after visible answer emission."""
         try:
             return self.memory.update_memory_if_needed(chat_id)
-        except OpenAIError:
+        except (OpenAIError, InferenceServerUnreachable):
             return False
 
 

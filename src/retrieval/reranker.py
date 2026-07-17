@@ -133,6 +133,17 @@ class MemoryReranker:
         self.llm_provenance_queries = llm_provenance_queries
         self.last_trace_metadata: dict[str, Any] = {}
 
+    def preload(self) -> None:
+        """Eagerly load the cross-encoder model so the first message is not delayed."""
+        if self.mode not in {"cross_encoder", "hybrid"}:
+            return
+        backend = self.cross_encoder_backend or SentenceTransformersCrossEncoderBackend(
+            self.cross_encoder_model
+        )
+        self.cross_encoder_backend = backend
+        if hasattr(backend, "preload"):
+            backend.preload()
+
     def rank(
         self,
         candidates: list[MemoryCandidate],

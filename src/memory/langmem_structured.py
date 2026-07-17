@@ -7,6 +7,11 @@ from typing import Any, Literal, Protocol
 
 from pydantic import BaseModel, Field
 
+from src.connection_guard import (
+    ConnectionGuard,
+    InferenceServerUnreachable,
+    connection_guard_from_env,
+)
 from src.database import StoredMessage
 from src.memory.long_term_store import (
     LongTermMemoryRecord,
@@ -153,10 +158,13 @@ class LangMemStructuredMemoryState:
         manager: LangMemManager | None = None,
         config: LangMemBackendConfig | None = None,
         long_term_store: LongTermMemoryStore | None = None,
+        *,
+        connection_guard: ConnectionGuard | None = None,
     ) -> None:
         self._manager = manager
         self._config = config or LangMemBackendConfig.from_env()
         self._long_term_store = long_term_store
+        self._guard = connection_guard or connection_guard_from_env()
         self.last_saved_records: list[LongTermMemoryWrite] = []
 
     def update(
@@ -183,6 +191,14 @@ class LangMemStructuredMemoryState:
             [record_to_memory_state_record(record) for record in long_term_records],
             normalized_memory["memories"],
         )
+        try:
+            self._guard.check()
+        except InferenceServerUnreachable as exc:
+            return MemoryUpdateResult(
+                memory_state={"memories": combined_existing_records},
+                accepted=False,
+                rejection_reason=f"langmem_update_failed:{exc.__class__.__name__}",
+            )
         try:
             extracted = self.manager.invoke(
                 {

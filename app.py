@@ -80,6 +80,9 @@ async def on_chat_start() -> None:
     cl.user_session.set(ORCHESTRATION_SETTING_ID, configured_orchestration_mode())
     cl.user_session.set("product_view", "home")
     cl.user_session.set("lifecycle_action_in_progress", None)
+    # Eagerly initialise ChatService so all models (embedding, cross-encoder)
+    # are loaded into RAM before the first user interaction.
+    chat_service_for_model(model_name)
     await send_product_state(view="home", chat_id=None, active=None)
 
 
@@ -844,8 +847,17 @@ def chat_service_for_model(model_name: str) -> ChatService:
     return chat_services[model_name]
 
 
-from src.api_routes import register_api_routes  # noqa: E402
+from src.api_routes import register_api_routes, set_models_ready  # noqa: E402
 
 register_api_routes(
     database=database, chat_service_getter=lambda: chat_service_for_model(config.model_name)
 )
+
+# Eagerly warm up models so the Braemon app sees them as ready.
+# This runs at import time when the Chainlit server starts.
+try:
+    chat_service_for_model(config.model_name)
+except Exception as exc:
+    print(f"Model warm-up failed: {exc}")
+finally:
+    set_models_ready()  # System is usable even if warm-up fails

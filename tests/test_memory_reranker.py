@@ -34,12 +34,16 @@ class FakeCrossEncoderBackend:
         self.scores = scores or []
         self.error = error
         self.calls: list[tuple[str, list[str]]] = []
+        self.preload_called = False
 
     def score(self, query: str, candidate_texts: list[str]) -> list[float]:
         self.calls.append((query, list(candidate_texts)))
         if self.error is not None:
             raise self.error
         return list(self.scores)
+
+    def preload(self) -> None:
+        self.preload_called = True
 
 
 def candidate(
@@ -718,3 +722,88 @@ def test_skip_rerank_mixed_with_regular_candidates() -> None:
     assert len(summary) == 1
     assert summary[0].score == 0.95
     assert "skip_rerank" in summary[0].metadata
+
+
+# ── Cross-encoder preload tests ──
+
+
+def test_cross_encoder_backend_preload_loads_model() -> None:
+    """SentenceTransformersCrossEncoderBackend.preload() eagerly loads _model."""
+    from src.retrieval.cross_encoder_reranker import (
+        SentenceTransformersCrossEncoderBackend,
+    )
+
+    backend = SentenceTransformersCrossEncoderBackend()
+    assert backend._model is None  # not loaded yet
+    backend.preload()
+    assert backend._model is not None  # loaded eagerly
+
+
+def test_reranker_preload_calls_backend_preload() -> None:
+    """MemoryReranker.preload() delegates to the cross-encoder backend."""
+    fake = FakeCrossEncoderBackend()
+    assert not fake.preload_called
+
+    reranker = MemoryReranker(
+        mode="cross_encoder",
+        cross_encoder_backend=fake,
+    )
+    reranker.preload()
+    assert fake.preload_called
+
+
+def test_reranker_preload_skips_for_deterministic_mode() -> None:
+    """MemoryReranker.preload() is a no-op when mode is deterministic."""
+    fake = FakeCrossEncoderBackend()
+    reranker = MemoryReranker(
+        mode="deterministic",
+        cross_encoder_backend=fake,
+    )
+    reranker.preload()
+    assert not fake.preload_called
+
+
+def test_build_reranker_preloads_for_cross_encoder_mode() -> None:
+    """ChatService._build_reranker() calls preload when mode is cross_encoder."""
+    from unittest.mock import patch
+
+    with patch("src.retrieval.reranker.MemoryReranker.preload") as mock_preload:
+        from src.chat_service import ChatService
+
+        ChatService._build_reranker(
+            reranker_mode="cross_encoder",
+            model=None,  # type: ignore[arg-type]
+            reranker_llm_top_k=10,
+            reranker_llm_min_confidence=0.55,
+            reranker_cross_encoder_model="BAAI/bge-reranker-v2-m3",
+            reranker_cross_encoder_top_k=10,
+            reranker_cross_encoder_weight=0.65,
+            reranker_hybrid_backend="auto",
+            reranker_llm_ambiguity_margin=0.15,
+            reranker_llm_require_cross_source_conflict=True,
+            reranker_llm_provenance_queries=True,
+        )
+        mock_preload.assert_called_once()
+
+
+def test_build_reranker_skips_preload_for_deterministic_mode() -> None:
+    """ChatService._build_reranker() does not preload for deterministic mode."""
+    from unittest.mock import patch
+
+    with patch("src.retrieval.reranker.MemoryReranker.preload") as mock_preload:
+        from src.chat_service import ChatService
+
+        ChatService._build_reranker(
+            reranker_mode="deterministic",
+            model=None,  # type: ignore[arg-type]
+            reranker_llm_top_k=10,
+            reranker_llm_min_confidence=0.55,
+            reranker_cross_encoder_model="BAAI/bge-reranker-v2-m3",
+            reranker_cross_encoder_top_k=10,
+            reranker_cross_encoder_weight=0.65,
+            reranker_hybrid_backend="auto",
+            reranker_llm_ambiguity_margin=0.15,
+            reranker_llm_require_cross_source_conflict=True,
+            reranker_llm_provenance_queries=True,
+        )
+        mock_preload.assert_not_called()

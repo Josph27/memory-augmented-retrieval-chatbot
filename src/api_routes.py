@@ -6,6 +6,7 @@ from typing import Any
 
 _database: Database | None = None
 _chat_service_getter: Any | None = None
+_models_ready = False
 
 
 def get_db() -> Database:
@@ -16,6 +17,12 @@ def get_db() -> Database:
 def get_chat_svc() -> Any:
     assert _chat_service_getter is not None
     return _chat_service_getter()
+
+
+def set_models_ready() -> None:
+    """Signal that all ML models have been loaded into memory."""
+    global _models_ready
+    _models_ready = True
 
 
 def register_api_routes(database: Database, chat_service_getter: Any) -> None:
@@ -314,6 +321,11 @@ def register_api_routes(database: Database, chat_service_getter: Any) -> None:
             return {"status": "deleted"}
         except Exception as e:
             return {"error": str(e)}, 500
+
+    @app.get("/api/models/status")
+    async def models_status():
+        """Return whether the backend models have finished loading."""
+        return {"ready": _models_ready}
 
     @app.get("/api/stats")
     async def system_stats():

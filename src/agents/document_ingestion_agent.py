@@ -83,7 +83,8 @@ class DocumentIngestionAgent:
         file_extension = str(loaded.metadata.get("file_extension", Path(file_name).suffix.lower()))
         final_document_id = str(document_id or indexed_document_id)
 
-        # Generate document summary asynchronously after indexing
+        # Generate document summary synchronously — must be ready before
+        # the first document query is answered.
         self._generate_summary(final_document_id, loaded.text)
 
         return DocumentIngestionResult(

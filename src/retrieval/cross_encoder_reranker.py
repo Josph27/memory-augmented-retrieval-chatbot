@@ -35,6 +35,10 @@ class SentenceTransformersCrossEncoderBackend:
     def model_name(self) -> str:
         return self._model_name
 
+    def preload(self) -> None:
+        """Load the cross-encoder model eagerly so the first message is not delayed."""
+        self._load_model()
+
     def score(self, query: str, candidate_texts: list[str]) -> list[float]:
         """Score query/candidate pairs and normalize logits to [0, 1]."""
         if not candidate_texts:
