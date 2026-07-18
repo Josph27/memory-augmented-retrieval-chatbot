@@ -6,7 +6,9 @@ an OpenAI-compatible model endpoint to answer from recent conversation,
 cross-chat memory, and uploaded documents.
 
 The default orchestration mode is `native` with a fast cross-encoder reranker
-(MiniLM). A quality mode (mxbai) is available via startup flag.
+(MiniLM). A quality mode (mxbai) is available via startup flag but is
+**experimental** — it has not been optimized or fully tested due to the
+heavy model weight and constrained development hardware.
 
 ## Implemented features
 
@@ -75,7 +77,7 @@ architecture.
    uv run python startup.py -w
    ```
 
-   Or use the quality mode:
+   Or use the quality mode (experimental — slower, not fully tested):
 
    ```bash
    uv run python startup.py --cross-encoder -w
@@ -89,7 +91,7 @@ architecture.
 | Flag | Reranker | Speed | Use when |
 | --- | --- | --- | --- |
 | `--hybrid` (default) | MiniLM cross-encoder + deterministic blend | Fast (~0.05s/pair) | Normal chat, demos |
-| `--cross-encoder` | mxbai DeBERTa cross-encoder only | Higher quality | Evaluation, precision retrieval |
+| `--cross-encoder` | mxbai DeBERTa cross-encoder only **(experimental)** | Higher quality, untested | Evaluation, precision retrieval |
 
 The `startup.py` script sets `RERANKER_STARTUP_MODE` and launches Chainlit.
 You can also set it directly as an env var:
@@ -130,7 +132,7 @@ Important optional variables:
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `RERANKER_STARTUP_MODE` | `hybrid` | `hybrid` (fast MiniLM + deterministic) or `cross_encoder` (mxbai quality). Set via `startup.py` flag or env. |
+| `RERANKER_STARTUP_MODE` | `hybrid` | `hybrid` (fast MiniLM + deterministic) or `cross_encoder` (experimental mxbai quality). Set via `startup.py` flag or env. |
 | `RERANKER_CROSS_ENCODER_MODEL` | `cross-encoder/ms-marco-MiniLM-L12-v2` | Cross-encoder model. Overridden by `RERANKER_STARTUP_MODE`. |
 | `RERANKER_CROSS_ENCODER_WEIGHT` | `0.65` | Blending weight (1.0 = pure CE). Overridden by `RERANKER_STARTUP_MODE`. |
 | `DATABASE_PATH` | `data/chatbot.db` | SQLite path. |

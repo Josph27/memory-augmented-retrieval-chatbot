@@ -42,9 +42,15 @@ current and intentional unless otherwise noted.
 - MAB and LongMemEval runs show quality weaknesses in retrieval, context
   selection, and answer use on hard held-out cases.
 - LongMemEval support is a pilot adapter, not an official leaderboard scorer.
-- Cross-encoder and LLM reranking are not enabled by default. Only the
-  deterministic reranker runs unless `RERANKER_MODE` is explicitly configured
-  and additional dependencies (e.g. sentence-transformers) are installed.
+- The `--cross-encoder` startup mode (mxbai DeBERTa model, ~142 MB) is
+  **experimental**.  It loads a substantially heavier model than the default
+  MiniLM path and has not been optimized or fully tested.  Development was
+  constrained by a weak laptop; retrieval quality, latency, and correctness
+  in `--cross-encoder` mode are not yet characterised.  Prefer `--hybrid`
+  (the default) for reproducible evaluations and demos.
+- Cross-encoder and LLM reranking are the supported reranker modes until "cross_encoder"
+  is properly validated. `RERANKER_MODE` defaults to `cross_encoder` but changes
+  to `hybrid` when `RERANKER_STARTUP_MODE=hybrid`.
 - Token counting relies on a Gemma-specific tokenizer loaded from Hugging
   Face. On any load or tokenization error, the estimator silently falls back
   to approximate character-based counting (4 chars/token), which can cause

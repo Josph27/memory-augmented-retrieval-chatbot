@@ -14,12 +14,13 @@ USAGE = """\
 Usage: uv run startup [--hybrid | --cross-encoder] [chainlit-flags ...]
 
   --hybrid          Fast mode: MiniLM cross-encoder + deterministic blend (default)
-  --cross-encoder   Quality mode: mxbai cross-encoder only (higher quality, slower)
+  --cross-encoder   EXPERIMENTAL: mxbai cross-encoder only (higher quality potential, but
+                    not optimized or fully tested due to heavy model + weak dev hardware)
   --help            Show this message
 
 Examples:
   uv run startup                                   # Default --hybrid
-  uv run startup --cross-encoder                   # Quality mode
+  uv run startup --cross-encoder                   # Experimental quality mode
   uv run startup --port 8000 --headless            # Hybrid with custom port
   uv run startup --cross-encoder --port 8000 -w
 """
