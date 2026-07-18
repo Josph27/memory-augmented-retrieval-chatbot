@@ -101,6 +101,7 @@ def build_langgraph_memory_pipeline(
     graph.add_node("retrieve", _retrieve_node(services))
     graph.add_node("expand_gists", _expand_gists_node(services))
     graph.add_node("rerank", _rerank_node(services))
+    graph.add_node("expand_doc_neighbors", _expand_doc_neighbors_node(services))
     graph.add_node("build_context", _build_context_node(services))
     graph.add_node("validate_evidence", _validate_evidence_contract_node())
     graph.add_node("mock_answer", _mock_answer_node())
@@ -111,7 +112,8 @@ def build_langgraph_memory_pipeline(
     graph.add_edge("route", "retrieve")
     graph.add_edge("retrieve", "expand_gists")
     graph.add_edge("expand_gists", "rerank")
-    graph.add_edge("rerank", "build_context")
+    graph.add_edge("rerank", "expand_doc_neighbors")
+    graph.add_edge("expand_doc_neighbors", "build_context")
     graph.add_edge("build_context", "validate_evidence")
     graph.add_conditional_edges(
         "validate_evidence",
@@ -329,6 +331,33 @@ def _rerank_node(services: LangGraphSpikeServices):  # type: ignore[no-untyped-d
         )
 
     return rerank_node
+
+
+def _expand_doc_neighbors_node(services: LangGraphSpikeServices):  # type: ignore[no-untyped-def]
+    def expand_doc_neighbors_node(
+        state: MemoryGraphState,
+    ) -> MemoryGraphState:
+        started = perf_counter()
+        candidates = state.get("reranked_candidates", [])
+        try:
+            expanded = services.dispatcher.expand_document_neighbors(candidates)
+        except Exception as error:
+            errors = list(state.get("errors", []))
+            errors.append(f"expand_doc_neighbors:{type(error).__name__}: {error}")
+            return node_update(
+                state,
+                node="expand_doc_neighbors",
+                started=started,
+                errors=errors,
+            )
+        return node_update(
+            state,
+            node="expand_doc_neighbors",
+            started=started,
+            reranked_candidates=expanded,
+        )
+
+    return expand_doc_neighbors_node
 
 
 def _build_context_node(services: LangGraphSpikeServices):  # type: ignore[no-untyped-def]

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 import re
 from dataclasses import dataclass, field, replace
 from typing import Any, Protocol
@@ -16,7 +17,9 @@ from src.retrieval.cross_encoder_reranker import (
 RERANKER_MODES = {"deterministic", "cross_encoder", "hybrid", "llm"}
 DEFAULT_LLM_TOP_K = 10
 DEFAULT_LLM_MIN_CONFIDENCE = 0.55
-DEFAULT_CROSS_ENCODER_TOP_K = 10
+DEFAULT_CROSS_ENCODER_TOP_K = (
+    500  # effectively "all" — DOCUMENT_RETRIEVAL_FETCH_LIMIT is the real cap
+)
 DEFAULT_CROSS_ENCODER_WEIGHT = 0.65
 HYBRID_BACKENDS = {"auto", "cross_encoder", "llm"}
 DEFAULT_LLM_AMBIGUITY_MARGIN = 0.15
@@ -99,6 +102,16 @@ class LLMGateDecision:
     top_sources: list[str]
 
 
+@dataclass(frozen=True)
+class _CrossEncoderResult:
+    """Internal result from _run_cross_encoder."""
+
+    rerank_pool: list[MemoryCandidate]
+    full_scores: list[float]
+    metadata: dict[str, Any]
+    error: str | None
+
+
 class MemoryReranker:
     """Query-aware deterministic reranker with optional LLM reranking."""
 
@@ -125,7 +138,9 @@ class MemoryReranker:
         self.llm_min_confidence = clamp(llm_min_confidence)
         self.cross_encoder_backend = cross_encoder_backend
         self.cross_encoder_model = cross_encoder_model
-        self.cross_encoder_top_k = max(1, cross_encoder_top_k)
+        self.cross_encoder_top_k = (
+            max(1, cross_encoder_top_k) if cross_encoder_top_k > 0 else 10_000
+        )
         self.cross_encoder_weight = clamp(cross_encoder_weight)
         self.hybrid_backend = normalize_hybrid_backend(hybrid_backend)
         self.llm_ambiguity_margin = max(0.0, llm_ambiguity_margin)
@@ -348,93 +363,164 @@ class MemoryReranker:
                 },
             )
 
+    # ── CE-scorable source whitelist ──────────────────────────────────
+    # Only document_memory and structured_memory are CE-scored.
+    # Raw spans, gists, and recent_messages contain the ongoing
+    # conversation or lossy summaries — cross-encoding them produces
+    # meaningless signal.
+    CE_SCORABLE_SOURCES: frozenset[str] = frozenset({"document_memory", "structured_memory"})
+
     def _cross_encoder_rank(
         self,
         query: str,
         deterministic: list[MemoryCandidate],
         trace: dict[str, Any],
     ) -> RerankResult:
-        """Rerank deterministic top-k with a lazy cross-encoder backend."""
-        combined, metadata, error = self._cross_encoder_stage(
-            query=query,
+        """Pure cross-encoder ranking — raw CE scores, no normalization.
+
+        CE-scorable candidates are ranked by raw cross-encoder score.
+        Non-CE-scorable sources (raw spans, gists, recent messages)
+        preserve their deterministic score and sort after CE-scored
+        candidates.  No per-source normalization or deterministic
+        blending is applied — this is the --cross-encoder startup mode.
+        """
+        ce_result = self._run_cross_encoder(query, deterministic)
+        if ce_result.error:
+            trace.update(ce_result.metadata)
+            trace["fallback_used"] = True
+            trace["fallback_reason"] = ce_result.error
+            return result_with_final_trace(deterministic, trace)
+
+        # Build pure CE ranking: CE-scored candidates by raw score,
+        # then non-CE-scored by deterministic score.
+        ranked = _sort_by_raw_ce_scores(
             deterministic=deterministic,
+            rerank_pool=ce_result.rerank_pool,
+            raw_ce_scores=ce_result.full_scores,
         )
-        trace.update(metadata)
-        trace["post_cross_encoder_top_margin"] = (
-            top_score_margin(combined) if metadata.get("cross_encoder_used") else None
-        )
-        if error:
-            trace.update(
-                {
-                    "fallback_used": True,
-                    "fallback_reason": error,
-                }
-            )
-        return result_with_final_trace(combined, trace)
+        trace.update(ce_result.metadata)
+        trace["post_cross_encoder_top_margin"] = top_score_margin(ranked)
+        return result_with_final_trace(ranked, trace)
 
     def _cross_encoder_stage(
         self,
         query: str,
         deterministic: list[MemoryCandidate],
     ) -> tuple[list[MemoryCandidate], dict[str, Any], str | None]:
-        """Apply cross-encoder scoring without finalizing the reranker result."""
-        rerank_pool = deterministic[: self.cross_encoder_top_k]
-        backend = self.cross_encoder_backend or SentenceTransformersCrossEncoderBackend(
-            self.cross_encoder_model
-        )
-        try:
-            scores = backend.score(
-                query,
-                [candidate_text_for_cross_encoder(candidate) for candidate in rerank_pool],
-            )
-            validate_cross_encoder_scores(scores, expected_count=len(rerank_pool))
-            combined = combine_cross_encoder_scores(
-                deterministic=deterministic,
-                rerank_pool=rerank_pool,
-                cross_encoder_scores=scores,
-                cross_encoder_weight=self.cross_encoder_weight,
-            )
-            return (
-                combined,
-                {
-                    "cross_encoder_used": True,
-                    "cross_encoder_model": backend.model_name,
-                    "cross_encoder_top_k": self.cross_encoder_top_k,
-                    "cross_encoder_weight": self.cross_encoder_weight,
-                    "cross_encoder_scores": [
-                        {
-                            "candidate_id": candidate.metadata["reranker_candidate_id"],
-                            "source": candidate.source,
-                            "score": score,
-                        }
-                        for candidate, score in zip(
-                            rerank_pool,
-                            scores,
-                            strict=True,
-                        )
-                    ],
-                    "combined_scores": [
-                        {
-                            "candidate_id": candidate.metadata["reranker_candidate_id"],
-                            "source": candidate.source,
-                            "score": candidate.score,
-                        }
-                        for candidate in combined[: len(rerank_pool)]
-                    ],
-                },
-                None,
-            )
-        except Exception as error:
-            reason = f"{type(error).__name__}: {error}"
+        """Cross-encoder scoring + per-source normalization + deterministic blend.
+
+        Used by --hybrid mode only.  Runs the CE model, normalizes scores
+        per source (document vs. structured memory), and blends with
+        deterministic scores via ``combine_cross_encoder_scores``.
+        """
+        ce_result = self._run_cross_encoder(query, deterministic)
+        if ce_result.error:
             return (
                 deterministic,
                 {
+                    **ce_result.metadata,
                     "cross_encoder_used": False,
-                    "cross_encoder_model": backend.model_name,
-                    "cross_encoder_top_k": self.cross_encoder_top_k,
-                    "cross_encoder_weight": self.cross_encoder_weight,
                 },
-                reason,
+                ce_result.error,
+            )
+
+        combined = combine_cross_encoder_scores(
+            deterministic=deterministic,
+            rerank_pool=ce_result.rerank_pool,
+            cross_encoder_scores=ce_result.full_scores,
+            cross_encoder_weight=self.cross_encoder_weight,
+        )
+        metadata = {
+            **ce_result.metadata,
+            "cross_encoder_used": True,
+            "cross_encoder_weight": self.cross_encoder_weight,
+            "combined_scores": [
+                {
+                    "candidate_id": candidate.metadata["reranker_candidate_id"],
+                    "source": candidate.source,
+                    "score": candidate.score,
+                }
+                for candidate in combined[: len(ce_result.rerank_pool)]
+            ],
+        }
+        return combined, metadata, None
+
+    def _run_cross_encoder(
+        self,
+        query: str,
+        deterministic: list[MemoryCandidate],
+    ) -> "_CrossEncoderResult":
+        """Run the cross-encoder model and return raw scores.
+
+        Shared by both --cross-encoder (pure CE) and --hybrid (CE + norm
+        + deterministic blend).  Only ``CE_SCORABLE_SOURCES`` are
+        evaluated; other sources get a 0.0 placeholder score.
+        """
+        rerank_pool = deterministic[: self.cross_encoder_top_k]
+        ce_scorable = [
+            c
+            for c in rerank_pool
+            if c.source in self.CE_SCORABLE_SOURCES and not c.metadata.get("skip_rerank")
+        ]
+        backend = self.cross_encoder_backend or SentenceTransformersCrossEncoderBackend(
+            self.cross_encoder_model
+        )
+        base_metadata = {
+            "cross_encoder_model": backend.model_name,
+            "cross_encoder_top_k": self.cross_encoder_top_k,
+        }
+        try:
+            if ce_scorable:
+                scores = backend.score(
+                    query,
+                    [candidate_text_for_cross_encoder(c) for c in ce_scorable],
+                )
+                validate_cross_encoder_scores(scores, expected_count=len(ce_scorable))
+            else:
+                scores = []
+            # Reconstruct full score list matching rerank_pool order.
+            full_scores: list[float] = []
+            score_iter = iter(scores)
+            for c in rerank_pool:
+                if c.source not in self.CE_SCORABLE_SOURCES or c.metadata.get("skip_rerank"):
+                    full_scores.append(0.0)
+                else:
+                    full_scores.append(next(score_iter))
+            return _CrossEncoderResult(
+                rerank_pool=rerank_pool,
+                full_scores=full_scores,
+                metadata={
+                    **base_metadata,
+                    "cross_encoder_used": True,
+                    "cross_encoder_scores": [
+                        {
+                            "candidate_id": c.metadata["reranker_candidate_id"],
+                            "source": c.source,
+                            "score": score,
+                            "ce_skipped": (
+                                c.source not in self.CE_SCORABLE_SOURCES
+                                or bool(c.metadata.get("skip_rerank"))
+                            ),
+                        }
+                        for c, score in zip(
+                            rerank_pool,
+                            full_scores,
+                            strict=True,
+                        )
+                    ],
+                },
+                error=None,
+            )
+        except Exception as error:
+            reason = f"{type(error).__name__}: {error}"
+            return _CrossEncoderResult(
+                rerank_pool=rerank_pool,
+                full_scores=[],
+                metadata={
+                    **base_metadata,
+                    "cross_encoder_used": False,
+                },
+                error=reason,
             )
 
     def _deterministic_rank(
@@ -456,6 +542,9 @@ class MemoryReranker:
                         "original_rank": original_rank,
                         "reranker_candidate_id": f"c{original_rank}",
                         "ranking_profile": ranking_profile or "default",
+                        "deterministic_score": float(candidate.score or 0.0),
+                        "final_score": float(candidate.score or 0.0),
+                        "raw_cross_encoder_score": None,
                         "score_breakdown": {
                             "features": {},
                             "weights": {},
@@ -519,6 +608,9 @@ class MemoryReranker:
                 "ranking_profile": ranking_profile or "default",
                 "original_rank": original_rank,
                 "reranker_candidate_id": f"c{original_rank}",
+                "deterministic_score": float(final_score),
+                "final_score": float(final_score),
+                "raw_cross_encoder_score": None,
                 "score_breakdown": {
                     "features": features,
                     "weights": weights.__dict__,
@@ -686,34 +778,77 @@ def combine_cross_encoder_scores(
     cross_encoder_scores: list[float],
     cross_encoder_weight: float,
 ) -> list[MemoryCandidate]:
-    """Combine semantic and deterministic scores, then append the untouched tail."""
+    """Combine semantic and deterministic scores, then append the untouched tail.
+
+    Both score sets are min-max normalized before blending so that the
+    ``cross_encoder_weight`` controls the blending of *rank opinions*,
+    not raw logit magnitudes.  Raw CE scores are preserved in metadata.
+
+    ``recent_messages`` and ``skip_rerank`` candidates are excluded from
+    the CE normalization range so they cannot corrupt the scale
+    (e.g. a user query scored against itself would capture the entire
+    [0,1] range).
+    """
     deterministic_scores = normalize_candidate_scores(rerank_pool)
+
+    # Per-source normalization: document chunks and structured memories
+    # have fundamentally different content shapes and CE score
+    # distributions.  Normalizing them together would let one source
+    # dominate the other purely because of scale differences.
+    normalized_ce_scores: list[float] = [0.0] * len(rerank_pool)
+    for source_group in (("document_memory",), ("structured_memory",)):
+        indices = [
+            i
+            for i, c in enumerate(rerank_pool)
+            if c.source in source_group and not c.metadata.get("skip_rerank")
+        ]
+        group_raws = [cross_encoder_scores[i] for i in indices]
+        group_norms = _z_score_norm_list(group_raws)
+        for i, norm in zip(indices, group_norms):
+            normalized_ce_scores[i] = norm
+
     combined_pool = []
-    for candidate, semantic, deterministic_score in zip(
+    for candidate, raw_ce, norm_ce, deterministic_score in zip(
         rerank_pool,
         cross_encoder_scores,
+        normalized_ce_scores,
         deterministic_scores,
         strict=True,
     ):
-        if candidate.metadata.get("skip_rerank"):
-            # Preserve original score for skip_rerank candidates (e.g. pre-computed summaries)
+        CE_SKIP_SOURCES = frozenset(
+            {
+                "recent_messages",
+                "current_chat_span",
+                "raw_message_span",
+                "current_chat_gist",
+                "previous_chat_gist",
+            }
+        )
+        if candidate.metadata.get("skip_rerank") or candidate.source in CE_SKIP_SOURCES:
+            # Preserve original deterministic score for non-CE-scorable
+            # sources (recent messages, raw spans, gists).  Their content
+            # is the ongoing conversation or lossy summaries —
+            # cross-encoding them produces meaningless signal.
             combined_score = candidate.score or 0.0
             combined_pool.append(
                 replace(
                     candidate,
                     metadata={
                         **candidate.metadata,
-                        "cross_encoder_score": float(semantic),
+                        "cross_encoder_score": float(raw_ce),
+                        "normalized_cross_encoder_score": norm_ce,
                         "normalized_deterministic_score": deterministic_score,
                         "combined_score": combined_score,
+                        "raw_cross_encoder_score": float(raw_ce),
+                        "deterministic_score": float(candidate.score or 0.0),
+                        "final_score": combined_score,
                         "cross_encoder_skipped": True,
                     },
                 )
             )
         else:
             combined_score = (
-                cross_encoder_weight * float(semantic)
-                + (1.0 - cross_encoder_weight) * deterministic_score
+                cross_encoder_weight * norm_ce + (1.0 - cross_encoder_weight) * deterministic_score
             )
             combined_pool.append(
                 replace(
@@ -721,9 +856,13 @@ def combine_cross_encoder_scores(
                     score=combined_score,
                     metadata={
                         **candidate.metadata,
-                        "cross_encoder_score": float(semantic),
+                        "cross_encoder_score": float(raw_ce),
+                        "normalized_cross_encoder_score": norm_ce,
                         "normalized_deterministic_score": deterministic_score,
                         "combined_score": combined_score,
+                        "raw_cross_encoder_score": float(raw_ce),
+                        "deterministic_score": float(candidate.score or 0.0),
+                        "final_score": combined_score,
                     },
                 )
             )
@@ -742,6 +881,105 @@ def combine_cross_encoder_scores(
             if candidate.metadata["reranker_candidate_id"] not in pool_ids
         ],
     ]
+
+
+def _z_score_norm_list(values: list[float]) -> list[float]:
+    """Z-score normalize then sigmoid-squash to [0, 1].
+
+    More robust than min-max: handles single-element groups (→ 0.5),
+    identical values (→ 0.5), outliers (they stretch but do not force
+    everything else to 0), and preserves distribution shape better.
+
+    Mapping: mean → 0.5, +1σ → ~0.73, +2σ → ~0.88,
+             -1σ → ~0.27, -2σ → ~0.12.
+    """
+    if not values:
+        return []
+    n = len(values)
+    if n == 1:
+        return [0.5]
+    mean = sum(values) / n
+    # Population std (n, not n-1) — we are normalizing a candidate
+    # set, not estimating a population parameter from a sample.
+    variance = sum((v - mean) ** 2 for v in values) / n
+    if variance == 0.0:
+        return [0.5] * n
+    std = math.sqrt(variance)
+    return [1.0 / (1.0 + math.exp(-(v - mean) / std)) for v in values]
+
+
+def _sort_by_raw_ce_scores(
+    deterministic: list[MemoryCandidate],
+    rerank_pool: list[MemoryCandidate],
+    raw_ce_scores: list[float],
+) -> list[MemoryCandidate]:
+    """Rank by raw CE scores — CE-scored first, then non-CE by deterministic.
+
+    Pure cross-encoder mode (--cross-encoder startup).  No per-source
+    normalization or deterministic blending is applied.
+    """
+    CE_SCORABLE_SOURCES = frozenset({"document_memory", "structured_memory"})
+    pool_ids = {c.metadata["reranker_candidate_id"] for c in rerank_pool}
+
+    # Split the pool into CE-scored and non-CE-scored.
+    ce_ranked: list[MemoryCandidate] = []
+    non_ce: list[MemoryCandidate] = []
+    for c, raw_ce in zip(rerank_pool, raw_ce_scores, strict=True):
+        det_score = float(c.score if c.score is not None else 0.0)
+        if c.source in CE_SCORABLE_SOURCES and not c.metadata.get("skip_rerank"):
+            ce_ranked.append(
+                replace(
+                    c,
+                    score=float(raw_ce),
+                    metadata={
+                        **c.metadata,
+                        "cross_encoder_score": float(raw_ce),
+                        "raw_cross_encoder_score": float(raw_ce),
+                        # Pure CE mode: no normalization, no blend.
+                        # z-norm and deterministic are intentionally None.
+                        "normalized_cross_encoder_score": None,
+                        "normalized_deterministic_score": None,
+                        "deterministic_score": None,
+                        "combined_score": float(raw_ce),
+                        "final_score": float(raw_ce),
+                        "cross_encoder_skipped": False,
+                    },
+                )
+            )
+        else:
+            non_ce.append(
+                replace(
+                    c,
+                    metadata={
+                        **c.metadata,
+                        "cross_encoder_score": float(raw_ce),
+                        "raw_cross_encoder_score": float(raw_ce),
+                        "normalized_cross_encoder_score": None,
+                        "normalized_deterministic_score": None,
+                        "deterministic_score": None,
+                        "combined_score": det_score,
+                        "final_score": det_score,
+                        "cross_encoder_skipped": True,
+                    },
+                )
+            )
+
+    ce_ranked.sort(
+        key=lambda c: (
+            -(c.score if c.score is not None else 0.0),
+            int(c.metadata["original_rank"]),
+        )
+    )
+    non_ce.sort(
+        key=lambda c: (
+            -(c.score if c.score is not None else 0.0),
+            int(c.metadata["original_rank"]),
+        )
+    )
+
+    # Append candidates that were beyond the CE top-k (untouched).
+    tail = [c for c in deterministic if c.metadata["reranker_candidate_id"] not in pool_ids]
+    return ce_ranked + non_ce + tail
 
 
 def normalize_candidate_scores(candidates: list[MemoryCandidate]) -> list[float]:

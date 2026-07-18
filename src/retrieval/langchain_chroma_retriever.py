@@ -132,13 +132,12 @@ class LangChainChromaRetriever:
         return LangChainIndexResult(document_id=document_id, chunk_count=len(prepared_documents))
 
     def retrieve(self, chat_id: str, source_plan: SourcePlan) -> list[MemoryCandidate]:
-        """Retrieve document MemoryCandidates through LangChain-Chroma with hybrid scoring.
+        """Retrieve document MemoryCandidates through LangChain-Chroma.
 
-        Fetches DOCUMENT_RETRIEVAL_FETCH_LIMIT chunks from Chroma, blends
-        semantic similarity with lexical overlap for all candidates, then
-        expands each with its ±1 neighboring chunks. All candidates are
-        returned — the downstream reranker picks the top-K for final
-        inclusion.
+        Fetches DOCUMENT_RETRIEVAL_FETCH_LIMIT chunks from Chroma using
+        embedding similarity. Lexical overlap scoring is handled by the
+        downstream MemoryReranker. Neighbor chunk expansion is deferred
+        until after reranking (see RetrieverDispatcher.expand_document_neighbors).
 
         For summary-like queries ("summarize", "contents", "overview"), returns
         the pre-computed document summary as a candidate when available.
@@ -175,10 +174,11 @@ class LangChainChromaRetriever:
                 or str(getattr(document, "metadata", {}).get("document_id"))
                 in {str(value) for value in allowed_ids}
             ]
-            # Blend scores for all candidates — no capping.
-            # The downstream reranker decides which candidates survive.
-            if query.strip():
-                candidates = _hybrid_rerank(candidates, query, len(candidates))
+            # Lexical overlap scoring is handled by MemoryReranker
+            # (deterministic lexical_overlap feature, weight 0.35).
+            # No retriever-side hybrid rerank needed.
+            # Neighbor expansion is deferred until after reranking -
+            # see RetrieverDispatcher.expand_document_neighbors().
             if summary_candidate is not None:
                 summary_candidate = MemoryCandidate(
                     source=summary_candidate.source,
@@ -193,11 +193,6 @@ class LangChainChromaRetriever:
                     },
                 )
                 candidates.insert(0, summary_candidate)
-            candidates = _expand_neighbors(
-                candidates,
-                vectorstore=self._vectorstore(),
-                allowed_document_ids=allowed_ids,
-            )
             return candidates
         except LangChainChromaUnavailable as error:
             print(f"langchain_chroma_unavailable reason={error}")
@@ -381,47 +376,6 @@ def normalize_score(score: float | None) -> float | None:
     return 1.0 / (1.0 + max(0.0, numeric))
 
 
-def _hybrid_rerank(
-    candidates: list[MemoryCandidate],
-    query: str,
-    limit: int,
-) -> list[MemoryCandidate]:
-    """Blend semantic scores with lexical overlap for hybrid retrieval.
-
-    Computes a simple BM25-like lexical overlap score for each candidate
-    against the query and blends it with the existing semantic score.
-    This helps queries like "problem 3" find chunks containing those exact
-    strings even when the embedding model encodes numbers weakly.
-    """
-    import re
-
-    def _tokenize(text: str) -> set[str]:
-        return set(re.findall(r"[a-z0-9]+", text.lower()))
-
-    def _lexical_score(text: str, q_terms: set[str]) -> float:
-        text_terms = _tokenize(text)
-        overlap = len(q_terms & text_terms)
-        return overlap / max(1, len(q_terms)) if q_terms else 0.0
-
-    query_terms = _tokenize(query)
-    if not query_terms:
-        return candidates[:limit]
-
-    # Blend: 70% semantic, 30% lexical
-    SEMANTIC_WEIGHT = 0.7
-    LEXICAL_WEIGHT = 0.3
-
-    scored: list[tuple[float, MemoryCandidate]] = []
-    for candidate in candidates:
-        semantic = candidate.score if candidate.score is not None else 0.5
-        lexical = _lexical_score(candidate.content, query_terms)
-        blended = SEMANTIC_WEIGHT * semantic + LEXICAL_WEIGHT * lexical
-        scored.append((blended, candidate))
-
-    scored.sort(key=lambda item: item[0], reverse=True)
-    return [candidate for _, candidate in scored[:limit]]
-
-
 def _expand_neighbors(
     candidates: list[MemoryCandidate],
     *,
@@ -438,9 +392,11 @@ def _expand_neighbors(
     """
     del allowed_document_ids
     # Collect all needed neighbor IDs in one pass.
+    # Each neighbor can be needed by multiple candidates (e.g. chunk 3 is the
+    # right neighbor of chunk 2 AND the left neighbor of chunk 4).
     needed: dict[
-        str, tuple[int, str, int]
-    ] = {}  # record_id -> (candidate_index, doc_id, chunk_index)
+        str, list[tuple[int, str, int]]
+    ] = {}  # nid -> [(candidate_index, doc_id, neighbor_index), ...]
     for idx, candidate in enumerate(candidates):
         document_id = str(candidate.metadata.get("document_id") or "")
         chunk_index = candidate.metadata.get("chunk_index")
@@ -451,8 +407,7 @@ def _expand_neighbors(
             if neighbor_index < 0:
                 continue
             nid = f"{document_id}:{neighbor_index}"
-            if nid not in needed:
-                needed[nid] = (idx, document_id, neighbor_index)
+            needed.setdefault(nid, []).append((idx, document_id, neighbor_index))
 
     if not needed:
         return candidates
@@ -483,31 +438,33 @@ def _expand_neighbors(
         if isinstance(ci, int):
             chunk_index_of[idx] = ci
 
-    for nid, (cand_idx, doc_id, neighbor_index) in needed.items():
-        text = neighbor_texts.get(nid)
-        if not text or cand_idx not in chunk_index_of:
-            continue
-        original_ci = chunk_index_of[cand_idx]
-        is_left = neighbor_index < original_ci
-        candidate = candidates[cand_idx]
-        separator = "\n\n"
-        merged_content = (
-            text + separator + candidate.content
-            if is_left
-            else candidate.content + separator + text
-        )
-        candidates[cand_idx] = candidate.__class__(
-            source=candidate.source,
-            content=merged_content,
-            score=candidate.score,
-            record_id=candidate.record_id,
-            chat_id=candidate.chat_id,
-            source_message_ids=list(candidate.source_message_ids),
-            metadata={
-                **candidate.metadata,
-                "sentence_window_expansion": True,
-                "neighbor_chunks_merged": 1 + candidate.metadata.get("neighbor_chunks_merged", 0),
-            },
-        )
+    for nid, entries in needed.items():
+        for cand_idx, doc_id, neighbor_index in entries:
+            text = neighbor_texts.get(nid)
+            if not text or cand_idx not in chunk_index_of:
+                continue
+            original_ci = chunk_index_of[cand_idx]
+            is_left = neighbor_index < original_ci
+            candidate = candidates[cand_idx]
+            separator = "\n\n"
+            merged_content = (
+                text + separator + candidate.content
+                if is_left
+                else candidate.content + separator + text
+            )
+            candidates[cand_idx] = candidate.__class__(
+                source=candidate.source,
+                content=merged_content,
+                score=candidate.score,
+                record_id=candidate.record_id,
+                chat_id=candidate.chat_id,
+                source_message_ids=list(candidate.source_message_ids),
+                metadata={
+                    **candidate.metadata,
+                    "sentence_window_expansion": True,
+                    "neighbor_chunks_merged": 1
+                    + candidate.metadata.get("neighbor_chunks_merged", 0),
+                },
+            )
 
     return candidates

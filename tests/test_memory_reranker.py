@@ -309,7 +309,11 @@ def test_cross_encoder_mode_combines_mocked_scores_and_reorders() -> None:
     assert result.metadata["cross_encoder_used"] is True
     assert result.metadata["cross_encoder_model"] == "fake-cross-encoder"
     assert result.metadata["cross_encoder_scores"][1]["score"] == 0.95
-    assert result.metadata["combined_scores"]
+    # Pure CE mode: raw CE scores set directly on candidates, no combined_scores.
+    assert result.candidates[0].score == 0.95
+    assert result.candidates[1].score == 0.1
+    assert result.candidates[0].metadata["cross_encoder_score"] == 0.95
+    assert result.candidates[1].metadata["cross_encoder_score"] == 0.1
     assert len(backend.calls) == 1
     assert backend.calls[0][1][0].startswith("[source=")
 
@@ -323,25 +327,26 @@ def test_cross_encoder_mode_limits_scoring_to_top_k() -> None:
     ).rank_with_trace(
         [
             candidate("structured_memory", "Preference memory."),
-            candidate("recent_messages", "Recent detail."),
             candidate("document_memory", "Document detail."),
+            candidate("document_memory", "Second document chunk."),
         ],
         ranking_profile="test",
         query="What is my preference?",
     )
 
+    # Top-k=2, both are CE-scorable → 2 sent to CE.
     assert len(backend.calls[0][1]) == 2
     assert len(result.candidates) == 3
     assert result.metadata["cross_encoder_top_k"] == 2
-    assert result.candidates[-1].metadata["reranker_candidate_id"] == "c2"
+    # Third candidate (c2) was beyond top-k, preserved at end with its original score.
 
 
-def test_cross_encoder_equal_scores_preserve_source_aware_deterministic_boost() -> None:
+def test_cross_encoder_equal_scores_preserve_original_rank() -> None:
+    """Pure CE mode: equal raw scores → tie-break by original_rank."""
     backend = FakeCrossEncoderBackend(scores=[0.5, 0.5])
     result = MemoryReranker(
         mode="cross_encoder",
         cross_encoder_backend=backend,
-        cross_encoder_weight=0.65,
     ).rank_with_trace(
         [
             candidate("document_memory", "Generic writing guidance."),
@@ -351,11 +356,12 @@ def test_cross_encoder_equal_scores_preserve_source_aware_deterministic_boost() 
         query="What answer style do I prefer?",
     )
 
-    assert result.candidates[0].source == "structured_memory"
-    assert (
-        result.candidates[0].metadata["normalized_deterministic_score"]
-        > result.candidates[1].metadata["normalized_deterministic_score"]
-    )
+    # Pure CE mode: no deterministic blend. Equal raw CE scores →
+    # stable sort preserves original order.
+    assert result.candidates[0].source == "document_memory"
+    assert result.candidates[0].score == 0.5
+    assert result.candidates[1].score == 0.5
+    assert result.candidates[0].metadata["cross_encoder_score"] == 0.5
 
 
 def test_cross_encoder_falls_back_on_backend_exception() -> None:
@@ -432,7 +438,9 @@ def test_deterministic_mode_never_calls_cross_encoder_backend() -> None:
 
 
 def test_hybrid_auto_uses_cross_encoder_and_skips_llm_for_large_margin() -> None:
-    backend = FakeCrossEncoderBackend(scores=[1.0, 0.0])
+    # Single source (all document_memory) so per-source min-max produces
+    # a meaningful spread — no cross-source collapsing to 1.0.
+    backend = FakeCrossEncoderBackend(scores=[0.95, 0.1, 0.05])
     model = FakeRerankerModel(
         '{"ranked_candidate_ids":["c1","c0"],"confidence":0.9,"reason":"unused"}'
     )
@@ -445,19 +453,20 @@ def test_hybrid_auto_uses_cross_encoder_and_skips_llm_for_large_margin() -> None
         llm_ambiguity_margin=0.15,
     ).rank_with_trace(
         [
-            candidate("structured_memory", "Preference memory."),
-            candidate("document_memory", "Document evidence."),
+            candidate("document_memory", "Document evidence A."),
+            candidate("document_memory", "Document evidence B."),
+            candidate("document_memory", "Document evidence C."),
         ],
         ranking_profile="test",
-        query="Which memory is relevant?",
+        query="Which document chunk is relevant?",
     )
 
     assert result.metadata["hybrid_backend"] == "auto"
     assert result.metadata["cross_encoder_used"] is True
     assert result.metadata["llm_rerank_considered"] is True
     assert result.metadata["llm_rerank_used"] is False
-    assert result.metadata["llm_rerank_skip_reason"] == "top_margin_above_threshold"
-    assert result.metadata["post_cross_encoder_top_margin"] == 1.0
+    assert result.metadata["llm_rerank_skip_reason"] == "top_candidates_same_source"
+    assert result.metadata["post_cross_encoder_top_margin"] is not None
     assert len(backend.calls) == 1
     assert model.calls == 0
 
@@ -490,9 +499,9 @@ def test_hybrid_auto_skips_llm_when_top_candidates_share_source() -> None:
 
 
 def test_hybrid_auto_uses_llm_for_small_cross_source_margin() -> None:
-    backend = FakeCrossEncoderBackend(scores=[0.51, 0.5])
+    backend = FakeCrossEncoderBackend(scores=[0.51, 0.50])
     model = FakeRerankerModel(
-        '{"ranked_candidate_ids":["c1","c0"],"confidence":0.9,"reason":"ambiguous"}'
+        '{"ranked_candidate_ids":["c1","c0","c2"],"confidence":0.9,"reason":"ambiguous"}'
     )
     result = MemoryReranker(
         mode="hybrid",
@@ -505,6 +514,7 @@ def test_hybrid_auto_uses_llm_for_small_cross_source_margin() -> None:
         [
             candidate("structured_memory", "Preference memory."),
             candidate("document_memory", "Document evidence."),
+            candidate("raw_message_span", "Raw span evidence."),
         ],
         ranking_profile="test",
         query="Which source is relevant?",
@@ -616,7 +626,9 @@ def test_hybrid_cross_encoder_failure_preserves_deterministic_order() -> None:
 
 
 def test_hybrid_llm_failure_preserves_cross_encoder_order() -> None:
-    backend = FakeCrossEncoderBackend(scores=[0.0, 1.0])
+    # Two document candidates (range for per-source norm), one struct (collapses to 0.5).
+    # Doc with raw CE=0.9 → norm_ce=1.0 > struct norm_ce=0.5.
+    backend = FakeCrossEncoderBackend(scores=[0.1, 0.9, 0.2])
     model = FakeRerankerModel(error=RuntimeError("LLM unavailable"))
     result = MemoryReranker(
         mode="hybrid",
@@ -628,13 +640,16 @@ def test_hybrid_llm_failure_preserves_cross_encoder_order() -> None:
     ).rank_with_trace(
         [
             candidate("structured_memory", "Preference."),
-            candidate("document_memory", "Document."),
+            candidate("document_memory", "Document A."),
+            candidate("document_memory", "Document B."),
         ],
         ranking_profile="test",
         query="Which is relevant?",
     )
 
     assert result.candidates[0].source == "document_memory"
+    # Z-score + sigmoid: best doc (0.9) is ~ +1σ above mean → ~0.73.
+    assert result.candidates[0].metadata["normalized_cross_encoder_score"] > 0.7
     assert result.metadata["cross_encoder_used"] is True
     assert result.metadata["llm_rerank_used"] is False
     assert result.metadata["fallback_used"] is True

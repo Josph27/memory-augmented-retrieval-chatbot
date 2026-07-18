@@ -5,24 +5,28 @@ import { fetchRetrievalLog } from "../api";
 const COLS = [
 	["#", "rank"],
 	["File", "file_name"],
-	["Chunk", "chunk_index"],
-	["Similarity", "similarity_score"],
-	["Reranker", "score"],
-	["CrossEnc", "cross_encoder_score"],
-	["Window", "window_expanded"],
-	["InPrompt", "in_prompt"],
-	["Mode", "retrieval_mode"],
+	["Chunk ID", "chunk_id"],
+	["Similarity", "similarity"],
+	["Raw CE", "raw_ce"],
+	["Z-norm. CE", "z_norm_ce"],
+	["Deterministic", "deterministic"],
+	["Final Score", "final_score"],
+	["Window", "window"],
+	["In Prompt", "in_prompt"],
+	["Mode", "mode"],
 ];
 
 function formatVal(key, chunk) {
 	const v = chunk[key];
 	if (v == null) return "\u2014";
-	if (key === "window_expanded") return v ? "\u00b11" : "\u00b7";
+	if (key === "window") return v ? "\u00b11" : "\u00b7";
 	if (key === "in_prompt") return v ? "\ud83d\udfe2" : "\ud83d\udd34";
 	if (
-		key === "similarity_score" ||
-		key === "score" ||
-		key === "cross_encoder_score"
+		key === "similarity" ||
+		key === "raw_ce" ||
+		key === "z_norm_ce" ||
+		key === "deterministic" ||
+		key === "final_score"
 	) {
 		return Number(v).toFixed(4);
 	}

@@ -86,8 +86,7 @@ def candidate(
     return MemoryCandidate(
         source=source,
         content=" ".join(
-            [f"{source}-{record_id}"]
-            + [f"w{index}" for index in range(max(0, words - 1))]
+            [f"{source}-{record_id}"] + [f"w{index}" for index in range(max(0, words - 1))]
         ),
         score=score,
         record_id=record_id,
@@ -126,7 +125,7 @@ def candidate(
         ),
         (
             route(("document_memory",), scopes=("document",)),
-            16_384,
+            49_152,
             "single_document_scope",
         ),
         (
@@ -248,9 +247,7 @@ def test_required_floor_can_exceed_route_cap_but_not_available_budget() -> None:
 
 
 def test_optional_selection_stops_below_configured_utility() -> None:
-    selector = EvidenceConstrainedContextSelector(
-        SelectorPolicy(minimum_optional_utility=0.5)
-    )
+    selector = EvidenceConstrainedContextSelector(SelectorPolicy(minimum_optional_utility=0.5))
     useful = candidate("document_memory", 10, "useful", score=0.8)
     weak = candidate("document_memory", 10, "weak", score=0.1)
 
@@ -300,20 +297,17 @@ def test_manager_reports_missing_and_oversized_required_evidence() -> None:
     oversized = manager.build_context_packet(
         system_prompt="system",
         latest_user_message={"role": "user", "content": "question"},
-        ranked_candidates=[
-            candidate("document_memory", 100, "oversized", score=0.9)
-        ],
+        ranked_candidates=[candidate("document_memory", 100, "oversized", score=0.9)],
         route_plan=route(("document_memory",), scopes=("document",)),
     )
 
     assert missing.context_packet.metadata["evidence_contract_satisfied"] is False
     assert "document" in missing.context_packet.metadata["missing_requirements"]
-    assert oversized.context_budget.metadata[
-        "required_evidence_exceeds_available"
-    ] is True
+    assert oversized.context_budget.metadata["required_evidence_exceeds_available"] is True
     assert oversized.context_packet.metadata["evidence_contract_satisfied"] is False
-    assert oversized.context_packet.metadata["final_prompt_tokens"] <= (
-        oversized.context_packet.metadata["hard_input_budget"]
+    assert (
+        oversized.context_packet.metadata["final_prompt_tokens"]
+        <= (oversized.context_packet.metadata["hard_input_budget"])
     )
 
 
@@ -416,6 +410,7 @@ def test_context_profiles_reach_final_packet_without_hidden_4096_cap() -> None:
     assert summary.context_packet.metadata["working_memory_budget"] == 65_536
     assert summary.context_packet.metadata["selected_memory_tokens"] == 9000
     assert summary.context_packet.metadata["selected_memory_tokens"] > 4096
-    assert summary.context_packet.metadata["final_prompt_tokens"] < (
-        summary.context_packet.metadata["hard_input_budget"]
+    assert (
+        summary.context_packet.metadata["final_prompt_tokens"]
+        < (summary.context_packet.metadata["hard_input_budget"])
     )

@@ -120,6 +120,27 @@ class RetrieverDispatcher:
             query=route_plan.query,
         )
 
+    def expand_document_neighbors(
+        self,
+        candidates: list[MemoryCandidate],
+    ) -> list[MemoryCandidate]:
+        """Expand document candidates with ±1 neighboring chunks inline.
+
+        Must be called *after* reranking so the cross-encoder sees clean
+        single-chunk text. Neighbors are fetched from the document_memory
+        retriever's Chroma vectorstore. Non-document candidates pass through
+        unchanged.
+        """
+        doc_retriever = self.retrievers.get("document_memory")
+        if doc_retriever is None:
+            return candidates
+        from src.retrieval.langchain_chroma_retriever import _expand_neighbors
+
+        vs = getattr(doc_retriever, "_vectorstore", None)
+        if vs is None:
+            return candidates
+        return _expand_neighbors(candidates, vectorstore=vs())
+
     def scoped_source_plan(
         self,
         chat_id: str,

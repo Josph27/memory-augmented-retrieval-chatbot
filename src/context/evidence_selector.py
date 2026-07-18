@@ -17,14 +17,6 @@ SCOPE_SOURCE_PREFERENCES = {
     "previous_chat": ("raw_message_span", "previous_chat_gist"),
     "durable": ("structured_memory",),
 }
-DEFAULT_SOURCE_PRIORS = {
-    "raw_message_span": 0.04,
-    "current_chat_span": 0.04,
-    "document_memory": 0.03,
-    "structured_memory": 0.025,
-    "previous_chat_gist": 0.015,
-    "current_chat_gist": 0.01,
-}
 
 
 @dataclass(frozen=True)
@@ -35,10 +27,6 @@ class SelectorPolicy:
     minimum_required_score: float = 0.55
     minimum_optional_utility: float = 0.15
     max_token_cost_penalty: float = 0.03
-    new_source_coverage_bonus: float = 0.025
-    source_priors: dict[str, float] = field(
-        default_factory=lambda: dict(DEFAULT_SOURCE_PRIORS)
-    )
 
 
 @dataclass(frozen=True)
@@ -87,7 +75,6 @@ class SelectionResult:
     selection_reasons: dict[str, str]
     candidate_annotations: list[CandidateAnnotation]
     utility_by_trace_id: dict[str, float]
-    source_prior_by_trace_id: dict[str, float]
     required_trace_ids: set[str]
     trace_id_by_object: dict[int, str]
     optional_selection_stopped_by: str
@@ -118,13 +105,7 @@ class SelectionResult:
             "selection_decisions": [
                 {
                     **annotation.to_metadata(),
-                    "global_utility": self.utility_by_trace_id.get(
-                        annotation.trace_id
-                    ),
-                    "source_prior": self.source_prior_by_trace_id.get(
-                        annotation.trace_id,
-                        0.0,
-                    ),
+                    "global_utility": self.utility_by_trace_id.get(annotation.trace_id),
                     "redundancy_penalty": 0.0,
                     "selected_by": self.selection_reasons.get(annotation.trace_id),
                 }
@@ -149,13 +130,9 @@ class EvidenceConstrainedContextSelector:
         latest_user_message: dict[str, str] | None = None,
     ) -> SelectionResult:
         ranked = list(candidates)
-        enabled_sources = {
-            source.source for source in route_plan.sources if source.enabled
-        }
+        enabled_sources = {source.source for source in route_plan.sources if source.enabled}
         eligible = [
-            candidate
-            for candidate in ranked
-            if candidate_is_enabled(candidate, enabled_sources)
+            candidate for candidate in ranked if candidate_is_enabled(candidate, enabled_sources)
         ]
         trace_ids = {
             id(candidate): candidate_trace_id(candidate, rank)
@@ -175,12 +152,8 @@ class EvidenceConstrainedContextSelector:
             for candidate, annotation in zip(ranked, annotations, strict=True)
         }
 
-        non_recent = [
-            candidate for candidate in eligible if candidate.source != "recent_messages"
-        ]
-        recent = [
-            candidate for candidate in eligible if candidate.source == "recent_messages"
-        ]
+        non_recent = [candidate for candidate in eligible if candidate.source != "recent_messages"]
+        recent = [candidate for candidate in eligible if candidate.source == "recent_messages"]
         deduplicated, dropped, duplicate_decisions = deduplicate_candidates(
             non_recent,
             annotation_by_object=annotation_by_object,
@@ -220,11 +193,7 @@ class EvidenceConstrainedContextSelector:
         )
         for requirement, preferred_sources in requirements:
             existing = next(
-                (
-                    item
-                    for item in selected
-                    if item.source in preferred_sources
-                ),
+                (item for item in selected if item.source in preferred_sources),
                 None,
             )
             if existing is not None:
@@ -260,9 +229,7 @@ class EvidenceConstrainedContextSelector:
             required_trace_ids.add(annotation.trace_id)
             required_selected.append(requirement)
             reasons[annotation.trace_id] = (
-                "required_raw_evidence"
-                if requirement == "raw_span"
-                else "required_scope_evidence"
+                "required_raw_evidence" if requirement == "raw_span" else "required_scope_evidence"
             )
             utilities[annotation.trace_id] = required_utility(candidate)
             used_tokens, folded = fold_parent_gist(
@@ -295,11 +262,7 @@ class EvidenceConstrainedContextSelector:
             utilities[annotation.trace_id] = 0.2
         dropped.extend(recent_drops)
 
-        remaining = [
-            candidate
-            for candidate in deduplicated
-            if id(candidate) not in selected_ids
-        ]
+        remaining = [candidate for candidate in deduplicated if id(candidate) not in selected_ids]
         remaining, initially_folded = fold_unselected_parent_gists(
             remaining,
             selected=selected,
@@ -309,9 +272,7 @@ class EvidenceConstrainedContextSelector:
         dropped.extend(initially_folded)
         duplicate_decisions.extend(initially_folded)
         selected_sources = {candidate.source for candidate in selected}
-        optional_stop_reason = (
-            "required_evidence_only" if selected else "no_candidates"
-        )
+        optional_stop_reason = "required_evidence_only" if selected else "no_candidates"
         had_optional_candidates = bool(remaining)
         had_non_fitting_candidate = False
         coverage_strategy = "relevance_ranked"
@@ -344,9 +305,7 @@ class EvidenceConstrainedContextSelector:
                 selected_ids.add(id(candidate))
                 used_tokens += annotation.token_cost
                 selected_sources.add(candidate.source)
-                reasons[annotation.trace_id] = (
-                    "global_summary_chronological_coverage"
-                )
+                reasons[annotation.trace_id] = "global_summary_chronological_coverage"
                 utilities[annotation.trace_id] = required_utility(candidate)
                 used_tokens, folded = fold_parent_gist(
                     candidate,
@@ -369,9 +328,7 @@ class EvidenceConstrainedContextSelector:
             )
             remaining.clear()
             optional_stop_reason = (
-                "no_fitting_candidate"
-                if had_non_fitting_candidate
-                else "no_candidates"
+                "no_fitting_candidate" if had_non_fitting_candidate else "no_candidates"
             )
         while remaining:
             scored = [
@@ -379,7 +336,6 @@ class EvidenceConstrainedContextSelector:
                     marginal_utility(
                         candidate,
                         annotation_by_object[id(candidate)],
-                        selected_sources=selected_sources,
                         token_budget=token_budget,
                         policy=self.policy,
                     ),
@@ -401,7 +357,6 @@ class EvidenceConstrainedContextSelector:
                         utility=marginal_utility(
                             remaining_candidate,
                             annotation_by_object[id(remaining_candidate)],
-                            selected_sources=selected_sources,
                             token_budget=token_budget,
                             policy=self.policy,
                         ),
@@ -455,9 +410,7 @@ class EvidenceConstrainedContextSelector:
             elif had_non_fitting_candidate:
                 optional_stop_reason = "no_fitting_candidate"
             elif not had_optional_candidates:
-                optional_stop_reason = (
-                    "required_evidence_only" if selected else "no_candidates"
-                )
+                optional_stop_reason = "required_evidence_only" if selected else "no_candidates"
 
         if route_plan.context_profile == "global_summary":
             selected.sort(
@@ -496,13 +449,6 @@ class EvidenceConstrainedContextSelector:
             selection_reasons=reasons,
             candidate_annotations=annotations,
             utility_by_trace_id=utilities,
-            source_prior_by_trace_id={
-                annotation.trace_id: self.policy.source_priors.get(
-                    annotation.source,
-                    0.0,
-                )
-                for annotation in annotations
-            },
             required_trace_ids=required_trace_ids,
             trace_id_by_object=trace_ids,
             optional_selection_stopped_by=optional_stop_reason,
@@ -545,9 +491,7 @@ def annotate_candidates(
                     or candidate.metadata.get("matched_message_ids")
                 )
             ),
-            required_scope_matches=tuple(
-                sorted(scope_matches(candidate) & required_scopes)
-            ),
+            required_scope_matches=tuple(sorted(scope_matches(candidate) & required_scopes)),
             exact_raw_evidence=candidate.source in RAW_SOURCES,
         )
         for candidate in candidates
@@ -577,8 +521,7 @@ def deduplicate_candidates(
                 reason="exact_duplicate",
                 merged_into=trace_ids[id(duplicate)],
                 merged_source_message_ids=sorted(
-                    set(duplicate.source_message_ids)
-                    | set(candidate.source_message_ids)
+                    set(duplicate.source_message_ids) | set(candidate.source_message_ids)
                 ),
                 merged_document_ids=sorted(
                     {
@@ -611,8 +554,7 @@ def deduplicate_candidates(
         if overlapping is not None:
             overlap_ratio = spans_overlap(overlapping, candidate)
             unique_ids = sorted(
-                set(candidate.source_message_ids)
-                - set(overlapping.source_message_ids)
+                set(candidate.source_message_ids) - set(overlapping.source_message_ids)
             )
             merge_retrieval_paths(overlapping, candidate)
             annotation = annotation_by_object[id(candidate)]
@@ -622,13 +564,10 @@ def deduplicate_candidates(
                 reason="overlapping_selected_span",
                 merged_into=trace_ids[id(overlapping)],
                 overlap_ratio=overlap_ratio,
-                overlap_with_candidate_id=(
-                    f"{overlapping.source}:{overlapping.record_id}"
-                ),
+                overlap_with_candidate_id=(f"{overlapping.source}:{overlapping.record_id}"),
                 unique_message_count=len(unique_ids),
                 merged_source_message_ids=sorted(
-                    set(overlapping.source_message_ids)
-                    | set(candidate.source_message_ids)
+                    set(overlapping.source_message_ids) | set(candidate.source_message_ids)
                 ),
             )
             dropped.append(record)
@@ -714,23 +653,18 @@ def marginal_utility(
     candidate: MemoryCandidate,
     annotation: CandidateAnnotation,
     *,
-    selected_sources: set[str],
     token_budget: int,
     policy: SelectorPolicy,
 ) -> float:
+    """Pure relevance-minus-cost utility.  Source preference and
+    diversity are handled upstream by the reranker."""
     relevance = float(candidate.score or 0.0)
-    source_prior = policy.source_priors.get(candidate.source, 0.0)
-    coverage = (
-        policy.new_source_coverage_bonus
-        if candidate.source not in selected_sources
-        else 0.0
-    )
     cost_ratio = annotation.token_cost / max(1, token_budget)
     cost_penalty = min(
         policy.max_token_cost_penalty,
         cost_ratio * policy.max_token_cost_penalty,
     )
-    return relevance + source_prior + coverage - cost_penalty
+    return relevance - cost_penalty
 
 
 def fold_parent_gist(
@@ -749,11 +683,7 @@ def fold_parent_gist(
     if parent_id is None:
         return used_tokens, []
     parent = next(
-        (
-            item
-            for item in selected
-            if item.source in GIST_SOURCES and item.record_id == parent_id
-        ),
+        (item for item in selected if item.source in GIST_SOURCES and item.record_id == parent_id),
         None,
     )
     if parent is None:
@@ -789,10 +719,7 @@ def fold_unselected_parent_gists(
     kept: list[MemoryCandidate] = []
     folded: list[dict[str, Any]] = []
     for candidate in candidates:
-        if (
-            candidate.source in GIST_SOURCES
-            and candidate.record_id in selected_parent_ids
-        ):
+        if candidate.source in GIST_SOURCES and candidate.record_id in selected_parent_ids:
             child = next(
                 item
                 for item in selected
@@ -821,10 +748,7 @@ def required_scopes_for(route_plan: RoutePlan) -> set[str]:
 
 
 def requires_raw_span(route_plan: RoutePlan) -> bool:
-    return bool(
-        route_plan.metadata.get("requires_raw_span")
-        or route_plan.intent == "EXACT_QUOTE"
-    )
+    return bool(route_plan.metadata.get("requires_raw_span") or route_plan.intent == "EXACT_QUOTE")
 
 
 def candidate_is_enabled(
@@ -912,9 +836,7 @@ def merge_retrieval_paths(
     merged = list(dict.fromkeys(paths))
     if merged:
         keeper.metadata["retrieval_paths"] = merged
-        keeper.metadata["retrieval_path"] = (
-            merged[0] if len(merged) == 1 else "multiple"
-        )
+        keeper.metadata["retrieval_path"] = merged[0] if len(merged) == 1 else "multiple"
 
 
 def global_summary_selection_order(
@@ -949,9 +871,7 @@ def global_summary_selection_order(
     raw_tokens = sum(annotation_by_object[id(item)].token_cost for item in raw)
     if gist_tokens + raw_tokens <= available_tokens:
         return [*gists, *raw, *other]
-    raw_coverage = [
-        raw[index] for index in timeline_coverage_order(len(raw))
-    ]
+    raw_coverage = [raw[index] for index in timeline_coverage_order(len(raw))]
     return [*gists, *raw_coverage, *other]
 
 
@@ -1007,18 +927,9 @@ def selected_time_range_count(
         if not message_ids:
             unbounded += 1
             continue
-        chat_key = str(
-            candidate.metadata.get("source_chat_id")
-            or candidate.chat_id
-            or ""
-        )
-        ranges_by_chat.setdefault(chat_key, []).append(
-            (message_ids[0], message_ids[-1])
-        )
-    return unbounded + sum(
-        len(merge_ranges(ranges))
-        for ranges in ranges_by_chat.values()
-    )
+        chat_key = str(candidate.metadata.get("source_chat_id") or candidate.chat_id or "")
+        ranges_by_chat.setdefault(chat_key, []).append((message_ids[0], message_ids[-1]))
+    return unbounded + sum(len(merge_ranges(ranges)) for ranges in ranges_by_chat.values())
 
 
 def merge_ranges(
@@ -1040,14 +951,9 @@ def is_latest_query_candidate(
     route_query: str,
 ) -> bool:
     expected = (
-        latest_user_message.get("content", "")
-        if latest_user_message is not None
-        else route_query
+        latest_user_message.get("content", "") if latest_user_message is not None else route_query
     )
-    return (
-        str(candidate.metadata.get("role", "user")) == "user"
-        and candidate.content == expected
-    )
+    return str(candidate.metadata.get("role", "user")) == "user" and candidate.content == expected
 
 
 def drop_record(

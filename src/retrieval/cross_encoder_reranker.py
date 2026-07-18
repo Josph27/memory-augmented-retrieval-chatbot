@@ -4,7 +4,7 @@ import math
 from typing import Protocol
 
 
-DEFAULT_CROSS_ENCODER_MODEL = "BAAI/bge-reranker-v2-m3"
+DEFAULT_CROSS_ENCODER_MODEL = "cross-encoder/ms-marco-MiniLM-L12-v2"
 
 
 class CrossEncoderUnavailable(RuntimeError):

@@ -86,7 +86,6 @@ class AppConfig:
     reranker_llm_top_k: int
     reranker_llm_min_confidence: float
     reranker_cross_encoder_model: str
-    reranker_cross_encoder_top_k: int
     reranker_cross_encoder_weight: float
     reranker_hybrid_backend: str
     reranker_llm_ambiguity_margin: float
@@ -144,9 +143,7 @@ class AppConfig:
             raw_span_overlap_threshold=settings.RAW_SPAN_OVERLAP_THRESHOLD,
             enable_retrieval_query_simplification=settings.ENABLE_RETRIEVAL_QUERY_SIMPLIFICATION,
             # ── database ──
-            database_path=Path(
-                os.getenv("DATABASE_PATH", settings.DATABASE_PATH)
-            ),
+            database_path=Path(os.getenv("DATABASE_PATH", settings.DATABASE_PATH)),
             # ── short-term memory ──
             raw_message_limit=settings.RAW_MESSAGE_LIMIT,
             memory_update_batch_size=settings.MEMORY_UPDATE_BATCH_SIZE,
@@ -177,7 +174,6 @@ class AppConfig:
             reranker_llm_top_k=settings.RERANKER_LLM_TOP_K,
             reranker_llm_min_confidence=settings.RERANKER_LLM_MIN_CONFIDENCE,
             reranker_cross_encoder_model=settings.RERANKER_CROSS_ENCODER_MODEL,
-            reranker_cross_encoder_top_k=settings.RERANKER_CROSS_ENCODER_TOP_K,
             reranker_cross_encoder_weight=settings.RERANKER_CROSS_ENCODER_WEIGHT,
             reranker_hybrid_backend=settings.RERANKER_HYBRID_BACKEND,
             reranker_llm_ambiguity_margin=settings.RERANKER_LLM_AMBIGUITY_MARGIN,
@@ -187,20 +183,12 @@ class AppConfig:
             reranker_llm_provenance_queries=settings.RERANKER_LLM_PROVENANCE_QUERIES,
             # ── structured memory ──
             structured_memory_retrieval_mode=settings.STRUCTURED_MEMORY_RETRIEVAL_MODE,
-            long_term_memory_chroma_persist_dir=Path(
-                settings.LONG_TERM_MEMORY_CHROMA_PERSIST_DIR
-            ),
+            long_term_memory_chroma_persist_dir=Path(settings.LONG_TERM_MEMORY_CHROMA_PERSIST_DIR),
             long_term_memory_collection=settings.LONG_TERM_MEMORY_COLLECTION,
             # ── gists ──
-            current_chat_gist_generation_enabled=(
-                settings.CURRENT_CHAT_GIST_GENERATION_ENABLED
-            ),
-            previous_chat_gist_generation_enabled=(
-                settings.PREVIOUS_CHAT_GIST_GENERATION_ENABLED
-            ),
-            previous_chat_gist_retrieval_enabled=(
-                settings.PREVIOUS_CHAT_GIST_RETRIEVAL_ENABLED
-            ),
+            current_chat_gist_generation_enabled=(settings.CURRENT_CHAT_GIST_GENERATION_ENABLED),
+            previous_chat_gist_generation_enabled=(settings.PREVIOUS_CHAT_GIST_GENERATION_ENABLED),
+            previous_chat_gist_retrieval_enabled=(settings.PREVIOUS_CHAT_GIST_RETRIEVAL_ENABLED),
             previous_chat_gist_extractor=settings.PREVIOUS_CHAT_GIST_EXTRACTOR,
             previous_chat_gist_max_messages_per_gist=(
                 settings.PREVIOUS_CHAT_GIST_MAX_MESSAGES_PER_GIST

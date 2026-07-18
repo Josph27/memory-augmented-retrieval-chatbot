@@ -177,9 +177,7 @@ def test_previous_gist_expands_to_exact_raw_span(tmp_path: Path) -> None:
     )
 
     assert state["insufficient_evidence"] is False
-    assert {candidate.source for candidate in state["candidates"]} == {
-        "previous_chat_gist"
-    }
+    assert {candidate.source for candidate in state["candidates"]} == {"previous_chat_gist"}
     raw = next(
         candidate
         for candidate in state["expanded_candidates"]
@@ -227,6 +225,7 @@ def test_trace_is_bounded_and_graph_has_no_write_nodes(tmp_path: Path) -> None:
         "retrieve",
         "expand_gists",
         "rerank",
+        "expand_doc_neighbors",
         "build_context",
         "validate_evidence",
         "mock_answer",
@@ -321,10 +320,7 @@ def test_semantic_router_exact_quote_fails_closed_with_gist_only(
     assert state["trace"]["context_sources"] == ["previous_chat_gist"]
     assert state["insufficient_evidence"] is True
     assert state["mock_answer"].startswith("MOCK INSUFFICIENT EVIDENCE:")
-    assert all(
-        candidate.content != query
-        for candidate in state["context_packet"].candidates
-    )
+    assert all(candidate.content != query for candidate in state["context_packet"].candidates)
 
 
 def test_semantic_router_required_scopes_are_visible_in_graph_trace(

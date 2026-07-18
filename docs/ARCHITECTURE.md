@@ -464,9 +464,9 @@ Storage         SQLite (9 tables) + Chroma (vector DB) + LLM Provider (via Model
 
 | Mode | Behavior |
 |------|----------|
-| `native` | CoordinatorAgent's imperative pipeline only |
+| `native` (default) | CoordinatorAgent's imperative pipeline only |
 | `langgraph_demo` | LangGraph StateGraph pipeline is authoritative; native is fallback |
-| `langgraph_shadow` | Both run; native is authoritative; LangGraph is comparison-only |
+| `compare` | Both run; native is authoritative; LangGraph is comparison-only |
 
 ### Fallback Chain
 

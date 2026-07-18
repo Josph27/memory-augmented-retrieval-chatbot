@@ -45,7 +45,7 @@ RECENT_MESSAGES_MAX_COUNT: int = 8
 # ═══════════════════════════════════════════════════════════════════════════════
 
 # scheduled | agentic_each_turn | chat_end_only
-MEMORY_UPDATE_POLICY: str = "agentic_each_turn"
+MEMORY_UPDATE_POLICY: str = "scheduled"
 MEMORY_UPDATE_BATCH_SIZE: int = 6
 MEMORY_UPDATE_TRIGGER_TOKENS: int = 1000
 MEMORY_UPDATE_MAX_INPUT_TOKENS: int = 4000
@@ -61,16 +61,22 @@ MEMORY_REPLAY_MAX_MESSAGES: int = 128
 
 DOCUMENT_RETRIEVAL_MODE: str = "langchain_chroma"
 DOCUMENT_CHUNKER: str = "custom"
-DOCUMENT_CHUNK_SIZE: int = 256
-DOCUMENT_CHUNK_OVERLAP: int = 56
-DOCUMENT_TOP_K: int = 40
-DOCUMENT_RETRIEVAL_FETCH_LIMIT: int = 80  # chunks fetched from Chroma before reranking
-EMBEDDING_MODEL_NAME: str = "sentence-transformers/all-MiniLM-L6-v2"
+DOCUMENT_CHUNK_SIZE: int = 1024
+DOCUMENT_CHUNK_OVERLAP: int = 164  # 16% of chunk_size
+DOCUMENT_TOP_K: int = 18  # post-reranker chunks in prompt
+DOCUMENT_RETRIEVAL_FETCH_LIMIT: int = 42  # chunks fetched from Chroma before reranking
+# --- Embedding model selection ---
+# Fast (~130 MB, 384-dim, ~0.01s/chunk):
+EMBEDDING_MODEL_NAME: str = "BAAI/bge-small-en-v1.5"
+# Balanced (~430 MB, 768-dim, ~0.03s/chunk):
+# EMBEDDING_MODEL_NAME: str = "BAAI/bge-base-en-v1.5"
+# Legacy (~80 MB, 384-dim):
+# EMBEDDING_MODEL_NAME: str = "sentence-transformers/all-MiniLM-L6-v2"
 
 # Chroma storage
 LANGCHAIN_CHROMA_PERSIST_DIR: str = "data/chroma"
-LANGCHAIN_CHUNK_SIZE: int = 256
-LANGCHAIN_CHUNK_OVERLAP: int = 56
+LANGCHAIN_CHUNK_SIZE: int = 1024
+LANGCHAIN_CHUNK_OVERLAP: int = 164
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # Structured Memory Retrieval
@@ -87,17 +93,45 @@ LONG_TERM_MEMORY_COLLECTION: str = "long_term_memory"
 # deterministic | cross_encoder | hybrid | llm
 RERANKER_MODE: str = "cross_encoder"
 
-# --- Cross-encoder model selection (uncomment ONE) ---
-# Fastest (~130 MB, English-only, ~0.05s/pair):
+# ═══════════════════════════════════════════════════════════════════════════════
+# Reranker Startup Mode — select via run.sh flag: --hybrid | --cross-encoder
+# ═══════════════════════════════════════════════════════════════════════════════
+
+RERANKER_STARTUP_MODE: str = os.getenv("RERANKER_STARTUP_MODE", "hybrid").strip().lower()
+
+# --- Cross-encoder model selection ---
+# Legacy (~130 MB, English-only, MiniLM, ~0.05s/pair) — DEFAULT for --hybrid:
 RERANKER_CROSS_ENCODER_MODEL: str = "cross-encoder/ms-marco-MiniLM-L12-v2"
-# Balanced (~1.1 GB, multilingual, ~0.5s/pair):
-# RERANKER_CROSS_ENCODER_MODEL: str = "BAAI/bge-reranker-base"
+# Quality (~142 MB, English, DeBERTa-based, higher relevance) — selected by --cross-encoder:
+# RERANKER_CROSS_ENCODER_MODEL: str = "mixedbread-ai/mxbai-rerank-xsmall-v1"
 # Best quality (~2.2 GB, multilingual, ~2s/pair):
 # RERANKER_CROSS_ENCODER_MODEL: str = "BAAI/bge-reranker-v2-m3"
 
-RERANKER_CROSS_ENCODER_TOP_K: int = 40
 RERANKER_CROSS_ENCODER_WEIGHT: float = 0.65
-RERANKER_HYBRID_BACKEND: str = "auto"  # auto | cross_encoder | llm
+
+if RERANKER_STARTUP_MODE == "cross_encoder":
+    RERANKER_CROSS_ENCODER_MODEL = "mixedbread-ai/mxbai-rerank-xsmall-v1"
+    RERANKER_CROSS_ENCODER_WEIGHT = 1.0
+elif RERANKER_STARTUP_MODE == "hybrid":
+    pass  # defaults already set above
+else:
+    print(f"Unknown RERANKER_STARTUP_MODE={RERANKER_STARTUP_MODE!r}, falling back to 'hybrid'")
+    RERANKER_CROSS_ENCODER_MODEL = "cross-encoder/ms-marco-MiniLM-L12-v2"
+    RERANKER_CROSS_ENCODER_WEIGHT = 0.65
+
+# Sync RERANKER_MODE and HYBRID_BACKEND with startup mode so the correct code path executes.
+# --hybrid  → hybrid mode (CE + z-score norm + deterministic blend, no LLM gate)
+# --cross-encoder → cross_encoder mode (pure CE, raw scores, no blend)
+if RERANKER_STARTUP_MODE == "cross_encoder":
+    RERANKER_MODE = "cross_encoder"
+    RERANKER_HYBRID_BACKEND = "auto"
+elif RERANKER_STARTUP_MODE == "hybrid":
+    RERANKER_MODE = "hybrid"
+    RERANKER_HYBRID_BACKEND = "cross_encoder"  # skip LLM gate, CE+blend only
+else:
+    RERANKER_HYBRID_BACKEND = "auto"
+
+RERANKER_HYBRID_BACKEND: str = RERANKER_HYBRID_BACKEND
 RERANKER_LLM_TOP_K: int = 10
 RERANKER_LLM_MIN_CONFIDENCE: float = 0.55
 RERANKER_LLM_AMBIGUITY_MARGIN: float = 0.15
@@ -116,7 +150,7 @@ LANGGRAPH_MAX_GIST_EXPANSION_CANDIDATES: int = 80
 # ═══════════════════════════════════════════════════════════════════════════════
 
 ROUTING_MODE: str = "hybrid"  # rule | llm | hybrid
-ORCHESTRATION_MODE: str = "langgraph_demo"  # native | langgraph_demo | compare
+ORCHESTRATION_MODE: str = "native"  # native | langgraph_demo | compare
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # Context Budget
@@ -125,7 +159,7 @@ ORCHESTRATION_MODE: str = "langgraph_demo"  # native | langgraph_demo | compare
 BASE_MEMORY_BUDGET: int = 4096
 MEMORY_RECALL_BUDGET_TOKENS: int = 8192
 CHAT_MEMORY_CAP: int = 8192
-DOCUMENT_MEMORY_CAP: int = 16_384
+DOCUMENT_MEMORY_CAP: int = 49_152
 MULTI_SCOPE_MEMORY_CAP: int = 16_384
 LONG_DOCUMENT_MEMORY_CAP: int = 32_768
 GLOBAL_SUMMARY_BUDGET_TOKENS: int = 65_536
@@ -195,9 +229,9 @@ _setenv("LANGCHAIN_CHUNK_OVERLAP", str(LANGCHAIN_CHUNK_OVERLAP))
 _setenv("STRUCTURED_MEMORY_RETRIEVAL_MODE", STRUCTURED_MEMORY_RETRIEVAL_MODE)
 _setenv("LONG_TERM_MEMORY_CHROMA_PERSIST_DIR", LONG_TERM_MEMORY_CHROMA_PERSIST_DIR)
 _setenv("LONG_TERM_MEMORY_COLLECTION", LONG_TERM_MEMORY_COLLECTION)
+_setenv("RERANKER_STARTUP_MODE", RERANKER_STARTUP_MODE)
 _setenv("RERANKER_MODE", RERANKER_MODE)
 _setenv("RERANKER_CROSS_ENCODER_MODEL", RERANKER_CROSS_ENCODER_MODEL)
-_setenv("RERANKER_CROSS_ENCODER_TOP_K", str(RERANKER_CROSS_ENCODER_TOP_K))
 _setenv("RERANKER_CROSS_ENCODER_WEIGHT", str(RERANKER_CROSS_ENCODER_WEIGHT))
 _setenv("RERANKER_HYBRID_BACKEND", RERANKER_HYBRID_BACKEND)
 _setenv("RERANKER_LLM_TOP_K", str(RERANKER_LLM_TOP_K))

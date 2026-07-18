@@ -1,19 +1,12 @@
 # Memory-Augmented Retrieval Chatbot
 
 This repository contains a TUM practical-course prototype of a multi-agent,
-typed-memory chatbot. The system combines Chainlit, SQLite, Chroma, LangGraph,
-and an OpenAI-compatible model endpoint to answer from recent conversation,
+typed-memory chatbot. The system combines Chainlit, SQLite, Chroma, and
+an OpenAI-compatible model endpoint to answer from recent conversation,
 cross-chat memory, and uploaded documents.
 
-The current application default is:
-
-```env
-ORCHESTRATION_MODE=langgraph_demo
-```
-
-In this mode, LangGraph builds the authoritative `ContextPacket` used by the
-answer model. The older Native coordinator path remains as an internal fallback
-if the graph fails.
+The default orchestration mode is `native` with a fast cross-encoder reranker
+(MiniLM). A quality mode (mxbai) is available via startup flag.
 
 ## Implemented features
 
@@ -68,7 +61,6 @@ architecture.
    OPENAI_API_KEY=dummy
    OPENAI_BASE_URL=http://localhost:11434/v1
    MODEL_NAME=qwen2.5:3b
-   ORCHESTRATION_MODE=langgraph_demo
    ```
 
 3. Install dependencies:
@@ -77,14 +69,34 @@ architecture.
    uv sync
    ```
 
-4. Start the app:
+4. Start the app (default fast mode):
 
    ```bash
-   uv run chainlit run app.py -w
+   uv run python startup.py -w
+   ```
+
+   Or use the quality mode:
+
+   ```bash
+   uv run python startup.py --cross-encoder -w
    ```
 
 5. Open the local URL printed by Chainlit, usually
    `http://localhost:8000`.
+
+### Startup modes
+
+| Flag | Reranker | Speed | Use when |
+| --- | --- | --- | --- |
+| `--hybrid` (default) | MiniLM cross-encoder + deterministic blend | Fast (~0.05s/pair) | Normal chat, demos |
+| `--cross-encoder` | mxbai DeBERTa cross-encoder only | Higher quality | Evaluation, precision retrieval |
+
+The `startup.py` script sets `RERANKER_STARTUP_MODE` and launches Chainlit.
+You can also set it directly as an env var:
+
+```bash
+RERANKER_STARTUP_MODE=cross_encoder uv run chainlit run app.py -w
+```
 
 ## Custom Frontend (Optional)
 
@@ -112,22 +124,25 @@ Required application variables:
 | `OPENAI_API_KEY` | Credential for the OpenAI-compatible endpoint. Use `dummy` for local endpoints that do not require a key. |
 | `OPENAI_BASE_URL` | OpenAI-compatible chat-completions endpoint. |
 | `MODEL_NAME` | Model ID sent to the endpoint. |
-| `ORCHESTRATION_MODE` | `langgraph_demo` by default. `native` and `langgraph_shadow` are diagnostic alternatives. |
+| `ORCHESTRATION_MODE` | `native` (default). `langgraph_demo` and `compare` are diagnostic alternatives. |
 
 Important optional variables:
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
+| `RERANKER_STARTUP_MODE` | `hybrid` | `hybrid` (fast MiniLM + deterministic) or `cross_encoder` (mxbai quality). Set via `startup.py` flag or env. |
+| `RERANKER_CROSS_ENCODER_MODEL` | `cross-encoder/ms-marco-MiniLM-L12-v2` | Cross-encoder model. Overridden by `RERANKER_STARTUP_MODE`. |
+| `RERANKER_CROSS_ENCODER_WEIGHT` | `0.65` | Blending weight (1.0 = pure CE). Overridden by `RERANKER_STARTUP_MODE`. |
 | `DATABASE_PATH` | `data/chatbot.db` | SQLite path. |
 | `DOCUMENT_RETRIEVAL_MODE` | `langchain_chroma` | Document retrieval backend. |
-| `DOCUMENT_TOP_K` | `8` | Number of document chunks retrieved per query. |
+| `DOCUMENT_TOP_K` | `18` | Number of document chunks in prompt after reranking. |
 | `LANGCHAIN_CHROMA_PERSIST_DIR` | `data/chroma` | Chroma document index. |
-| `EMBEDDING_MODEL_NAME` | `sentence-transformers/all-MiniLM-L6-v2` | Embedding model for vector-backed paths. |
-| `STRUCTURED_MEMORY_RETRIEVAL_MODE` | `sqlite` | Structured-memory retrieval mode: `sqlite`, `vector`, or `hybrid`. |
-| `ROUTING_MODE` | `rule` | `rule` is canonical; `hybrid` optionally lets the LLM add typed retrieval sources while preserving deterministic sources. |
-| `MEMORY_UPDATE_POLICY` | `scheduled` | `agentic_each_turn` makes LangMem evaluate each completed turn; default remains scheduled. |
+| `EMBEDDING_MODEL_NAME` | `BAAI/bge-small-en-v1.5` | Embedding model for vector-backed paths. |
+| `STRUCTURED_MEMORY_RETRIEVAL_MODE` | `hybrid` | Structured-memory retrieval mode: `sqlite`, `vector`, or `hybrid`. |
+| `ROUTING_MODE` | `hybrid` | `rule` is canonical; `hybrid` optionally lets the LLM add typed retrieval sources while preserving deterministic sources. |
+| `MEMORY_UPDATE_POLICY` | `scheduled` | `agentic_each_turn` makes LangMem evaluate each completed turn; `scheduled` batches by token threshold. |
 | `PREVIOUS_CHAT_GIST_EXTRACTOR` | `deterministic` | Set to `llm` to use model-backed previous-chat gists with deterministic fallback. |
-| `RERANKER_MODE` | `deterministic` | Reranking mode. |
+| `RERANKER_MODE` | `cross_encoder` | Reranking mode: `deterministic`, `cross_encoder`, `hybrid`, or `llm`. |
 | `DEMO_MEMORY_TRACE` | `0` | Optional message-level trace display. |
 
 See [.env.example](.env.example) for the current runnable defaults.
@@ -164,7 +179,7 @@ See [docs/DEMO_RUNBOOK.md](docs/DEMO_RUNBOOK.md) for a fuller runbook.
 Core local checks:
 
 ```bash
-ORCHESTRATION_MODE=langgraph_demo uv run pytest -q
+uv run pytest -q
 uv run ruff check .
 uv run python -m compileall app.py src evals tests scripts
 node --check public/product-navigation.js
@@ -174,11 +189,9 @@ git diff --check
 Browser/Product Behavior checks:
 
 ```bash
-ORCHESTRATION_MODE=langgraph_demo \
 PRODUCT_E2E_HEADED=0 \
 uv run pytest -q tests/e2e
 
-ORCHESTRATION_MODE=langgraph_demo \
 uv run python -m evals.product_behavior.runner
 ```
 

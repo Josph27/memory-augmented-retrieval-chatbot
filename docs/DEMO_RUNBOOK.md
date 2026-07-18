@@ -11,21 +11,25 @@ uses only current application behavior.
    OPENAI_API_KEY=dummy
    OPENAI_BASE_URL=http://localhost:11434/v1
    MODEL_NAME=qwen2.5:3b
-   ORCHESTRATION_MODE=langgraph_demo
    ROUTING_MODE=hybrid
    MEMORY_UPDATE_POLICY=agentic_each_turn
    PREVIOUS_CHAT_GIST_EXTRACTOR=llm
    PREVIOUS_CHAT_GIST_MAX_MESSAGES_PER_GIST=5
    PREVIOUS_CHAT_GIST_GENERATION_ENABLED=1
-   STRUCTURED_MEMORY_RETRIEVAL_MODE=sqlite
-   RERANKER_MODE=deterministic
-   DOCUMENT_TOP_K=8
+   STRUCTURED_MEMORY_RETRIEVAL_MODE=hybrid
+   DOCUMENT_TOP_K=18
    ```
 
-2. Start the app:
+2. Start the app (default fast mode):
 
    ```bash
-   uv run chainlit run app.py -w
+   uv run python startup.py -w
+   ```
+
+   For higher-quality retrieval in evaluations, use:
+
+   ```bash
+   uv run python startup.py --cross-encoder -w
    ```
 
 3. Open the local Chainlit URL.
@@ -66,7 +70,7 @@ answers from stored evidence.
 
 Use **Inspect answer** on the assistant message. Point out:
 
-- requested mode: `langgraph_demo`;
+- requested mode: `native`;
 - authoritative context: LangGraph unless fallback occurred;
 - route and selected sources;
 - selected evidence/provenance;

@@ -6,9 +6,7 @@ from math import ceil
 from src.core.contracts import RoutePlan
 
 
-LONG_DOCUMENT_TASK_CONTEXTS = frozenset(
-    {"document_synthesis", "long_document_summary"}
-)
+LONG_DOCUMENT_TASK_CONTEXTS = frozenset({"document_synthesis", "long_document_summary"})
 
 
 @dataclass(frozen=True)
@@ -18,7 +16,7 @@ class MemoryBudgetPolicy:
     base_memory_budget: int = 4096
     memory_recall_budget_tokens: int = 8192
     chat_memory_cap: int = 8192
-    document_memory_cap: int = 16_384
+    document_memory_cap: int = 49_152
     multi_scope_memory_cap: int = 16_384
     long_document_memory_cap: int = 32_768
     global_summary_budget_tokens: int = 65_536
@@ -54,12 +52,8 @@ class DynamicBudgetPlan:
             "required_target": self.required_target,
             "available_memory_budget": self.available_memory_budget,
             "working_memory_budget": self.working_memory_budget,
-            "budget_expanded_for_required_evidence": (
-                self.budget_expanded_for_required_evidence
-            ),
-            "required_evidence_exceeds_available": (
-                self.required_evidence_exceeds_available
-            ),
+            "budget_expanded_for_required_evidence": (self.budget_expanded_for_required_evidence),
+            "required_evidence_exceeds_available": (self.required_evidence_exceeds_available),
         }
 
 
@@ -91,8 +85,7 @@ class DynamicWorkingMemoryBudgetPlanner:
             available_memory_budget - budget_reserve_tokens,
         )
         required_headroom = ceil(
-            required_evidence_floor
-            * max(0.0, self.policy.required_evidence_headroom_ratio)
+            required_evidence_floor * max(0.0, self.policy.required_evidence_headroom_ratio)
         )
         required_target = required_evidence_floor + required_headroom
         normal_target = max(requested_memory_budget, required_target)
@@ -102,10 +95,7 @@ class DynamicWorkingMemoryBudgetPlanner:
             max(0, normal_target),
         )
         expanded = False
-        if (
-            required_evidence_floor > route_cap
-            and required_evidence_floor <= safe_available
-        ):
+        if required_evidence_floor > route_cap and required_evidence_floor <= safe_available:
             working = min(
                 safe_available,
                 max(required_evidence_floor, required_target),
@@ -123,9 +113,7 @@ class DynamicWorkingMemoryBudgetPlanner:
             available_memory_budget=max(0, available_memory_budget),
             working_memory_budget=max(0, working),
             budget_expanded_for_required_evidence=expanded,
-            required_evidence_exceeds_available=(
-                required_evidence_floor > safe_available
-            ),
+            required_evidence_exceeds_available=(required_evidence_floor > safe_available),
         )
 
 
@@ -137,9 +125,7 @@ def route_specific_cap(
     metadata = route_plan.metadata
     task_context = str(metadata.get("task_context") or "")
     required_scopes = {
-        str(scope)
-        for scope in metadata.get("required_scopes", [])
-        if isinstance(scope, str)
+        str(scope) for scope in metadata.get("required_scopes", []) if isinstance(scope, str)
     }
     if route_plan.context_profile == "global_summary":
         return (

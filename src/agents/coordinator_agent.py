@@ -148,6 +148,12 @@ class CoordinatorAgent:
         reranker_metadata = rerank_result.metadata
         timings["reranking"] = elapsed_ms(stage_started)
 
+        # Expand document candidates with neighbor chunks AFTER reranking
+        # so the cross-encoder saw clean single-chunk text.
+        expansion_started = perf_counter()
+        ranked_candidates = self.retriever_dispatcher.expand_document_neighbors(ranked_candidates)
+        timings["neighbor_expansion"] = elapsed_ms(expansion_started)
+
         # Compute turn index for potential retrieval log (dump happens later after context assembly)
         turn_index: int | None = None
         if os.environ.get("RETRIEVAL_LOG_ENABLED", "1").strip().lower() in {
@@ -159,7 +165,7 @@ class CoordinatorAgent:
             try:
                 turn_index = self.database.message_count(chat_id) // 2
             except Exception:
-                pass
+                turn_index = 0  # fallback: log even if message count lookup fails
 
         latest_user_message = {"role": "user", "content": content}
         stage_started = perf_counter()
@@ -241,8 +247,16 @@ class CoordinatorAgent:
         # Dump retrieval log after context assembly so we know which chunks made it into the prompt
         if turn_index is not None:
             try:
-                in_prompt_ids = {str(c.record_id) for c in (trace_context_packet.candidates or [])}
-                _dump_retrieval_log(chat_id, turn_index, ranked_candidates, in_prompt_ids)
+                in_prompt_ids: set[str] = {
+                    _candidate_log_id(c) for c in (trace_context_packet.candidates or [])
+                }
+                _dump_retrieval_log(
+                    chat_id,
+                    turn_index,
+                    ranked_candidates,
+                    in_prompt_ids,
+                    reranker_mode=reranker_metadata.get("reranker_mode", "deterministic"),
+                )
             except Exception:
                 pass
         if authoritative_orchestration.mode == LANGGRAPH_DEMO:
@@ -528,45 +542,80 @@ class CoordinatorAgent:
             )
 
 
+def _candidate_log_id(candidate) -> str:
+    """Return a stable, human-readable id for deduplication in retrieval logs."""
+    meta = getattr(candidate, "metadata", {}) or {}
+    source = getattr(candidate, "source", "unknown")
+    record = getattr(candidate, "record_id", None)
+    document_id = meta.get("document_id")
+    chunk_index = meta.get("chunk_index")
+    if source == "document_memory" and document_id and chunk_index is not None:
+        return f"{document_id}:{chunk_index}"
+    return f"{source}:{record}"
+
+
+def _compact_breakdown(meta: dict) -> dict | None:
+    """Return a compact score-breakdown summary safe for JSON logging."""
+    breakdown = meta.get("score_breakdown")
+    if not isinstance(breakdown, dict):
+        return None
+    contributions = breakdown.get("contributions")
+    if not isinstance(contributions, dict):
+        return None
+    return {
+        key: round(float(value), 6)
+        for key, value in contributions.items()
+        if isinstance(value, int | float)
+    }
+
+
 def _dump_retrieval_log(
     chat_id: str,
     turn_index: int,
     candidates: list,
     in_prompt_ids: set[str] | None = None,
+    reranker_mode: str = "deterministic",
 ) -> None:
-    """Dump document candidates to a JSON log file for debugging."""
+    """Dump ALL ranked candidates to a JSON log file for debugging.
+
+    Produces a unified format across all reranker modes:
+      rank, file_name, chunk_id, similarity, raw_ce, z_norm_ce,
+      deterministic, final_score, window, in_prompt, mode, content.
+    """
     log_dir = Path("logs/retrieval") / chat_id
     log_dir.mkdir(parents=True, exist_ok=True)
     filepath = log_dir / f"turn_{turn_index}.json"
     prompt_ids = in_prompt_ids or set()
 
     rows: list[dict] = []
-    seen_ids: set[str] = set()
+    seen: set[str] = set()
     for rank, candidate in enumerate(candidates):
-        if candidate.source != "document_memory":
-            continue
         meta = dict(candidate.metadata)
-        cid = f"{meta.get('document_id', '')}:{meta.get('chunk_index', '')}" or str(
-            candidate.record_id
-        )
-        if cid in seen_ids:
+        uid = _candidate_log_id(candidate)
+        if uid in seen:
             continue
-        seen_ids.add(cid)
-        in_prompt = cid in prompt_ids or str(candidate.record_id) in prompt_ids
+        seen.add(uid)
+        in_prompt = uid in prompt_ids
+        det_score = float(candidate.score if candidate.score is not None else 0.0)
         rows.append(
             {
                 "rank": rank,
-                "content": candidate.content,
-                "window_expanded": bool(meta.get("sentence_window_expansion")),
-                "in_prompt": in_prompt,
-                "score": candidate.score,
-                "similarity_score": meta.get("similarity_score"),
-                "cross_encoder_score": meta.get("cross_encoder_score"),
-                "combined_score": meta.get("combined_score"),
-                "document_id": meta.get("document_id"),
-                "chunk_index": meta.get("chunk_index"),
                 "file_name": meta.get("file_name"),
-                "retrieval_mode": meta.get("retrieval_mode"),
+                "chunk_id": (
+                    f"{meta.get('document_id')}:{meta.get('chunk_index')}"
+                    if meta.get("document_id") and meta.get("chunk_index") is not None
+                    else str(candidate.record_id)
+                ),
+                "similarity": meta.get("similarity_score"),
+                "raw_ce": meta.get("raw_cross_encoder_score"),
+                "z_norm_ce": meta.get("normalized_cross_encoder_score"),
+                "deterministic": meta.get("deterministic_score"),
+                "final_score": meta.get("final_score", det_score),
+                "window": bool(meta.get("sentence_window_expansion")),
+                "in_prompt": in_prompt,
+                "mode": reranker_mode,
+                "source": candidate.source,
+                "content": candidate.content[:500],
             }
         )
 
