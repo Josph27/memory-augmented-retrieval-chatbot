@@ -21,6 +21,7 @@ dependencies = [
   "pymupdf>=1.28.0",
   "python-dotenv>=1.0.0",
   "sentence-transformers>=5.5.1",
+  "sqlite-vec>=0.1.6",
 ]
 
 [dependency-groups]

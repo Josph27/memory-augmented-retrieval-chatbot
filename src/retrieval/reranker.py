@@ -983,17 +983,36 @@ def _sort_by_raw_ce_scores(
 
 
 def normalize_candidate_scores(candidates: list[MemoryCandidate]) -> list[float]:
-    """Min-max normalize deterministic candidate scores for weighted combination."""
+    """Per-source z-score normalize deterministic scores for weighted combination.
+
+    Each source type is normalized independently using z-score → sigmoid,
+    matching the cross-encoder normalization approach.  This prevents
+    sources with inherently higher feature scores (e.g. structured_memory
+    with source_priority=0.95) from compressing other sources' score
+    ranges under global min-max.
+
+    Single-candidate groups → 0.5 (neutral — no within-source signal).
+    """
     scores = [
         float(candidate.score if candidate.score is not None else 0.0) for candidate in candidates
     ]
     if not scores:
         return []
-    low = min(scores)
-    high = max(scores)
-    if high == low:
-        return [0.5 for _ in scores]
-    return [(score - low) / (high - low) for score in scores]
+
+    # Group indices by source
+    groups: dict[str, list[int]] = {}
+    for i, candidate in enumerate(candidates):
+        source = candidate.source
+        groups.setdefault(source, []).append(i)
+
+    normalized = [0.0] * len(candidates)
+    for source, indices in groups.items():
+        group_scores = [scores[i] for i in indices]
+        group_norms = _z_score_norm_list(group_scores)
+        for i, norm in zip(indices, group_norms):
+            normalized[i] = norm
+
+    return normalized
 
 
 def llm_gate_decision(

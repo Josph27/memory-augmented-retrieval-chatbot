@@ -14,9 +14,11 @@ def main() -> int:
     """Rebuild the semantic vector index for long-term structured memories."""
     from src.config import AppConfig
     from src.database import Database
-    from src.memory.long_term_store import SQLiteLongTermMemoryStore
-    from src.memory.long_term_vector_index import LongTermMemoryVectorIndex
-    from src.retrieval.langchain_chroma_retriever import LangChainChromaUnavailable
+from src.memory.long_term_store import SQLiteLongTermMemoryStore
+from src.memory.long_term_vector_index import (
+    LongTermMemoryVectorIndex,
+    VectorIndexUnavailable,
+)
 
     parser = argparse.ArgumentParser(
         description="Index SQLite long-term memories into the semantic Chroma index."
@@ -29,20 +31,17 @@ def main() -> int:
     store = SQLiteLongTermMemoryStore(database)
     namespaces = store.list_namespaces(limit=args.limit_namespaces)
     vector_index = LongTermMemoryVectorIndex(
-        persist_dir=config.long_term_memory_chroma_persist_dir,
-        collection_name=config.long_term_memory_collection,
+        database_path=config.database_path,
         embedding_model_name=config.embedding_model_name,
     )
 
     try:
         result = vector_index.rebuild_from_store(store=store, namespaces=namespaces)
-    except LangChainChromaUnavailable as error:
+    except VectorIndexUnavailable as error:
         print(f"long_term_memory_vector_unavailable reason={error}")
         return 2
 
     print(f"database_path={config.database_path}")
-    print(f"chroma_persist_dir={config.long_term_memory_chroma_persist_dir}")
-    print(f"collection={config.long_term_memory_collection}")
     print(f"namespaces={len(namespaces)}")
     print(f"indexed_count={result.indexed_count}")
     print(f"skipped_count={result.skipped_count}")

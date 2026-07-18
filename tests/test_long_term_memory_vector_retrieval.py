@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 from pathlib import Path
 
 from src.core.contracts import SourcePlan
@@ -12,52 +11,69 @@ from src.memory.long_term_store import (
 )
 from src.memory.long_term_vector_index import (
     LongTermMemoryVectorIndex,
+    VectorIndexBackend,
+    VectorIndexUnavailable,
     memory_record_to_index_text,
 )
-from src.retrieval.langchain_chroma_retriever import LangChainChromaUnavailable
 from src.retrieval.structured_memory_retriever import StructuredMemoryRetriever
 
 
-@dataclass
-class FakeDocument:
-    page_content: str
-    metadata: dict
+class FakeVectorBackend:
+    """In-memory vector backend that stores text+blob pairs and does lexical search."""
 
-
-class FakeVectorStore:
     def __init__(self) -> None:
-        self.documents: list[FakeDocument] = []
-        self.ids: list[str] = []
+        self.vectors: dict[int, bytes] = {}  # rowid → embedding blob
+        self.texts: dict[int, str] = {}  # rowid → index text (for search)
+        self.record_lookup: dict[int, tuple[str, str]] = {}  # rowid → (ns_path, memory_id)
+        self.removed: list[int] = []
 
-    def add_documents(self, documents: list[FakeDocument], ids: list[str]) -> None:
-        self.documents.extend(documents)
-        self.ids.extend(ids)
+    def add_vectors(self, rows: list[tuple[int, bytes]]) -> None:
+        for rowid, blob in rows:
+            self.vectors[rowid] = blob
 
-    def similarity_search_with_score(self, query: str, k: int):
+    def set_texts(self, texts: dict[int, str]) -> None:
+        """Store index texts for search simulation (not part of Protocol)."""
+        self.texts = dict(texts)
+
+    def remove_vectors(self, rowids: list[int]) -> None:
+        for rowid in rowids:
+            self.vectors.pop(rowid, None)
+            self.texts.pop(rowid, None)
+        self.removed.extend(rowids)
+
+    def search(self, query: str, k: int) -> list[tuple[int, float]]:
+        """Lexical overlap search — returns (rowid, score) pairs."""
         terms = {term.lower().strip("?.:,") for term in query.split()}
-        scored = []
-        for document in self.documents:
-            content = document.page_content.lower()
+        scored: list[tuple[int, float]] = []
+        for rowid, text in self.texts.items():
+            if rowid not in self.vectors:
+                continue
+            content = text.lower()
             overlap = sum(1 for term in terms if term and term in content)
-            score = 1.0 / max(1, overlap) if overlap else 999.0
-            scored.append((document, score))
-        scored.sort(key=lambda item: item[1])
+            score = overlap / max(1, len(terms)) if overlap else 0.0
+            if score > 0:
+                scored.append((rowid, score))
+        scored.sort(key=lambda item: item[1], reverse=True)
         return scored[:k]
 
 
 class FakeLongTermMemoryVectorIndex(LongTermMemoryVectorIndex):
-    def __init__(self, vectorstore: FakeVectorStore) -> None:
-        super().__init__(vectorstore=vectorstore)
-
-    @staticmethod
-    def _document_class():
-        return FakeDocument
+    def __init__(self, backend: FakeVectorBackend) -> None:
+        super().__init__(database_path=":memory:", vectorstore=backend)
 
 
-class UnavailableVectorIndex:
-    def search(self, query: str, limit: int = 10):
-        del query, limit
-        raise LangChainChromaUnavailable("missing vector backend")
+class UnavailableVectorBackend:
+    """Backend that always raises VectorIndexUnavailable."""
+
+    def add_vectors(self, rows: list[tuple[int, bytes]]) -> None:
+        del rows
+
+    def remove_vectors(self, rowids: list[int]) -> None:
+        del rowids
+
+    def search(self, query: str, k: int) -> list[tuple[int, float]]:
+        del query, k
+        raise VectorIndexUnavailable("missing vector backend")
 
 
 def test_memory_record_to_index_text_is_compact_and_semantic(tmp_path: Path) -> None:
@@ -82,24 +98,28 @@ def test_long_term_memory_vector_index_indexes_memory_records(tmp_path: Path) ->
         key="libraries",
         value="User prefers mature open-source libraries.",
     )
-    vectorstore = FakeVectorStore()
-    vector_index = FakeLongTermMemoryVectorIndex(vectorstore)
+    backend = FakeVectorBackend()
+    vector_index = FakeLongTermMemoryVectorIndex(backend)
+    # Store the index text so the fake can perform lexical search
+    backend.set_texts({record.rowid: memory_record_to_index_text(record)})
 
     result = vector_index.index_records([record])
 
     assert result.indexed_count == 1
     assert result.skipped_count == 0
-    assert len(vectorstore.documents) == 1
-    assert vectorstore.ids == ["user::default::semantic_memory::preferences:libraries"]
-    assert vectorstore.documents[0].metadata["memory_id"] == "preferences:libraries"
-    assert "mature open-source libraries" in vectorstore.documents[0].page_content
+    assert len(backend.vectors) == 1
+    assert record.rowid in backend.vectors
 
 
 def test_structured_memory_vector_retrieval_returns_expected_memory(
     tmp_path: Path,
 ) -> None:
     database = seeded_memory_database(tmp_path)
-    vector_index = indexed_memory_vector(database)
+    vector_index, backend = indexed_memory_vector(database)
+    store = SQLiteLongTermMemoryStore(database)
+    records = store.list(DEFAULT_USER_NAMESPACE)
+    # Populate fake backend with index texts for search
+    backend.set_texts({r.rowid: memory_record_to_index_text(r) for r in records})
     retriever = StructuredMemoryRetriever(
         database,
         mode="vector",
@@ -127,7 +147,10 @@ def test_structured_memory_hybrid_retrieval_deduplicates_by_memory_id(
     tmp_path: Path,
 ) -> None:
     database = seeded_memory_database(tmp_path)
-    vector_index = indexed_memory_vector(database)
+    vector_index, backend = indexed_memory_vector(database)
+    store = SQLiteLongTermMemoryStore(database)
+    records = store.list(DEFAULT_USER_NAMESPACE)
+    backend.set_texts({r.rowid: memory_record_to_index_text(r) for r in records})
     retriever = StructuredMemoryRetriever(
         database,
         mode="hybrid",
@@ -144,9 +167,7 @@ def test_structured_memory_hybrid_retrieval_deduplicates_by_memory_id(
     )
 
     matching = [
-        candidate
-        for candidate in candidates
-        if candidate.record_id == "preferences:libraries"
+        candidate for candidate in candidates if candidate.record_id == "preferences:libraries"
     ]
     assert len(matching) == 1
     assert "mature open-source libraries" in matching[0].content
@@ -159,7 +180,7 @@ def test_structured_memory_vector_retrieval_falls_back_to_sqlite(
     retriever = StructuredMemoryRetriever(
         database,
         mode="vector",
-        vector_index=UnavailableVectorIndex(),  # type: ignore[arg-type]
+        vector_index=FakeLongTermMemoryVectorIndex(UnavailableVectorBackend()),
     )
 
     candidates = retriever.retrieve(
@@ -205,12 +226,20 @@ def seeded_memory_database(tmp_path: Path) -> Database:
     return database
 
 
-def indexed_memory_vector(database: Database) -> FakeLongTermMemoryVectorIndex:
-    vectorstore = FakeVectorStore()
-    vector_index = FakeLongTermMemoryVectorIndex(vectorstore)
+def indexed_memory_vector(
+    database: Database,
+) -> tuple[FakeLongTermMemoryVectorIndex, FakeVectorBackend]:
+    backend = FakeVectorBackend()
+    vector_index = FakeLongTermMemoryVectorIndex(backend)
     store = SQLiteLongTermMemoryStore(database)
-    vector_index.index_records(store.list(DEFAULT_USER_NAMESPACE))
-    return vector_index
+    records = store.list(DEFAULT_USER_NAMESPACE)
+    # Set texts and record_lookup with rowids
+    backend.set_texts({r.rowid: memory_record_to_index_text(r) for r in records})
+    backend.record_lookup = {
+        r.rowid: ("user::default::semantic_memory", r.memory_id) for r in records
+    }
+    vector_index.index_records(records)
+    return vector_index, backend
 
 
 def stored_memory_record(

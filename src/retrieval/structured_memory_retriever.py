@@ -15,7 +15,7 @@ from src.memory.long_term_store import (
 from src.memory.long_term_vector_index import LongTermMemoryVectorIndex
 from src.memory.memory_trace import print_retrieved_memory_traces
 from src.memory.structured_state import active_memories, load_memory_state
-from src.retrieval.langchain_chroma_retriever import LangChainChromaUnavailable
+from src.memory.long_term_vector_index import VectorIndexUnavailable
 
 
 STRUCTURED_MEMORY_RETRIEVAL_MODES = {"sqlite", "vector", "hybrid"}
@@ -119,7 +119,7 @@ class StructuredMemoryRetriever:
         """Retrieve through vector index, falling back to existing SQLite behavior."""
         try:
             records = self._vector_records(chat_id, source_plan)
-        except LangChainChromaUnavailable as error:
+        except VectorIndexUnavailable as error:
             print(f"structured_memory_vector_unavailable reason={error}")
             return self._retrieve_sqlite(chat_id, source_plan)
         except Exception as error:
@@ -143,7 +143,7 @@ class StructuredMemoryRetriever:
         sqlite_candidates = self._retrieve_sqlite(chat_id, source_plan)
         try:
             vector_records = self._vector_records(chat_id, source_plan)
-        except LangChainChromaUnavailable as error:
+        except VectorIndexUnavailable as error:
             print(f"structured_memory_vector_unavailable reason={error}")
             return sqlite_candidates
         except Exception as error:
@@ -198,7 +198,7 @@ class StructuredMemoryRetriever:
                 {
                     "retrieval_mode": "vector",
                     "vector_score": result.score,
-                    "retrieval_backend": "long_term_memory_chroma",
+                    "retrieval_backend": "long_term_memory_sqlite_vec",
                 }
             )
             records.append(
@@ -234,7 +234,7 @@ def vector_record_to_candidate(record: LongTermMemoryRecord) -> MemoryCandidate:
     vector_score = metadata.get("vector_score")
     score = float(vector_score) if isinstance(vector_score, int | float) else candidate.score
     metadata["retrieval_mode"] = "vector"
-    metadata.setdefault("retrieval_backend", "long_term_memory_chroma")
+    metadata.setdefault("retrieval_backend", "long_term_memory_sqlite_vec")
     return MemoryCandidate(
         source=candidate.source,
         content=candidate.content,

@@ -79,6 +79,7 @@ class LongTermMemoryRecord:
     created_at: str = ""
     updated_at: str = ""
     metadata: dict[str, Any] = field(default_factory=dict)
+    rowid: int | None = None
 
     def as_memory_record(self) -> dict[str, Any]:
         """Convert to the existing `chat_memory_state` record format."""
@@ -107,6 +108,7 @@ class LongTermMemoryRecord:
             "created_at": self.created_at,
             "updated_at": self.updated_at,
             "metadata": dict(self.metadata),
+            "rowid": self.rowid,
         }
 
 
@@ -125,6 +127,7 @@ class LongTermMemoryWrite:
     source_message_ids: list[int] = field(default_factory=list)
     source_gist_id: int | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
+    rowid: int | None = None
 
     def as_store_value(self) -> dict[str, Any]:
         """Convert to a serializable store payload."""
@@ -139,6 +142,7 @@ class LongTermMemoryWrite:
             "source_message_ids": list(self.source_message_ids),
             "source_gist_id": self.source_gist_id,
             "metadata": dict(self.metadata),
+            "rowid": self.rowid,
         }
 
 
@@ -279,6 +283,7 @@ class SQLiteLongTermMemoryStore:
             row = connection.execute(
                 """
                 SELECT
+                    id AS rowid,
                     namespace_path,
                     namespace_json,
                     memory_id,
@@ -321,6 +326,7 @@ class SQLiteLongTermMemoryStore:
             rows = connection.execute(
                 """
                 SELECT
+                    id AS rowid,
                     namespace_path,
                     namespace_json,
                     memory_id,
@@ -395,6 +401,7 @@ class SQLiteLongTermMemoryStore:
             rows = connection.execute(
                 """
                 SELECT
+                    id AS rowid,
                     namespace_path,
                     namespace_json,
                     memory_id,
@@ -501,6 +508,7 @@ def record_to_write(
         source_message_ids=source_ids,
         source_gist_id=source_gist_id,
         metadata=metadata or {},
+        rowid=record.get("rowid"),
     )
 
 
@@ -577,6 +585,7 @@ def row_to_record(row: sqlite3.Row) -> LongTermMemoryRecord:
     metadata = safe_json_dict(row["metadata_json"])
     source_ids = safe_json_list(row["source_message_ids_json"])
     confidence = float(row["confidence"]) if row["confidence"] is not None else 0.5
+    record_rowid = row["rowid"] if "rowid" in row.keys() else None
     return LongTermMemoryRecord(
         namespace=namespace_from_path(
             row["namespace_path"] if "namespace_path" in row.keys() else row["namespace_json"]
@@ -593,6 +602,7 @@ def row_to_record(row: sqlite3.Row) -> LongTermMemoryRecord:
         created_at=row["created_at"],
         updated_at=row["updated_at"],
         metadata=metadata,
+        rowid=record_rowid,
     )
 
 

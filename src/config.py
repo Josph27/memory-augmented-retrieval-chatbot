@@ -94,8 +94,6 @@ class AppConfig:
 
     # ── structured memory ──
     structured_memory_retrieval_mode: str
-    long_term_memory_chroma_persist_dir: Path
-    long_term_memory_collection: str
 
     # ── gists ──
     current_chat_gist_generation_enabled: bool
@@ -183,8 +181,6 @@ class AppConfig:
             reranker_llm_provenance_queries=settings.RERANKER_LLM_PROVENANCE_QUERIES,
             # ── structured memory ──
             structured_memory_retrieval_mode=settings.STRUCTURED_MEMORY_RETRIEVAL_MODE,
-            long_term_memory_chroma_persist_dir=Path(settings.LONG_TERM_MEMORY_CHROMA_PERSIST_DIR),
-            long_term_memory_collection=settings.LONG_TERM_MEMORY_COLLECTION,
             # ── gists ──
             current_chat_gist_generation_enabled=(settings.CURRENT_CHAT_GIST_GENERATION_ENABLED),
             previous_chat_gist_generation_enabled=(settings.PREVIOUS_CHAT_GIST_GENERATION_ENABLED),

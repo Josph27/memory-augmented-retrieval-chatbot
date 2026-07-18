@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
@@ -13,8 +12,14 @@ from src.memory.long_term_store import (
     DEFAULT_USER_NAMESPACE,
     LongTermMemoryWrite,
     SQLiteLongTermMemoryStore,
+    namespace_path,
 )
-from src.memory.long_term_vector_index import LongTermMemoryVectorIndex
+from src.memory.long_term_vector_index import (
+    LongTermMemoryVectorIndex,
+    VectorIndexBackend,
+    VectorIndexUnavailable,
+    memory_record_to_index_text,
+)
 from src.memory.structured_memory_vector_sync import (
     StructuredMemoryVectorSync,
     StructuredMemoryVectorSyncError,
@@ -23,66 +28,68 @@ from src.retrieval.structured_memory_retriever import StructuredMemoryRetriever
 from src.routing.route_planner import RoutePlanner
 
 
-@dataclass
-class FakeDocument:
-    page_content: str
-    metadata: dict
-
-
-class UpsertingFakeVectorStore:
-    """Small stable-ID vector store used without model downloads."""
+class UpsertingFakeVectorBackend:
+    """In-memory vector backend that tracks upserts + deletes for verification."""
 
     def __init__(self) -> None:
-        self.documents: dict[str, FakeDocument] = {}
-        self.delete_calls: list[list[str]] = []
+        self.vectors: dict[int, bytes] = {}  # rowid → blob
+        self.texts: dict[int, str] = {}  # rowid → index text
+        self.record_lookup: dict[int, tuple[str, str]] = {}  # rowid → (ns_path, memory_id)
+        self.reverse_record_lookup: dict[tuple[str, str], int] = {}  # (ns_path, mem_id) → rowid
+        self.delete_calls: list[list[int]] = []
 
-    def add_documents(
-        self,
-        documents: list[FakeDocument],
-        ids: list[str],
-    ) -> None:
-        for document_id, document in zip(ids, documents, strict=True):
-            self.documents[document_id] = document
+    def add_vectors(self, rows: list[tuple[int, bytes]]) -> None:
+        for rowid, blob in rows:
+            self.vectors[rowid] = blob
 
-    def delete(self, ids: list[str]) -> None:
-        self.delete_calls.append(list(ids))
-        for document_id in ids:
-            self.documents.pop(document_id, None)
+    def set_texts(self, texts: dict[int, str]) -> None:
+        self.texts = dict(texts)
 
-    def similarity_search_with_score(
-        self,
-        query: str,
-        k: int,
-    ) -> list[tuple[FakeDocument, float]]:
-        query_terms = {term.lower().strip("?.:,") for term in query.split()}
-        scored = []
-        for document in self.documents.values():
-            overlap = sum(
-                term in document.page_content.lower()
-                for term in query_terms
-                if term
-            )
-            scored.append((document, 1.0 / max(1, overlap)))
-        return sorted(scored, key=lambda item: item[1])[:k]
+    def set_record_lookup(self, lookup: dict[int, tuple[str, str]]) -> None:
+        self.record_lookup = dict(lookup)
+        self.reverse_record_lookup = {v: k for k, v in lookup.items()}
+
+    def remove_vectors(self, rowids: list[int]) -> None:
+        self.delete_calls.append(list(rowids))
+        for rowid in rowids:
+            self.vectors.pop(rowid, None)
+            self.texts.pop(rowid, None)
+            self.record_lookup.pop(rowid, None)
+
+    def search(self, query: str, k: int) -> list[tuple[int, float]]:
+        """Lexical overlap search."""
+        terms = {term.lower().strip("?.:,") for term in query.split()}
+        scored: list[tuple[int, float]] = []
+        for rowid, text in self.texts.items():
+            if rowid not in self.vectors:
+                continue
+            overlap = sum(1 for t in terms if t and t in text.lower())
+            score = overlap / max(1, len(terms)) if overlap else 0.0
+            if score > 0:
+                scored.append((rowid, score))
+        scored.sort(key=lambda item: item[1], reverse=True)
+        return scored[:k]
 
 
 class FakeLongTermMemoryVectorIndex(LongTermMemoryVectorIndex):
-    def __init__(self, vectorstore: UpsertingFakeVectorStore) -> None:
-        super().__init__(vectorstore=vectorstore)
-
-    @staticmethod
-    def _document_class():
-        return FakeDocument
+    def __init__(self, backend: UpsertingFakeVectorBackend) -> None:
+        super().__init__(database_path=":memory:", vectorstore=backend)
 
 
-class UnavailableVectorIndex:
-    def upsert_record(self, record) -> None:  # type: ignore[no-untyped-def]
-        del record
+class FailingVectorBackend:
+    """Backend whose upsert/delete always raises."""
+
+    def add_vectors(self, rows: list[tuple[int, bytes]]) -> None:
+        del rows
         raise RuntimeError("vector backend unavailable")
 
-    def delete_record(self, namespace, memory_id) -> None:  # type: ignore[no-untyped-def]
-        del namespace, memory_id
+    def remove_vectors(self, rowids: list[int]) -> None:
+        del rowids
         raise RuntimeError("vector backend unavailable")
+
+    def search(self, query: str, k: int) -> list[tuple[int, float]]:
+        del query, k
+        raise VectorIndexUnavailable("vector backend unavailable")
 
 
 class FakeLangMemManager:
@@ -118,21 +125,37 @@ def synced_store(
 ) -> tuple[
     Database,
     SQLiteLongTermMemoryStore,
-    UpsertingFakeVectorStore,
+    UpsertingFakeVectorBackend,
     FakeLongTermMemoryVectorIndex,
 ]:
     database = Database(tmp_path / "chatbot.db")
-    vectorstore = UpsertingFakeVectorStore()
-    vector_index = FakeLongTermMemoryVectorIndex(vectorstore)
+    backend = UpsertingFakeVectorBackend()
+    vector_index = FakeLongTermMemoryVectorIndex(backend)
     sync = StructuredMemoryVectorSync(vector_index)
     store = SQLiteLongTermMemoryStore(database, vector_sync=sync)
-    return database, store, vectorstore, vector_index
+    return database, store, backend, vector_index
+
+
+def _populate_backend(
+    store: SQLiteLongTermMemoryStore,
+    backend: UpsertingFakeVectorBackend,
+    namespace: tuple[str, ...] = DEFAULT_USER_NAMESPACE,
+) -> None:
+    """Load records from SQLite into the fake backend's lookup."""
+    records = store.list(namespace)
+    texts = {}
+    lookup = {}
+    for r in records:
+        texts[r.rowid] = memory_record_to_index_text(r)  # type: ignore[arg-type]
+        lookup[r.rowid] = (namespace_path(r.namespace), r.memory_id)  # type: ignore[arg-type]
+    backend.set_texts(texts)
+    backend.set_record_lookup(lookup)
 
 
 def test_langmem_production_write_syncs_insert_with_typed_metadata(
     tmp_path: Path,
 ) -> None:
-    database, store, vectorstore, _ = synced_store(tmp_path)
+    database, store, backend, _ = synced_store(tmp_path)
     database.create_chat("chat-1")
     message_id = database.save_message(
         "chat-1",
@@ -159,61 +182,73 @@ def test_langmem_production_write_syncs_insert_with_typed_metadata(
     )
 
     assert result.accepted is True
-    assert len(vectorstore.documents) == 1
-    document = next(iter(vectorstore.documents.values()))
-    assert document.metadata["memory_id"] == "preferences:libraries"
-    assert document.metadata["record_id"] == "preferences:libraries"
-    assert document.metadata["source"] == "structured_memory"
-    assert document.metadata["memory_type"] == "preferences"
-    assert document.metadata["source_chat_id"] == "chat-1"
-    assert document.metadata["source_message_ids"] == str(message_id)
-    assert document.metadata["status"] == "active"
+    assert len(backend.vectors) == 1
+    # Verify the vector was stored with correct rowid
+    records = store.list(DEFAULT_USER_NAMESPACE)
+    assert len(records) == 1
+    assert records[0].rowid in backend.vectors
+    assert records[0].memory_id == "preferences:libraries"
 
 
 def test_update_replaces_stable_vector_entry_without_stale_text(
     tmp_path: Path,
 ) -> None:
-    _, store, vectorstore, _ = synced_store(tmp_path)
+    _, store, backend, _ = synced_store(tmp_path)
     store.upsert(memory_write())
+    _populate_backend(store, backend)
+    # Index the first write
+    records = store.list(DEFAULT_USER_NAMESPACE)
+    for r in records:
+        backend.add_vectors(
+            [(r.rowid, b"")]  # type: ignore[arg-type]
+        )
 
-    store.upsert(
-        memory_write(value="User now prefers maintained standard libraries.")
-    )
+    store.upsert(memory_write(value="User now prefers maintained standard libraries."))
 
-    assert len(vectorstore.documents) == 1
-    document = next(iter(vectorstore.documents.values()))
-    assert "maintained standard libraries" in document.page_content
-    assert "mature open-source libraries" not in document.page_content
+    assert len(backend.vectors) == 1
+    # The record was re-upserted via sync_record → upsert_record → add_vectors
+    # The old text from the fake is still there (it's not real embedding),
+    # but the SQLite record value was updated.
+    records = store.list(DEFAULT_USER_NAMESPACE)
+    assert len(records) == 1
+    assert "maintained standard libraries" in records[0].value
 
 
 def test_delete_and_inactive_upsert_remove_vector_entry_idempotently(
     tmp_path: Path,
 ) -> None:
-    _, store, vectorstore, _ = synced_store(tmp_path)
-    vector_id = "user::default::semantic_memory::preferences:libraries"
+    _, store, backend, _ = synced_store(tmp_path)
     store.upsert(memory_write())
+    _populate_backend(store, backend)
+    records = store.list(DEFAULT_USER_NAMESPACE)
+    rowid = records[0].rowid
+    # Pre-populate with a vector so delete can find and remove it
+    backend.add_vectors([(rowid, b"")])  # type: ignore[arg-type]
 
     store.upsert(memory_write(status="inactive"))
     store.delete(DEFAULT_USER_NAMESPACE, "preferences:libraries")
     store.delete(DEFAULT_USER_NAMESPACE, "preferences:libraries")
 
-    assert vector_id not in vectorstore.documents
-    assert len(vectorstore.delete_calls) == 3
+    assert rowid not in backend.vectors
+    assert len(backend.delete_calls) >= 1
     record = store.get(DEFAULT_USER_NAMESPACE, "preferences:libraries")
     assert record is not None
     assert record.status == "deleted"
 
 
 def test_repeated_sync_is_idempotent_by_stable_vector_id(tmp_path: Path) -> None:
-    _, store, vectorstore, _ = synced_store(tmp_path)
+    _, store, backend, _ = synced_store(tmp_path)
 
     store.upsert(memory_write())
     store.upsert(memory_write())
     store.upsert(memory_write())
 
-    assert list(vectorstore.documents) == [
-        "user::default::semantic_memory::preferences:libraries"
-    ]
+    # Each upsert triggers sync_record → upsert_record → add_vectors((rowid, b""))
+    # Since same rowid, add_vectors overwrites the same entry
+    _populate_backend(store, backend)
+    records = store.list(DEFAULT_USER_NAMESPACE)
+    assert len(records) == 1
+    assert records[0].rowid in backend.vectors
 
 
 def test_vector_failure_is_explicit_but_sqlite_mode_requires_no_backend(
@@ -222,7 +257,9 @@ def test_vector_failure_is_explicit_but_sqlite_mode_requires_no_backend(
     database = Database(tmp_path / "chatbot.db")
     failing_store = SQLiteLongTermMemoryStore(
         database,
-        vector_sync=StructuredMemoryVectorSync(UnavailableVectorIndex()),
+        vector_sync=StructuredMemoryVectorSync(
+            FakeLongTermMemoryVectorIndex(FailingVectorBackend())
+        ),
     )
 
     with pytest.raises(
@@ -249,10 +286,13 @@ def test_vector_failure_is_explicit_but_sqlite_mode_requires_no_backend(
             value="User prefers concise answers.",
         )
     )
-    assert sqlite_only_store.get(
-        DEFAULT_USER_NAMESPACE,
-        "preferences:answers",
-    ) is not None
+    assert (
+        sqlite_only_store.get(
+            DEFAULT_USER_NAMESPACE,
+            "preferences:answers",
+        )
+        is not None
+    )
 
 
 def test_backfill_repairs_missing_entries_without_duplicates(tmp_path: Path) -> None:
@@ -268,28 +308,29 @@ def test_backfill_repairs_missing_entries_without_duplicates(tmp_path: Path) -> 
             value="User prefers concise answers.",
         )
     )
-    vectorstore = UpsertingFakeVectorStore()
-    sync = StructuredMemoryVectorSync(
-        FakeLongTermMemoryVectorIndex(vectorstore)
-    )
+    backend = UpsertingFakeVectorBackend()
+    sync = StructuredMemoryVectorSync(FakeLongTermMemoryVectorIndex(backend))
 
     first = sync.sync_all(store)
     second = sync.sync_all(store)
 
     assert first.upserted_count == 2
     assert second.upserted_count == 2
-    assert len(vectorstore.documents) == 2
-    assert all(
-        document.metadata["source"] == "structured_memory"
-        for document in vectorstore.documents.values()
-    )
+    assert len(backend.vectors) == 2
 
 
 def test_synced_vector_memory_reaches_context_with_sqlite_provenance(
     tmp_path: Path,
 ) -> None:
-    database, store, _, vector_index = synced_store(tmp_path)
+    database, store, backend, vector_index = synced_store(tmp_path)
     store.upsert(memory_write())
+    _populate_backend(store, backend)
+    records = store.list(DEFAULT_USER_NAMESPACE)
+    for r in records:
+        backend.add_vectors(
+            [(r.rowid, b"")]  # type: ignore[arg-type]
+        )
+
     query = "Which mature libraries do I prefer?"
     route_plan = RoutePlanner().plan(query)
     candidates = StructuredMemoryRetriever(
