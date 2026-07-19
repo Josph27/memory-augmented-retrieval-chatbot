@@ -361,6 +361,11 @@ async def product_window_message(data: object) -> None:
         return
     if data.get("source") != "memory-chatbot-ui":
         return
+    if data.get("command") == "consolidation-log":
+        chat_id = data.get("chat_id")
+        if chat_id:
+            await send_consolidation_log(str(chat_id))
+        return
     if data.get("command") != "lifecycle-action":
         return
     action_name = data.get("action")
@@ -498,6 +503,33 @@ async def send_product_error(content: str) -> None:
                 "source": "memory-chatbot-ui",
                 "command": "product-error",
                 "message": content,
+            }
+        )
+    except Exception:
+        return
+
+
+async def send_consolidation_log(chat_id: str) -> None:
+    """Send memory consolidation log batches to the frontend."""
+    import json
+    from pathlib import Path
+
+    log_dir = Path("logs/memory") / chat_id
+    batches: list[dict] = []
+    if log_dir.exists():
+        for filepath in sorted(log_dir.glob("batch_*.json")):
+            try:
+                with open(filepath) as f:
+                    batches.append(json.load(f))
+            except Exception:
+                continue
+    try:
+        await cl.send_window_message(
+            {
+                "source": "memory-chatbot-ui",
+                "command": "consolidation-log",
+                "chat_id": chat_id,
+                "batches": batches,
             }
         )
     except Exception:

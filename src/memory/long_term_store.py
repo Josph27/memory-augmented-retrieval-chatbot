@@ -47,16 +47,23 @@ def matches_namespace_prefix(
 
 
 def category_namespace(category: str, source_chat_id: str | None = None) -> tuple[str, ...]:
-    """Return the default long-term namespace for one memory category."""
+    """Return the long-term namespace for one memory category, scoped by category."""
     del source_chat_id
-    if category == "project_facts":
-        return DEFAULT_PROJECT_NAMESPACE
-    return DEFAULT_USER_NAMESPACE
+    return ("memory", category)
 
 
 def structured_memory_namespaces(chat_id: str | None = None) -> list[tuple[str, ...]]:
     """Return namespaces consulted for structured-memory retrieval."""
-    namespaces = [DEFAULT_USER_NAMESPACE, DEFAULT_PROJECT_NAMESPACE]
+    namespaces = [
+        ("memory", "past_events"),
+        ("memory", "user_experiences"),
+        ("memory", "user_facts"),
+        ("memory", "user_state"),
+        ("memory", "user_preferences"),
+        ("memory", "upcoming"),
+        ("memory", "procedural"),
+        ("memory", "corrections"),
+    ]
     if chat_id:
         namespaces.append(("chat", chat_id, "structured_memory"))
     return namespaces
@@ -79,7 +86,17 @@ class LongTermMemoryRecord:
     created_at: str = ""
     updated_at: str = ""
     metadata: dict[str, Any] = field(default_factory=dict)
+    expires_at: str = ""
     rowid: int | None = None
+
+    def is_expired(self, *, now: str | None = None) -> bool:
+        """Return True if this memory has an expiration that has passed."""
+        if not self.expires_at:
+            return False
+        from datetime import datetime, timezone
+
+        current = now or datetime.now(timezone.utc).isoformat(timespec="seconds")
+        return self.expires_at < current
 
     def as_memory_record(self) -> dict[str, Any]:
         """Convert to the existing `chat_memory_state` record format."""
@@ -109,6 +126,7 @@ class LongTermMemoryRecord:
             "updated_at": self.updated_at,
             "metadata": dict(self.metadata),
             "rowid": self.rowid,
+            "expires_at": self.expires_at,
         }
 
 
@@ -127,6 +145,7 @@ class LongTermMemoryWrite:
     source_message_ids: list[int] = field(default_factory=list)
     source_gist_id: int | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
+    expires_at: str = ""
     rowid: int | None = None
 
     def as_store_value(self) -> dict[str, Any]:
@@ -143,6 +162,7 @@ class LongTermMemoryWrite:
             "source_gist_id": self.source_gist_id,
             "metadata": dict(self.metadata),
             "rowid": self.rowid,
+            "expires_at": self.expires_at,
         }
 
 
@@ -217,7 +237,10 @@ class SQLiteLongTermMemoryStore:
     def upsert(self, record: LongTermMemoryWrite) -> None:
         """Insert or update one memory row."""
         timestamp = utc_now()
-        metadata_json = json.dumps(record.metadata or {}, ensure_ascii=True)
+        metadata = dict(record.metadata or {})
+        if record.expires_at:
+            metadata["expires_at"] = record.expires_at
+        metadata_json = json.dumps(metadata, ensure_ascii=True)
         source_ids_json = json.dumps(record.source_message_ids or [], ensure_ascii=True)
         namespace_json = json.dumps(list(record.namespace), ensure_ascii=True)
         with self.database.connect() as connection:
@@ -347,7 +370,7 @@ class SQLiteLongTermMemoryStore:
                 """,
                 (namespace_path(namespace),),
             ).fetchall()
-        return [row_to_record(row) for row in rows]
+        return _filter_unexpired([row_to_record(row) for row in rows])
 
     def search(
         self,
@@ -367,10 +390,10 @@ class SQLiteLongTermMemoryStore:
             scored.sort(
                 key=lambda item: (item[0], item[1].updated_at, item[1].memory_id), reverse=True
             )
-            return [row for _, row in scored[:limit]]
+            return [row for _, row in scored[:limit] if not row.is_expired()]
 
         candidate_rows.sort(key=lambda row: (row.updated_at, row.memory_id), reverse=True)
-        return candidate_rows[:limit]
+        return _filter_unexpired(candidate_rows)[:limit]
 
     def list_namespaces(
         self,
@@ -423,11 +446,12 @@ class SQLiteLongTermMemoryStore:
             ).fetchall()
 
         candidates = [row_to_record(row) for row in rows]
-        return [
+        matching = [
             record
             for record in candidates
             if matches_namespace_prefix(record.namespace, namespace_prefix)
         ]
+        return _filter_unexpired(matching)
 
 
 class LangGraphInMemoryLongTermMemoryStore:
@@ -489,6 +513,7 @@ def record_to_write(
     source_chat_id: str | None,
     source_gist_id: int | None = None,
     metadata: dict[str, Any] | None = None,
+    expires_at: str = "",
 ) -> LongTermMemoryWrite:
     """Convert a structured-memory record dict to a long-term write."""
     source_ids = [
@@ -508,6 +533,7 @@ def record_to_write(
         source_message_ids=source_ids,
         source_gist_id=source_gist_id,
         metadata=metadata or {},
+        expires_at=expires_at,
         rowid=record.get("rowid"),
     )
 
@@ -586,6 +612,7 @@ def row_to_record(row: sqlite3.Row) -> LongTermMemoryRecord:
     source_ids = safe_json_list(row["source_message_ids_json"])
     confidence = float(row["confidence"]) if row["confidence"] is not None else 0.5
     record_rowid = row["rowid"] if "rowid" in row.keys() else None
+    expires_at = str(metadata.pop("expires_at", "") or "").strip()
     return LongTermMemoryRecord(
         namespace=namespace_from_path(
             row["namespace_path"] if "namespace_path" in row.keys() else row["namespace_json"]
@@ -602,6 +629,7 @@ def row_to_record(row: sqlite3.Row) -> LongTermMemoryRecord:
         created_at=row["created_at"],
         updated_at=row["updated_at"],
         metadata=metadata,
+        expires_at=expires_at,
         rowid=record_rowid,
     )
 
@@ -616,7 +644,7 @@ def record_from_store_value(
     return LongTermMemoryRecord(
         namespace=namespace,
         memory_id=memory_id,
-        category=str(value.get("category", "preferences")),
+        category=str(value.get("category", "user_facts")),
         key=str(value.get("key", memory_id)),
         value=str(value.get("value", "")),
         confidence=float(value.get("confidence", 0.5) or 0.5),
@@ -629,6 +657,7 @@ def record_from_store_value(
         created_at=str(value.get("created_at", "")),
         updated_at=str(value.get("updated_at", "")),
         metadata=dict(value.get("metadata", {})),
+        expires_at=str(value.get("expires_at", "") or ""),
     )
 
 
@@ -703,3 +732,10 @@ def lexical_score(record: LongTermMemoryRecord, terms: set[str]) -> float:
     if overlap == 0:
         return 0.0
     return overlap / max(1, len(terms))
+
+
+def _filter_unexpired(
+    records: list[LongTermMemoryRecord],
+) -> list[LongTermMemoryRecord]:
+    """Filter out records whose expires_at timestamp has passed."""
+    return [record for record in records if not record.is_expired()]

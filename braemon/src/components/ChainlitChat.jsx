@@ -7,7 +7,7 @@ import {
 	sessionIdState,
 } from "@chainlit/react-client";
 import { useRecoilState } from "recoil";
-import { endChat, forkChat } from "../api";
+import { endChat, forkChat, fetchConsolidationLog } from "../api";
 import { useNavigate } from "react-router-dom";
 import { v4 as uuidv4 } from "uuid";
 
@@ -566,6 +566,7 @@ export default function ChainlitChat({ chatId, onConsolidate }) {
 	const loadingStart = useRef(null);
 	const [elapsed, setElapsed] = useState(0);
 	const [processingStage, setProcessingStage] = useState("indexing");
+	const [consolidationLog, setConsolidationLog] = useState(null);
 	const processingLabel = loading
 		? processingStage === "indexing"
 			? "Indexing files"
@@ -587,6 +588,16 @@ export default function ChainlitChat({ chatId, onConsolidate }) {
 		window.addEventListener("message", handler);
 		return () => window.removeEventListener("message", handler);
 	}, []);
+
+	// Close consolidation log panel on Escape
+	useEffect(() => {
+		if (consolidationLog === null) return;
+		const onKey = (e) => {
+			if (e.key === "Escape") setConsolidationLog(null);
+		};
+		window.addEventListener("keydown", onKey);
+		return () => window.removeEventListener("keydown", onKey);
+	}, [consolidationLog]);
 
 	useEffect(() => {
 		if (hasConnected.current) return;
@@ -698,6 +709,17 @@ export default function ChainlitChat({ chatId, onConsolidate }) {
 	const handleConsolidate = () => {
 		if (!chatId) return;
 		onConsolidate?.(chatId);
+	};
+
+	const handleConsolidationLog = async () => {
+		if (!chatId) return;
+		try {
+			const data = await fetchConsolidationLog(chatId);
+			setConsolidationLog(data.batches || []);
+		} catch (err) {
+			console.error(err);
+			alert("Failed to fetch consolidation log");
+		}
 	};
 
 	const handleEndChat = async () => {
@@ -865,6 +887,16 @@ export default function ChainlitChat({ chatId, onConsolidate }) {
 							</span>
 							Consolidate
 						</button>
+						<button
+							onClick={handleConsolidationLog}
+							disabled={!connected || loading}
+							className="bg-dusty-grape/20 border border-lilac-ash/30 text-almond-silk px-3 py-1 rounded-sm text-label-sm flex items-center gap-xs hover:bg-dusty-grape/40 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+						>
+							<span className="material-symbols-outlined text-[14px]">
+								list_alt
+							</span>
+							Consolidation Log
+						</button>
 					</div>
 					{attachedFile && (
 						<div className="flex items-center justify-between bg-surface-container-high border border-outline-variant/30 rounded-sm px-sm py-xs mb-xs">
@@ -921,6 +953,95 @@ export default function ChainlitChat({ chatId, onConsolidate }) {
 					</div>
 				</div>
 			</div>
+
+			{/* Consolidation Log Panel */}
+			{consolidationLog !== null && (
+				<div className="fixed inset-0 z-50 overflow-y-auto">
+					<div
+						className="fixed inset-0 bg-black/60"
+						onClick={() => setConsolidationLog(null)}
+					/>
+					<div className="relative bg-surface border border-outline-variant/30 rounded-sm w-full max-w-4xl mx-auto my-16 max-h-[80vh] overflow-y-auto p-md shadow-2xl">
+						<div className="flex items-center justify-between mb-md">
+							<h2 className="text-label-lg font-bold">Consolidation Log</h2>
+							<button
+								onClick={() => setConsolidationLog(null)}
+								className="text-on-surface-variant hover:text-on-surface"
+							>
+								<span className="material-symbols-outlined">close</span>
+							</button>
+						</div>
+						{consolidationLog.length === 0 ? (
+							<p className="text-on-surface-variant text-body-sm">
+								No consolidation log entries for this chat yet.
+							</p>
+						) : (
+							<>
+								<p className="text-on-surface-variant text-body-sm mb-sm">
+									{consolidationLog.length} batch
+									{consolidationLog.length !== 1 ? "es" : ""}
+								</p>
+								{consolidationLog.map((batch, bi) => {
+									const entries = Array.isArray(batch.entries)
+										? batch.entries
+										: [];
+									const msgIds = batch.batch?.message_ids || [];
+									const msgs = batch.batch?.messages || [];
+									return (
+										<details
+											key={bi}
+											className="mb-sm border border-outline-variant/20 rounded-sm"
+										>
+											<summary className="px-sm py-xs cursor-pointer text-label-sm font-bold bg-surface-container-low">
+												Batch [{msgIds.join(", ")}] &middot;{" "}
+												{batch.batch?.profile || "unknown"}
+											</summary>
+											<div className="px-sm py-xs">
+												{msgs.length > 0 && (
+													<div className="mb-xs text-code text-[11px] text-on-surface-variant/60 space-y-0.5 max-h-32 overflow-y-auto">
+														{msgs.map((m, mi) => (
+															<div key={mi}>
+																[{m.role}] {(m.content || "").slice(0, 400)}
+															</div>
+														))}
+													</div>
+												)}
+												<div className="space-y-0.5">
+													{entries.map((entry, ei) => (
+														<div
+															key={ei}
+															className="flex items-start gap-xs text-code text-[12px]"
+														>
+															<span>
+																{entry.status === "used" ? "🟢" : "🔴"}
+															</span>
+															<div className="text-on-surface-variant">
+																{entry.status === "used" ? (
+																	<>
+																		[{entry.category || "?"}]{" "}
+																		{entry.key || entry.memory_id || ""}:{" "}
+																		{(entry.value || "").slice(0, 150)}
+																	</>
+																) : (
+																	<>
+																		[{entry.category || "?"}] {entry.key || "?"}
+																		: {(entry.value || "").slice(0, 120)} —
+																		DROPPED: {entry.drop_reason || "unknown"}
+																	</>
+																)}
+															</div>
+														</div>
+													))}
+												</div>
+											</div>
+										</details>
+									);
+								})}
+							</>
+						)}
+					</div>
+				</div>
+			)}
 		</div>
 	);
 }

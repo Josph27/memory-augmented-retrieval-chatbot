@@ -43,7 +43,7 @@ def test_sqlite_long_term_store_roundtrip_and_namespace_search(tmp_path: Path) -
         LongTermMemoryWrite(
             namespace=DEFAULT_USER_NAMESPACE,
             memory_id="preferences:response_style",
-            category="preferences",
+            category="user_preferences",
             key="response_style",
             value="User prefers concise answers.",
             confidence=0.9,
@@ -54,8 +54,8 @@ def test_sqlite_long_term_store_roundtrip_and_namespace_search(tmp_path: Path) -
     store.upsert(
         LongTermMemoryWrite(
             namespace=("project", "default", "semantic_memory"),
-            memory_id="project_facts:framework",
-            category="project_facts",
+            memory_id="user_facts:framework",
+            category="user_facts",
             key="framework",
             value="The project uses Chainlit.",
             confidence=0.8,
@@ -69,23 +69,16 @@ def test_sqlite_long_term_store_roundtrip_and_namespace_search(tmp_path: Path) -
     assert user_record.value == "User prefers concise answers."
 
     user_records = store.list(DEFAULT_USER_NAMESPACE)
-    assert [record.memory_id for record in user_records] == [
-        "preferences:response_style"
-    ]
+    assert [record.memory_id for record in user_records] == ["preferences:response_style"]
 
     search_results = store.search(DEFAULT_USER_NAMESPACE, query="concise", limit=10)
-    assert [record.memory_id for record in search_results] == [
-        "preferences:response_style"
-    ]
+    assert [record.memory_id for record in search_results] == ["preferences:response_style"]
 
     namespaces = store.list_namespaces()
     assert DEFAULT_USER_NAMESPACE in namespaces
     assert ("project", "default", "semantic_memory") in namespaces
-    assert category_namespace("project_facts", "chat-a") == (
-        "project",
-        "default",
-        "semantic_memory",
-    )
+    assert category_namespace("user_facts", "chat-a") == ("memory", "user_facts")
+    assert category_namespace("past_events", "chat-a") == ("memory", "past_events")
 
 
 def test_langgraph_in_memory_store_adapter_roundtrip() -> None:
@@ -94,7 +87,7 @@ def test_langgraph_in_memory_store_adapter_roundtrip() -> None:
         LongTermMemoryWrite(
             namespace=DEFAULT_USER_NAMESPACE,
             memory_id="preferences:response_style",
-            category="preferences",
+            category="user_preferences",
             key="response_style",
             value="User prefers concise answers.",
             confidence=0.9,
@@ -129,7 +122,7 @@ def test_cross_chat_structured_memory_is_visible_across_chats(tmp_path: Path) ->
             manager=FakeLangMemManager(
                 [
                     {
-                        "category": "preferences",
+                        "category": "user_preferences",
                         "key": "response_style",
                         "value": "User prefers concise answers.",
                         "source_message_ids": [first_id],
@@ -164,7 +157,7 @@ def test_chat_memory_state_compatibility_still_reads_legacy_blob(tmp_path: Path)
                 "memories": [
                     {
                         "id": "preferences:response_style",
-                        "category": "preferences",
+                        "category": "user_preferences",
                         "key": "response_style",
                         "value": "User prefers concise answers.",
                         "source_message_ids": [1],

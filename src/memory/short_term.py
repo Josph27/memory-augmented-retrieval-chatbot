@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import json
 import logging
 from dataclasses import dataclass
+from pathlib import Path
 from time import perf_counter
 from typing import Any, Literal, Protocol
 
@@ -164,6 +166,7 @@ class ShortTermMemory:
             long_term_store=SQLiteLongTermMemoryStore(database),
         )
         self.last_saved_memory_rows: list[dict[str, Any]] = []
+        self.last_drops: list[dict[str, Any]] = []
         self.last_processed_message_ids: list[int] = []
         self.last_schedule_profile: SchedulingProfileName | None = None
 
@@ -391,6 +394,9 @@ class ShortTermMemory:
         extraction_ms = elapsed_ms(extraction_started)
         reason = result.rejection_reason or "unknown"
         noop_reason = not result.accepted and allow_noop and reason in CHAT_END_NOOP_REASONS
+        drops = list(getattr(result, "drops", []))
+        saved_rows: list[dict[str, Any]] = []
+        self.last_drops = drops
 
         # ── outcome 1: LLM / extraction failure (not a graceful noop) ──
         if not result.accepted and not noop_reason:
@@ -426,6 +432,13 @@ class ShortTermMemory:
             self.database.upsert_chat_memory_state(chat_id, dumps_memory_state(result.memory_state))
             self.database.mark_messages_summarized([message.id for message in messages])
             self.last_processed_message_ids = [message.id for message in messages]
+            dump_memory_consolidation_log(
+                chat_id=chat_id,
+                messages=messages,
+                drops=drops,
+                saved=saved_rows,
+                profile_name=profile_name,
+            )
             print(
                 "memory_update_timing "
                 f"chat_id={chat_id} profile={profile_name} triggered=True accepted=False "
@@ -441,11 +454,19 @@ class ShortTermMemory:
         self.database.mark_messages_summarized([message.id for message in messages])
         saved_records = getattr(self.structured_memory, "last_saved_records", [])
         rows = [memory_write_to_trace_row(record) for record in saved_records]
+        saved_rows = rows
         if allow_noop:
             self.last_saved_memory_rows.extend(rows)
         else:
             self.last_saved_memory_rows = rows
         self.last_processed_message_ids = [message.id for message in messages]
+        dump_memory_consolidation_log(
+            chat_id=chat_id,
+            messages=messages,
+            drops=drops,
+            saved=saved_rows,
+            profile_name=profile_name,
+        )
         print(
             "memory_update_timing "
             f"chat_id={chat_id} profile={profile_name} triggered=True accepted={result.accepted} "
@@ -648,3 +669,36 @@ def normalize_memory_update_policy(policy: str) -> MemoryUpdatePolicyName:
     if normalized in {"agentic_each_turn", "chat_end_only"}:
         return normalized
     return "scheduled"
+
+
+# ── Memory Consolidation Log ────────────────────────────────────────────
+
+
+def dump_memory_consolidation_log(
+    chat_id: str,
+    messages: list[StoredMessage],
+    drops: list[dict[str, Any]],
+    saved: list[dict[str, Any]],
+    profile_name: str,
+) -> Path:
+    """Dump one memory consolidation batch to a JSON log file."""
+    log_dir = Path("logs/memory") / chat_id
+    log_dir.mkdir(parents=True, exist_ok=True)
+    message_ids = [m.id for m in messages]
+    filepath = log_dir / f"batch_{message_ids[0]}_{message_ids[-1]}.json"
+    batch = {
+        "profile": profile_name,
+        "message_ids": message_ids,
+        "messages": [
+            {"id": m.id, "role": m.role, "content": m.content[:500]}
+            for m in messages
+        ],
+    }
+    entries: list[dict[str, Any]] = []
+    for record in saved:
+        entries.append({"status": "used", **record})
+    for drop in drops:
+        entries.append({"status": "dropped", **drop})
+    with open(filepath, "w") as f:
+        json.dump({"batch": batch, "entries": entries}, f, ensure_ascii=False, indent=2)
+    return filepath

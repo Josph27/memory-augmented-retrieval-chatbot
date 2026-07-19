@@ -5,10 +5,10 @@
 	const INSPECTOR_ID = "memory-answer-inspector";
 	const INSPECT_ACTION_CLASS = "memory-inspect-answer";
 	const LIFECYCLE_OVERLAY_ID = "memory-lifecycle-overlay";
-	let productState = { view: "home", active: null, chatId: null };
-	let answerInspections = [];
-	let renderScheduled = false;
-	let inspectorRenderScheduled = false;
+	const productState = { view: "home", active: null, chatId: null };
+	const answerInspections = [];
+	const renderScheduled = false;
+	const inspectorRenderScheduled = false;
 	const firstProductStateReceived = false;
 
 	// Show the loading overlay immediately — the backend is loading models.
@@ -103,6 +103,34 @@
 		return button;
 	}
 
+	function consolidationLogButton() {
+		const button = document.createElement("button");
+		button.type = "button";
+		button.textContent = "Consolidation Log";
+		Object.assign(button.style, {
+			minHeight: "30px",
+			padding: "4px 10px",
+			border: "1px solid color-mix(in srgb, currentColor 20%, transparent)",
+			borderRadius: "7px",
+			background: "transparent",
+			color: "inherit",
+			fontSize: "13px",
+			lineHeight: "20px",
+			cursor: "pointer",
+		});
+		button.addEventListener("click", () => {
+			window.parent.postMessage(
+				{
+					source: SOURCE,
+					command: "consolidation-log",
+					chat_id: productState.chatId,
+				},
+				"*",
+			);
+		});
+		return button;
+	}
+
 	function visibleComposer() {
 		return Array.from(
 			document.querySelectorAll("main textarea, main [contenteditable='true']"),
@@ -164,6 +192,7 @@
 		toolbar.appendChild(lifecycleButton("Fork Chat", "fork"));
 		toolbar.appendChild(lifecycleButton("New Chat", "new"));
 		toolbar.appendChild(lifecycleButton("Home", "home"));
+		toolbar.appendChild(consolidationLogButton());
 		if (!mountInChatColumn(toolbar)) toolbar.remove();
 	}
 
@@ -631,6 +660,9 @@
 		if (data.command === "product-error" && data.message) {
 			window.alert(String(data.message).slice(0, 240));
 		}
+		if (data.command === "consolidation-log") {
+			openConsolidationLog(data.batches || []);
+		}
 	});
 
 	new MutationObserver(() => {
@@ -655,4 +687,136 @@
 
 	synchronizeNativeNewChat();
 	synchronizeGlobalHeader();
+
+	// ── Consolidation Log Panel ──────────────────────────────────────────
+	const CONSOLIDATION_ID = "memory-consolidation-log";
+
+	function openConsolidationLog(batches) {
+		removeElement(CONSOLIDATION_ID);
+		if (!batches.length) {
+			window.alert(
+				"No consolidation log entries for this chat yet. Send messages to trigger memory extraction.",
+			);
+			return;
+		}
+
+		const panel = document.createElement("aside");
+		panel.id = CONSOLIDATION_ID;
+		panel.setAttribute("role", "dialog");
+		panel.setAttribute("aria-label", "Memory Consolidation Log");
+		Object.assign(panel.style, {
+			position: "fixed",
+			top: "68px",
+			right: "16px",
+			bottom: "120px",
+			zIndex: "40",
+			width: "min(480px, calc(100vw - 32px))",
+			padding: "14px 16px",
+			overflowY: "auto",
+			border: "1px solid color-mix(in srgb, currentColor 18%, transparent)",
+			borderRadius: "12px",
+			background: "var(--background, #fff)",
+			color: "inherit",
+			boxShadow: "0 10px 35px rgba(0, 0, 0, 0.18)",
+			fontSize: "12px",
+			lineHeight: "1.45",
+			boxSizing: "border-box",
+		});
+
+		const header = document.createElement("div");
+		Object.assign(header.style, {
+			display: "flex",
+			justifyContent: "space-between",
+			alignItems: "center",
+			gap: "10px",
+		});
+		const title = document.createElement("h2");
+		title.textContent = "Consolidation Log";
+		Object.assign(title.style, { margin: "0", fontSize: "16px" });
+		const close = document.createElement("button");
+		close.type = "button";
+		close.textContent = "Close";
+		close.addEventListener("click", () => panel.remove());
+		header.append(title, close);
+		panel.appendChild(header);
+
+		const summary = document.createElement("p");
+		summary.textContent =
+			batches.length + " batch" + (batches.length !== 1 ? "es" : "");
+		summary.style.cssText = "margin:8px 0;opacity:0.7;font-size:11px;";
+		panel.appendChild(summary);
+
+		batches.forEach((batch) => {
+			const section = document.createElement("section");
+			Object.assign(section.style, {
+				margin: "10px 0",
+				padding: "10px",
+				border: "1px solid color-mix(in srgb, currentColor 10%, transparent)",
+				borderRadius: "8px",
+			});
+
+			const batchHead = document.createElement("details");
+			const summary = document.createElement("summary");
+			summary.textContent =
+				"Batch [" +
+				(batch.batch.message_ids || []).join(", ") +
+				"] · " +
+				(batch.batch.profile || "unknown");
+			summary.style.cssText = "cursor:pointer;font-weight:600;font-size:12px;";
+			batchHead.appendChild(summary);
+
+			const msgDiv = document.createElement("div");
+			msgDiv.style.cssText = "margin-top:6px;font-size:11px;opacity:0.8;";
+			(batch.batch.messages || []).forEach((msg) => {
+				const line = document.createElement("div");
+				line.textContent =
+					"[" + msg.role + "] " + (msg.content || "").slice(0, 400);
+				msgDiv.appendChild(line);
+			});
+			batchHead.appendChild(msgDiv);
+			section.appendChild(batchHead);
+
+			const entriesDiv = document.createElement("div");
+			entriesDiv.style.cssText = "margin-top:8px;";
+			(batch.entries || []).forEach((entry) => {
+				const row = document.createElement("div");
+				row.style.cssText =
+					"display:flex;align-items:flex-start;gap:6px;padding:3px 0;";
+
+				const dot = document.createElement("span");
+				dot.textContent = entry.status === "used" ? "🟢" : "🔴";
+				dot.style.cssText = "flex:none;font-size:14px;";
+				row.appendChild(dot);
+
+				const info = document.createElement("div");
+				info.style.cssText = "flex:1;min-width:0;";
+				if (entry.status === "used") {
+					info.textContent =
+						"[" +
+						(entry.category || "?") +
+						"] " +
+						(entry.key || entry.memory_id || "") +
+						": " +
+						(entry.value || "").slice(0, 150);
+				} else {
+					info.textContent =
+						"[" +
+						(entry.category || "?") +
+						"] " +
+						(entry.key || "?") +
+						": " +
+						(entry.value || "").slice(0, 120) +
+						" — DROPPED: " +
+						(entry.drop_reason || "unknown");
+				}
+				row.appendChild(info);
+				entriesDiv.appendChild(row);
+			});
+			section.appendChild(entriesDiv);
+			panel.appendChild(section);
+		});
+
+		document.body.appendChild(panel);
+		close.focus();
+	}
 })();

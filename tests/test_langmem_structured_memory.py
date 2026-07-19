@@ -42,11 +42,11 @@ class FakeLangMemManager:
 
 
 def test_langmem_outputs_map_to_current_memory_record_shape() -> None:
-    records = normalize_langmem_outputs(
+    records, drops = normalize_langmem_outputs(
         extracted=[
             FakeExtractedMemory(
                 {
-                    "category": "preferences",
+                    "category": "user_preferences",
                     "key": "response_style",
                     "value": "User prefers concise answers.",
                     "confidence": 0.8,
@@ -58,10 +58,11 @@ def test_langmem_outputs_map_to_current_memory_record_shape() -> None:
         source_text_by_id={12: "I prefer concise answers."},
     )
 
+    assert drops == []
     assert records == [
         {
-            "id": "preferences:response_style",
-            "category": "preferences",
+            "id": "user_preferences:response_style",
+            "category": "user_preferences",
             "key": "response_style",
             "value": "User prefers concise answers.",
             "source_message_ids": [12],
@@ -72,7 +73,7 @@ def test_langmem_outputs_map_to_current_memory_record_shape() -> None:
 
 
 def test_langmem_normalization_rejects_invalid_category_and_transcript() -> None:
-    records = normalize_langmem_outputs(
+    records, drops = normalize_langmem_outputs(
         extracted=[
             {
                 "category": "random",
@@ -92,28 +93,33 @@ def test_langmem_normalization_rejects_invalid_category_and_transcript() -> None
     )
 
     assert records == []
+    assert len(drops) == 2
+    assert drops[0]["drop_reason"] == "invalid_category"
+    assert drops[1]["drop_reason"] == "transcript_text"
 
 
-def test_langmem_normalization_attaches_supported_source_ids_when_missing() -> None:
-    records = normalize_langmem_outputs(
+def test_langmem_normalization_attaches_source_ids_when_missing() -> None:
+    records, drops = normalize_langmem_outputs(
         extracted=[
             {
-                "category": "decisions",
-                "key": "database",
-                "value": "Use SQLite for the MVP.",
+                "category": "past_events",
+                "key": "deployment",
+                "value": "Deployed the feature on Tuesday.",
                 "confidence": 0.7,
             }
         ],
         allowed_source_ids={1, 2},
         source_text_by_id={
-            1: "We should use SQLite for the MVP.",
+            1: "We deployed the feature on Tuesday.",
             2: "This unrelated message discusses colors.",
         },
     )
 
+    assert drops == []
     assert len(records) == 1
-    assert records[0]["source_message_ids"] == [1]
-    assert records[0]["id"] == "decisions:database"
+    # When LangMem provides no source_message_ids, all allowed_source_ids are used.
+    assert records[0]["source_message_ids"] == [1, 2]
+    assert records[0]["id"] == "past_events:deployment"
 
 
 def test_short_term_memory_uses_langmem_backend_and_stores_memory(
@@ -129,16 +135,16 @@ def test_short_term_memory_uses_langmem_backend_and_stores_memory(
     manager = FakeLangMemManager(
         [
             {
-                "category": "preferences",
+                "category": "user_preferences",
                 "key": "response_style",
                 "value": "User prefers concise answers.",
                 "confidence": 0.8,
                 "source_message_ids": [first_id],
             },
             {
-                "category": "decisions",
-                "key": "database",
-                "value": "Use SQLite for the MVP.",
+                "category": "past_events",
+                "key": "deployment",
+                "value": "Deployed SQLite for the MVP.",
                 "confidence": 0.7,
             },
         ]
@@ -157,7 +163,7 @@ def test_short_term_memory_uses_langmem_backend_and_stores_memory(
     assert updated is True
     stored = json.loads(db.chat_memory_state("chat") or "{}")
     records = stored["memories"]
-    assert {record["category"] for record in records} == {"preferences", "decisions"}
+    assert {record["category"] for record in records} == {"user_preferences", "past_events"}
     assert {record["status"] for record in records} == {"active"}
     assert manager.calls
     assert all(message.summarized for message in db.messages_for_chat("chat")[:2])
@@ -168,8 +174,8 @@ def test_short_term_memory_uses_langmem_backend_and_stores_memory(
     )
     assert {candidate.source for candidate in candidates} == {"structured_memory"}
     assert {candidate.metadata["category"] for candidate in candidates} == {
-        "preferences",
-        "decisions",
+        "user_preferences",
+        "past_events",
     }
 
 
@@ -231,7 +237,7 @@ def test_langmem_update_preserves_existing_memory_records(tmp_path: Path) -> Non
             manager=FakeLangMemManager(
                 [
                     {
-                        "category": "preferences",
+                        "category": "user_preferences",
                         "key": "response_style",
                         "value": "User prefers concise answers.",
                     }
@@ -264,7 +270,7 @@ def test_processed_messages_marked_only_after_successful_storage(tmp_path: Path)
             manager=FakeLangMemManager(
                 [
                     {
-                        "category": "project_facts",
+                        "category": "user_facts",
                         "key": "framework",
                         "value": "The project uses Chainlit.",
                         "source_message_ids": [first_id],

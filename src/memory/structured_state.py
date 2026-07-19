@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from time import perf_counter
 from typing import Any, Protocol
 
@@ -10,14 +10,14 @@ from src.database import StoredMessage
 
 
 MEMORY_CATEGORIES = (
+    "past_events",
+    "user_experiences",
     "user_facts",
-    "project_facts",
-    "decisions",
-    "corrections",
-    "open_tasks",
-    "preferences",
-    "constraints",
+    "user_state",
+    "user_preferences",
+    "upcoming",
     "procedural",
+    "corrections",
 )
 
 MEMORY_OPERATION_NAMES = ("upsert", "supersede", "delete")
@@ -44,9 +44,9 @@ Only keep information likely to matter later in this chat.
 Return a JSON array of operation objects. Return [] if there are no useful operations.
 
 Valid categories are exactly:
-user_facts, project_facts, decisions, corrections, open_tasks, preferences, constraints, procedural
+past_events, user_experiences, user_facts, user_state, user_preferences, upcoming, procedural, corrections
 
-Do not combine categories. For example, use "user_facts", never "user_facts | project_facts".
+Do not combine categories.
 
 Example:
 [
@@ -134,6 +134,7 @@ class MemoryUpdateResult:
     memory_state: dict[str, list[dict[str, Any]]]
     accepted: bool
     rejection_reason: str | None = None
+    drops: list[dict[str, Any]] = field(default_factory=list)
 
 
 def empty_memory_state() -> dict[str, list[dict[str, Any]]]:
@@ -300,10 +301,6 @@ def normalize_memory_operation(
         cleaned_value = clean_text(value)
         if looks_like_transcript_text(cleaned_value) or is_vague_memory(cleaned_value):
             return None
-        source_ids = supported_source_ids(cleaned_value, source_ids, source_text_by_id)
-        if not source_ids:
-            return None
-
         return {
             "operation": "upsert",
             "category": category,
@@ -326,10 +323,6 @@ def normalize_memory_operation(
     cleaned_reason = clean_text(reason)
     if looks_like_transcript_text(cleaned_reason) or is_vague_memory(cleaned_reason):
         return None
-    source_ids = supported_source_ids(cleaned_reason, source_ids, source_text_by_id)
-    if not source_ids:
-        return None
-
     return {
         "operation": operation_name,
         "target_category": target_category,
@@ -546,83 +539,6 @@ def normalize_confidence(value: Any) -> float:
     return 0.5
 
 
-def supported_source_ids(
-    claim: str,
-    source_ids: list[int],
-    source_text_by_id: dict[int, str] | None,
-) -> list[int]:
-    """Ensure an operation has textual support in the user-message batch."""
-    if source_text_by_id is None:
-        return source_ids
-
-    supported = [
-        source_id
-        for source_id in source_ids
-        if text_supports_claim(source_text_by_id.get(source_id, ""), claim)
-    ]
-    if supported:
-        return supported
-
-    repaired = [
-        source_id
-        for source_id, source_text in source_text_by_id.items()
-        if text_supports_claim(source_text, claim)
-    ]
-    return repaired
-
-
-def text_supports_claim(source_text: str, claim: str) -> bool:
-    """Use lexical support checks to reject unsupported model claims."""
-    source_tokens = important_tokens(source_text)
-    claim_tokens = important_tokens(claim)
-    if not claim_tokens:
-        return False
-
-    overlap = claim_tokens & source_tokens
-    if not overlap:
-        return False
-
-    if len(claim_tokens) <= 2:
-        return len(overlap) == len(claim_tokens)
-    return len(overlap) / len(claim_tokens) >= 0.5
-
-
-def important_tokens(value: str) -> set[str]:
-    """Extract useful lexical tokens for source-support checks."""
-    stopwords = {
-        "the",
-        "user",
-        "users",
-        "uses",
-        "use",
-        "using",
-        "project",
-        "name",
-        "fact",
-        "is",
-        "am",
-        "are",
-        "my",
-        "i",
-        "me",
-        "not",
-        "and",
-        "or",
-        "a",
-        "an",
-        "to",
-        "of",
-        "this",
-        "that",
-        "it",
-    }
-    return {
-        token
-        for token in re.findall(r"[A-Za-z0-9]+", value.lower())
-        if len(token) >= 3 and token not in stopwords
-    }
-
-
 def clean_text(value: str) -> str:
     """Clean short model-produced text."""
     return " ".join(value.strip(" \n\t\r").split())
@@ -657,7 +573,9 @@ def has_correction_signal(messages: list[StoredMessage]) -> bool:
     return any(CORRECTION_SIGNAL_PATTERN.search(message.content) for message in messages)
 
 
-def active_memory_signature(memory_state: dict[str, list[dict[str, Any]]]) -> set[tuple[str, str, str]]:
+def active_memory_signature(
+    memory_state: dict[str, list[dict[str, Any]]],
+) -> set[tuple[str, str, str]]:
     """Return a compact comparable signature for active memory."""
     return {
         (record["category"], record["key"], record["value"])

@@ -36,80 +36,146 @@ from src.memory.structured_state import (
     normalize_confidence,
     normalize_key,
     normalize_memory_state,
-    supported_source_ids,
 )
 
 
 StructuredMemoryCategory = Literal[
+    "past_events",
+    "user_experiences",
     "user_facts",
-    "project_facts",
-    "decisions",
-    "corrections",
-    "open_tasks",
-    "preferences",
-    "constraints",
+    "user_state",
+    "user_preferences",
+    "upcoming",
     "procedural",
+    "corrections",
 ]
 
 StructuredMemoryStatus = Literal["active", "superseded", "deleted"]
 
+# ── TTL: system-assigned expiration computed post-extraction ──────────────
+# The model never sees datetimes — it only categorizes. The system assigns
+# expires_at = now() + TTL[category] after LangMem returns.
+_CATEGORY_TTL_DAYS: dict[str, int | None] = {
+    "past_events": None,  # permanent — only explicit supersession removes
+    "user_experiences": None,  # permanent — accumulated skills don't expire
+    "user_facts": 365,  # slowly-changing biographical facts
+    "user_state": 90,  # transient emotional/situational states
+    "user_preferences": 365,  # interaction/tool/style preferences
+    "upcoming": 40,  # imminent future events
+    "procedural": 365,  # reusable methods/instructions
+    "corrections": 365,  # audit trail of corrections
+}
+
+
+def _compute_expires_at(category: str) -> str:
+    """Return an ISO-8601 expiration timestamp or empty string for indefinite."""
+    ttl_days = _CATEGORY_TTL_DAYS.get(category)
+    if ttl_days is None:
+        return ""
+    from datetime import datetime, timedelta, timezone
+
+    return (datetime.now(timezone.utc) + timedelta(days=ttl_days)).isoformat(timespec="seconds")
+
+
 LANGMEM_STRUCTURED_MEMORY_INSTRUCTIONS = """Extract durable structured memory for this chat.
 
-Use only information supported by the provided messages. Do not write a
-transcript. Do not continue the conversation. Do not invent facts.
+**CORE RULE — Atomicity**: ONE fact per memory. Split distinct, unrelated
+claims into separate records. When unsure, split — granular records are
+always safer than merged ones.
 
-Do NOT split paired contrast statements into separate memories. When the
-user expresses a preference or self-description by contrasting what they
-care about versus what they don't ("I'm not X, I'm very much Y"), output
-ONE memory capturing the priority, not two separate memories.
+ONLY merge when the user expresses a single concept through explicit
+contrast ("I'm not X, I'm very much Y"). In that case alone, capture the
+priority as one memory:
 
 WRONG (split):  [{"value": "not concerned about flavor"},
                   {"value": "concerned about health"}]
 RIGHT (merged): [{"value": "The user prioritizes health over flavor
-                   and eating experience"}]
+                    and eating experience"}]
 
-Extract every factual claim, belief, opinion, or comparison the user
-expresses. When in doubt, extract. Include enough context to be understood
-without rereading — preserve qualifiers like "compared to X" or "about the
-same as Y" rather than stripping them. Include specific details when the
-user provides them (numbers, names, concrete comparisons).
+Otherwise: split every distinct claim. "I'm a TUM student, this exam is
+stressing me out, and I'll take it later this month" → three separate
+memories, each with its own key.
 
-Use descriptive, stable snake_case keys. The same concept must always get
-the same key — do not rename keys across extractions. Use keys that reflect
-the content's topic (e.g. "mushroom_vitamin_content"), not recency or
-phrasing.
+Every memory must be self-contained enough to be understood without
+re-reading the conversation. Preserve qualifiers ("compared to X", "about
+the same as Y"), numbers, names, and concrete details. When in doubt,
+extract.
 
-Consider all eight categories — do not default to user_facts. Is this a
-decision? A preference? A constraint? A reusable procedure? Choose the
-category that best fits what the user expressed.
+**Categories — choose the single best fit**:
 
-When the user corrects a previous statement (contradicts what they said
-earlier): update the original memory's value in its existing category using
-the same key, and output a separate corrections entry noting what changed.
-Set the original's status to "superseded" and the corrected value to
-"active". Example: "Actually mushrooms have more B vitamins than meat, not
-similar." → keep user_facts key "mushroom_vitamin_b_vs_meat" with updated
-value AND output corrections record "User corrected vitamin B claim from
-'similar to meat' to 'more than meat'".
+- **past_events**: Something that happened — a completed event, a historical
+  fact. These are permanently true. "I took the ML exam in August 2024."
+  "We deployed the feature last Tuesday." "I visited Japan in 2019."
+  ONLY for events that already occurred.
+
+- **user_experiences**: Accumulated skills, expertise, or lived experience
+  that defines who the user is. "I have 5 years of Python experience."
+  "I studied at TUM." "I've been using Kubernetes since v1.12."
+  Different from past_events: experiences are durable identity traits,
+  not specific occurrences.
+
+- **user_facts**: Slowly-changing biographical facts and durable plans.
+  "I live in Munich." "I'm a TUM student." "I work at Acme Corp."
+  Also: future events more than ~40 days away or without a specific date.
+  "I'm starting a PhD next year." "We're launching the product in Q3."
+
+- **user_state**: Transient emotional, physical, or situational state.
+  "I'm stressed about the exam." "I'm tired today." "I'm in the middle
+  of a move." These will pass. Use this instead of user_facts when the
+  condition is clearly temporary.
+
+- **user_preferences**: How the user likes things done — communication
+  style, tool choices, interaction format. "User prefers concise answers."
+  "User likes dark mode." "User prefers Python over TypeScript."
+  Distinguisher: preferences are "I like X" / "do X for me";
+  user_facts are "I am X" / "X is true about me".
+
+- **upcoming**: Imminent future events with a specific timeframe.
+  "I have an exam later this month." "Meeting at 3pm tomorrow."
+  "I fly out next Monday." ONLY when the event is within ~40 days.
+  If explicitly further out, use user_facts instead.
+
+- **procedural**: Reusable step-by-step methods or instructions.
+  "To deploy: run docker compose up then access port 8080."
+  "The build process: npm install, npm run build, npm test."
+
+- **corrections**: ONLY when the user explicitly contradicts a
+  previously-stated fact. Always output TWO records: the correction AND
+  an upsert with the corrected value in the original category.
+  "User corrected vitamin B claim from 'similar to meat' to 'more than
+  meat'."
+
+**Temporal awareness**: Choose the category that matches the expected
+lifetime of the fact. Transient states go to user_state (cleans up
+automatically). Historical events go to past_events (permanent). Future
+events within a month go to upcoming (cleans up after they pass).
+
+**Implicit inference**: Connect explicit evidence to draw reasonable
+conclusions. "This is my exam sheet from last year" + document context
+→ "User took the ML for Graphs exam in August 2024" (past_events).
+"I'll be sitting this exam later this month" → "User has the ML for
+Graphs exam this month" (upcoming). This is inference from evidence,
+not hallucination. Do NOT guess without supporting evidence.
+
+**Keys**: Stable snake_case keys reflecting the TOPIC, not the phrasing.
+Same concept = same key across turns. Examples: "ml_graphs_exam_stress",
+"prefers_concise_answers", "tum_student_status", "database_choice".
+
+**Corrections and supersession**:
+
+When the user corrects a previous statement: update the original memory in
+its existing category using the same key AND output a separate corrections
+entry noting what changed. Set the original's status to "superseded",
+the corrected value to "active".
 
 When the user strengthens a previous claim with new evidence without
-contradicting it (e.g. from "I think" to citing a source): update the value
-and optionally recategorize to reflect the stronger basis (e.g. from
-user_facts to project_facts). Use the same key. Do NOT output a corrections
-entry — the claim didn't change, only its foundation.
+contradicting it: update the value and optionally recategorize (e.g. from
+user_state to user_facts if it turns out to be durable). Use the same key.
+Do NOT output a corrections entry — the foundation changed, not the claim.
 
 Include source_message_ids for every memory when you can identify which
-messages support it.
-
-Allowed categories:
-- user_facts: stable facts about the user, including stated beliefs and opinions
-- project_facts: stable facts about the current project
-- decisions: choices that have been made
-- corrections: misunderstandings corrected by the user
-- open_tasks: unfinished next steps
-- preferences: user preferences about interaction or implementation
-- constraints: requirements or limitations
-- procedural: reusable instructions, methods, or operating steps
+messages support it. Include a confidence score (0.0–1.0) reflecting how
+certain you are the memory is correct and durable.
 """
 
 
@@ -166,6 +232,7 @@ class LangMemStructuredMemoryState:
         self._long_term_store = long_term_store
         self._guard = connection_guard or connection_guard_from_env()
         self.last_saved_records: list[LongTermMemoryWrite] = []
+        self.last_drops: list[dict[str, Any]] = []
 
     def update(
         self,
@@ -175,6 +242,7 @@ class LangMemStructuredMemoryState:
         """Use LangMem output and normalize it into this app's memory record format."""
         normalized_memory = normalize_memory_state(existing_memory)
         self.last_saved_records = []
+        self.last_drops: list[dict[str, Any]] = []
         user_messages = [message for message in messages if message.role == "user"]
         if not user_messages:
             return MemoryUpdateResult(
@@ -215,11 +283,12 @@ class LangMemStructuredMemoryState:
                 rejection_reason=f"langmem_update_failed:{exc.__class__.__name__}",
             )
 
-        records = normalize_langmem_outputs(
+        records, drops = normalize_langmem_outputs(
             extracted=extracted,
             allowed_source_ids=allowed_source_ids,
             source_text_by_id=source_text_by_id,
         )
+        self.last_drops = drops
         if not records:
             return MemoryUpdateResult(
                 memory_state={"memories": combined_existing_records},
@@ -380,18 +449,38 @@ def normalize_langmem_outputs(
     extracted: list[Any],
     allowed_source_ids: set[int],
     source_text_by_id: dict[int, str],
-) -> list[dict[str, Any]]:
-    """Normalize real or fake LangMem outputs into stored memory records."""
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Normalize LangMem outputs. Returns (records, drops)."""
     records: list[dict[str, Any]] = []
+    drops: list[dict[str, Any]] = []
     for item in extracted:
         memory = extract_memory_content(item)
         if memory is None:
+            drops.append(_make_drop_entry(item, "empty_content"))
             continue
 
-        record = normalize_langmem_memory(memory, allowed_source_ids, source_text_by_id)
+        record, drop_reason = normalize_langmem_memory(memory, allowed_source_ids, source_text_by_id)
         if record is not None:
             upsert_normalized_record(records, record)
-    return records
+        else:
+            data = memory_to_dict(memory) if not isinstance(memory, dict) else dict(memory)
+            drops.append({
+                "category": data.get("category", "unknown"),
+                "key": str(data.get("key", "")),
+                "value": str(data.get("value", ""))[:200],
+                "drop_reason": drop_reason or "unknown",
+            })
+    return records, drops
+
+
+def _make_drop_entry(item: Any, reason: str) -> dict[str, Any]:
+    data = memory_to_dict(item) if not isinstance(item, dict) else dict(item)
+    return {
+        "category": data.get("category", "unknown"),
+        "key": str(data.get("key", "")),
+        "value": str(data.get("value", ""))[:200],
+        "drop_reason": reason,
+    }
 
 
 def extract_memory_content(item: Any) -> Any | None:
@@ -405,34 +494,33 @@ def normalize_langmem_memory(
     memory: Any,
     allowed_source_ids: set[int],
     source_text_by_id: dict[int, str],
-) -> dict[str, Any] | None:
-    """Validate one LangMem memory and convert it to this app's record shape."""
+) -> tuple[dict[str, Any] | None, str | None]:
+    """Validate one LangMem memory.
+
+    Returns (record, None) if valid, (None, drop_reason) if dropped.
+    """
     data = memory_to_dict(memory)
     category = data.get("category")
     key = normalize_key(data.get("key"))
     value = data.get("value")
     if category not in MEMORY_CATEGORIES:
-        return None
+        return None, "invalid_category"
     if not key or not isinstance(value, str) or not value.strip():
-        return None
+        return None, "missing_key_or_value"
 
     cleaned_value = clean_text(strip_message_id_markers(value))
-    if looks_like_transcript_text(cleaned_value) or is_vague_memory(cleaned_value):
-        return None
+    if looks_like_transcript_text(cleaned_value):
+        return None, "transcript_text"
+    if is_vague_memory(cleaned_value):
+        return None, "vague_memory"
 
-    hinted_source_ids = [
+    source_ids = [
         source_id
         for source_id in data.get("source_message_ids", [])
         if isinstance(source_id, int) and source_id in allowed_source_ids
     ]
-    candidate_source_ids = hinted_source_ids or list(allowed_source_ids)
-    source_ids = supported_source_ids(
-        cleaned_value,
-        candidate_source_ids,
-        source_text_by_id,
-    )
     if not source_ids:
-        return None
+        source_ids = list(allowed_source_ids)
 
     status = data.get("status", "active")
     if status not in {"active", "superseded", "deleted"}:
@@ -445,7 +533,7 @@ def normalize_langmem_memory(
         "source_message_ids": source_ids,
         "confidence": normalize_confidence(data.get("confidence")),
         "status": status,
-    }
+    }, None
 
 
 def memory_to_dict(memory: Any) -> dict[str, Any]:

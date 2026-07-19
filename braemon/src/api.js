@@ -182,6 +182,14 @@ export async function fetchStats() {
 
 export async function fetchRetrievalLog(chatId, turnIndex) {
 	const res = await fetch(`${BASE}/retrieval-logs/${chatId}/${turnIndex}`);
-	if (!res.ok) throw new Error(await _apiError(res, "Failed to fetch retrieval log"));
+	if (!res.ok)
+		throw new Error(await _apiError(res, "Failed to fetch retrieval log"));
+	return res.json();
+}
+
+export async function fetchConsolidationLog(chatId) {
+	const res = await fetch(`${BASE}/chats/${chatId}/consolidation-log`);
+	if (!res.ok)
+		throw new Error(await _apiError(res, "Failed to fetch consolidation log"));
 	return res.json();
 }

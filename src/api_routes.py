@@ -323,6 +323,24 @@ def register_api_routes(database: Database, chat_service_getter: Any) -> None:
         except Exception as e:
             return {"error": str(e)}, 500
 
+    @app.get("/api/chats/{chat_id}/consolidation-log")
+    async def get_consolidation_log(chat_id: str):
+        """Return memory consolidation log batches for a chat."""
+        import json as _json
+
+        if ".." in chat_id or "/" in chat_id or "\\" in chat_id:
+            return {"error": "invalid chat_id"}, 400
+        log_dir = Path("logs/memory") / chat_id
+        batches: list[dict[str, Any]] = []
+        if log_dir.exists():
+            for filepath in sorted(log_dir.glob("batch_*.json")):
+                try:
+                    with open(filepath) as f:
+                        batches.append(_json.load(f))
+                except Exception:
+                    continue
+        return {"chat_id": chat_id, "batches": batches}
+
     @app.get("/api/models/status")
     async def models_status():
         """Return whether the backend models have finished loading."""
