@@ -33,17 +33,19 @@ from src.retrieval.retriever_dispatcher import RetrieverDispatcher
 from src.routing.routing_agent import RoutingAgent
 
 
-SYSTEM_PROMPT = (
-    "You are a concise, helpful chatbot prototype. Use the structured current-chat memory "
-    "and recent messages as short-term memory. Answer directly when the supplied context "
-    "provides sufficient evidence. Use “I don't know” only when the available context does "
-    "not support an answer. Do not ignore explicit contextual evidence merely because it "
-    "conflicts with prior world knowledge. If supplied context contains unresolved "
-    "conflicting claims, state the conflict rather than choosing arbitrarily. If evidence "
-    "is partial, answer only the supported portion and state the limitation. If information "
-    "is missing, say what you need "
-    "instead of inventing facts."
-)
+SYSTEM_PROMPT = (""" 
+    You are a concise, helpful chatbot and personal assistant. Use memories / information included with the prompts, it offer great insights into the situation at hand.
+    There is plathera of contextual long term memory types that might be available at times - user facts, facts schedule etc., there will also be short term memory accessable - a recently discussed topics.
+    Answer directly when the supplied context provides sufficient evidence. 
+    Use “I don't know” or other semanthically fitting expressions of the same time when the available context does not support an answer. 
+    Do not ignore explicit contextual evidence merely because it conflicts with prior world knowledge. 
+    If supplied context contains unresolved conflicting claims, state the conflict rather than choosing arbitrarily. 
+    If evidence is partial, answer confidently only the supported portion and state the limitation.
+    If information is missing, say what you need instead of inventing facts, never make anything up.
+    You are allowed to offer a brief personal opinion or thoughts on the matter, potentially building upon the facts provided. 
+    You are not allowed to draw unverified conclustions or make unverified claims. 
+    When you're offering personal opinion, use soft language, offer the opinion lightly, don't force it or claim you are correct.
+""")
 
 
 @dataclass(frozen=True)
@@ -79,7 +81,8 @@ class ChatService:
         reranker_llm_top_k: int = 10,
         reranker_llm_min_confidence: float = 0.55,
         reranker_cross_encoder_model: str = "cross-encoder/ms-marco-MiniLM-L12-v2",
-        reranker_cross_encoder_top_k: int = 500,  # effectively "all" — DOCUMENT_RETRIEVAL_FETCH_LIMIT is the real cap
+        # effectively "all" — DOCUMENT_RETRIEVAL_FETCH_LIMIT is the real cap
+        reranker_cross_encoder_top_k: int = 500,
         reranker_cross_encoder_weight: float = 0.65,
         reranker_hybrid_backend: str = "auto",
         reranker_llm_ambiguity_margin: float = 0.15,
@@ -189,11 +192,14 @@ class ChatService:
                     multi_scope_memory_cap=multi_scope_memory_cap,
                     long_document_memory_cap=long_document_memory_cap,
                     global_summary_budget_tokens=global_summary_budget_tokens,
-                    global_summary_max_budget_tokens=(global_summary_max_budget_tokens),
+                    global_summary_max_budget_tokens=(
+                        global_summary_max_budget_tokens),
                     global_summary_reserved_tokens=global_summary_reserved_tokens,
-                    required_evidence_headroom_ratio=(required_evidence_headroom_ratio),
+                    required_evidence_headroom_ratio=(
+                        required_evidence_headroom_ratio),
                 ),
-                minimum_optional_candidate_utility=(minimum_optional_candidate_utility),
+                minimum_optional_candidate_utility=(
+                    minimum_optional_candidate_utility),
                 raw_span_overlap_threshold=raw_span_overlap_threshold,
             ),
         )
@@ -295,18 +301,21 @@ class ChatService:
         with guarded_chat_operation(self.database.path, chat_id):
             file_name = display_name or Path(path).name
             previous_operation = (
-                self.database.get_operation_result(operation_id) if operation_id else None
+                self.database.get_operation_result(
+                    operation_id) if operation_id else None
             )
             if previous_operation is not None:
                 if (
                     previous_operation.operation_type != "document_upload"
                     or previous_operation.scope_id != chat_id
                 ):
-                    raise RuntimeError("operation id belongs to a different upload scope")
+                    raise RuntimeError(
+                        "operation id belongs to a different upload scope")
                 document_id = str(previous_operation.result_ref or "")
                 existing = self.database.get_document(document_id)
                 if existing is None:
-                    raise RuntimeError("upload retry references a missing document record")
+                    raise RuntimeError(
+                        "upload retry references a missing document record")
                 if existing.status == "Ready":
                     self.database.associate_document_with_chat(
                         chat_id,
@@ -330,7 +339,8 @@ class ChatService:
                     if not claimed:
                         existing = self.database.get_document(document_id)
                         if existing is None:
-                            raise RuntimeError("upload retry references a missing document record")
+                            raise RuntimeError(
+                                "upload retry references a missing document record")
                         if existing.status == "Ready":
                             self.database.associate_document_with_chat(
                                 chat_id,
@@ -361,7 +371,8 @@ class ChatService:
                     "Failed",
                     error=f"{type(error).__name__}: {error}",
                 )
-                self.database.associate_document_with_chat(chat_id, document_id)
+                self.database.associate_document_with_chat(
+                    chat_id, document_id)
                 raise
             try:
                 self.database.update_document_status(
@@ -370,7 +381,8 @@ class ChatService:
                     chunk_count=result.chunk_count,
                 )
             except Exception:
-                self.database.associate_document_with_chat(chat_id, document_id)
+                self.database.associate_document_with_chat(
+                    chat_id, document_id)
                 raise
             self.database.associate_document_with_chat(chat_id, document_id)
             return DocumentFileIndexResult(
@@ -403,7 +415,8 @@ class ChatService:
             if not self.database.is_chat_active(chat_id):
                 raise RuntimeError(f"Chat is inactive: {chat_id}")
             if persisted_user_message_id is None:
-                self.ensure_chat_title_from_message(chat_id=chat_id, content=content)
+                self.ensure_chat_title_from_message(
+                    chat_id=chat_id, content=content)
             else:
                 self._validate_persisted_user_message(
                     chat_id=chat_id,
@@ -426,7 +439,8 @@ class ChatService:
         with guarded_chat_operation(self.database.path, chat_id):
             if not self.database.is_chat_active(chat_id):
                 raise RuntimeError(f"Chat is inactive: {chat_id}")
-            self.ensure_chat_title_from_message(chat_id=chat_id, content=content)
+            self.ensure_chat_title_from_message(
+                chat_id=chat_id, content=content)
             return self.database.save_message(
                 chat_id=chat_id,
                 role="user",
@@ -441,11 +455,13 @@ class ChatService:
         content: str,
     ) -> None:
         message = next(
-            (item for item in self.database.messages_for_chat(chat_id) if item.id == message_id),
+            (item for item in self.database.messages_for_chat(
+                chat_id) if item.id == message_id),
             None,
         )
         if message is None or message.role != "user" or message.content != content:
-            raise RuntimeError("pre-persisted user message does not match this turn")
+            raise RuntimeError(
+                "pre-persisted user message does not match this turn")
 
     def finalize_post_answer_memory_update(self, chat_id: str) -> bool:
         """Run the synchronous post-answer memory update after visible answer emission."""
