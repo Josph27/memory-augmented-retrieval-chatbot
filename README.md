@@ -31,21 +31,21 @@ heavy model weight and constrained development hardware.
 ## Architecture at a glance
 
 ```text
-Chainlit UI
--> ChatService
--> CoordinatorAgent
--> Routing → Retrieval → Reranking
--> ContextManagerAgent (deterministic budget + evidence selection)
--> [optional] LangGraph shadow comparison
--> ContextPacket assembly → Prompt validation
--> AnswerAgent / model endpoint
--> assistant message persistence
--> structured-memory update
+Chainlit UI → ChatService → CoordinatorAgent (14-phase turn pipeline)
+  ├── Routing: QueryAnalyzer → RoutePlanner → RoutingAgent (rule/hybrid)
+  ├── Retrieval: RetrieverDispatcher → 7 source retrievers → GistRawSpanExpander
+  ├── Reranking: MemoryReranker (deterministic + cross-encoder + optional LLM gate)
+  ├── Context: ContextManagerAgent (budget → preflight → selection → assembly)
+  ├── [optional] LangGraph 10-node read-only shadow/demo pipeline
+  ├── Legacy context + comparison (always runs, diagnostic only)
+  ├── Prompt validation → fallback gate
+  ├── Answer generation via ModelWrapper (OpenAI-compatible endpoint)
+  └── Memory update: LangMem extraction → SQLite long_term_memories → sqlite-vec sync
 ```
 
-All retrieved evidence is normalized into `MemoryCandidate` objects before
-reranking and context selection. The final model prompt is assembled from a
-validated `ContextPacket`.
+All retrieved evidence normalizes into `MemoryCandidate`. The final model prompt
+assembles from a validated `ContextPacket` — if validation fails, the system falls
+back to the legacy short-term memory path.
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the detailed current
 architecture.
@@ -72,9 +72,10 @@ architecture.
 
    ```bash
    uv sync
+   cd braemon && npm install && cd ..
    ```
 
-4. Start the app (default fast mode):
+4. Start the app (backend + frontend, default fast mode):
 
    ```bash
    uv run python startup.py -w
@@ -86,15 +87,14 @@ architecture.
    uv run python startup.py --cross-encoder -w
    ```
 
-5. Open the local URL printed by Chainlit, usually
-   `http://localhost:8000`.
+5. Open the frontend at `http://localhost:5173` (backend runs on `http://localhost:8000`).
 
 ### Startup modes
 
-| Flag | Reranker | Speed | Use when |
-| --- | --- | --- | --- |
-| `--hybrid` (default) | MiniLM cross-encoder + deterministic blend | Fast (~0.05s/pair) | Normal chat, demos |
-| `--cross-encoder` | mxbai DeBERTa cross-encoder only **(experimental)** | Higher quality, untested | Evaluation, precision retrieval |
+| Flag | Reranker | CE model | CE weight | Use when |
+| --- | --- | --- | --- | --- |
+| `--hybrid` (default) | Per-source z-score CE + deterministic blend + optional LLM gate | MiniLM (130 MB) | 0.65 | Normal chat, demos |
+| `--cross-encoder` | Pure raw cross-encoder scores, no normalization | mxbai (~2.2 GB) | 1.0 | Evaluation, precision retrieval |
 
 The `startup.py` script sets `RERANKER_STARTUP_MODE` and launches Chainlit.
 You can also set it directly as an env var:
@@ -103,13 +103,17 @@ You can also set it directly as an env var:
 RERANKER_STARTUP_MODE=cross_encoder uv run chainlit run app.py -w
 ```
 
-## Custom Frontend (Optional)
+## Frontend
 
-While the app serves a fully functional Chainlit UI on port 8000, there is also a standalone React frontend located in the `braemon/` directory. It uses the `@chainlit/react-client` SDK to connect to the Python backend and provides a multi-page workspace (chats, documents, memories, diagnostics, retrieval logs).
+The primary UI is a standalone React 18 SPA in `braemon/`. It uses the
+`@chainlit/react-client` SDK to connect to the Python backend and provides
+a multi-page workspace (chats, documents, memories, diagnostics, retrieval
+logs). The app is optimized for this frontend — the bare Chainlit UI on
+port 8000 is functional but lacks the full product experience.
 
 See [braemon/.doc.md](braemon/.doc.md) for comprehensive frontend documentation.
 
-To run it:
+To run it alongside the backend:
 
 ```bash
 cd braemon
@@ -117,7 +121,7 @@ npm install
 npm run dev
 ```
 
-It will proxy API and WebSocket traffic to `localhost:8000`.
+It proxies API and WebSocket traffic to the backend at `localhost:8000`.
 
 The runtime SQLite database defaults to `data/chatbot.db`, and Chroma defaults
 to `data/chroma/`. Both are ignored local runtime state.
@@ -156,15 +160,16 @@ See [.env.example](.env.example) for the current runnable defaults.
 
 ## Normal usage
 
-1. Create a chat from Home or the sidebar.
-2. Ask normal questions; the app retrieves recent messages and structured
+1. Open the braemon frontend (`http://localhost:5173`).
+2. Create a chat from Home or the sidebar.
+3. Ask questions; the app retrieves recent messages and structured
    memory when useful.
-3. Upload a document and ask about it in the same turn or later. Retrieval is
+4. Upload a document and ask about it in the same turn or later. Retrieval is
    scoped to documents associated with the selected chat.
-4. End a chat to make it read-only and flush final memory/gist processing.
-5. Fork an ended chat when you want to continue from its history.
-6. Use **Inspect answer** on an assistant response to see how the answer was
-   produced without exposing hidden chain-of-thought.
+5. End a chat to make it read-only and flush final memory/gist processing.
+6. Fork an ended chat when you want to continue from its history.
+7. Use **Inspect answer** on an assistant response to see how the answer was
+   produced (route, sources, evidence, token diagnostics).
 
 ## Supervisor demo flow
 
@@ -224,14 +229,24 @@ interpretation.
 ```text
 app.py                         Chainlit entry point and UI callbacks
 startup.py                     CLI launcher with reranker mode flags
-src/                           Application, agents, retrieval, memory, documents
-src/orchestration/             LangGraph demo orchestration
-src/context/                   Context budgets, selection, ContextPacket building
-src/retrieval/                 Source retrievers and rerankers
-src/documents/                 Document loading, splitting, lifecycle resolution
-src/memory/                    Short-term, structured (LangMem), episodic (gist) memory
-src/lifecycle/                 Chat operation guards
-src/actions/                   Chat-end and chat-fork actions
+src/settings.py                Canonical configuration defaults (single source of truth)
+src/config.py                  Frozen AppConfig dataclass (~60 fields)
+src/database.py                SQLite adapter (10 tables, 7 migrations, fork logic)
+src/model_wrapper.py           OpenAI-compatible chat client with ConnectionGuard
+src/connection_guard.py        Server reachability cache with TTL
+src/chat_service.py            Top-level agent assembly and turn orchestration
+src/api_routes.py              21 FastAPI endpoints on Chainlit's server
+src/chainlit_data_layer.py     Chainlit BaseDataLayer adapter
+src/agents/                    6 agent wrappers (Coordinator, ContextManager, …)
+src/core/                      Frozen dataclass contracts (MemoryCandidate, ContextPacket, …)
+src/routing/                   QueryAnalyzer, RoutePlanner, RoutingAgent, SemanticRouter
+src/retrieval/                 7 source retrievers, MemoryReranker, GistRawSpanExpander
+src/context/                   Budget allocation, evidence selection, ContextPacket assembly
+src/memory/                    Short-term, structured (LangMem), episodic (gist), sqlite-vec
+src/documents/                 Loading, splitting, chunking, document registry, inspection
+src/orchestration/             LangGraph 10-node read-only pipeline
+src/lifecycle/                 Chat operation guard (process-local RLock)
+src/actions/                   ChatEndAction, ChatForkAction
 src/inspection/                Answer inspector for post-hoc observability
 braemon/                       Custom React frontend (Vite, Tailwind, Chainlit SDK)
 scripts/                       Operational and inspection scripts
@@ -250,8 +265,11 @@ The prototype intentionally keeps some constraints visible:
 - no coordinated automatic Chroma deletion;
 - process-local document upload locks;
 - no general memory conflict-resolution UI;
+- long-term memory vectors use sqlite-vec (in-process), not a standalone vector DB;
 - quality limitations on broad summarization, multi-hop reasoning, and some
-  long-memory benchmark families.
+  long-memory benchmark families;
+- `MEMORY_REPLAY_MAX_MESSAGES` has a known discrepancy: settings.py pushes 128,
+  but the Python constant in `constants.py` is 2.
 
 See [docs/KNOWN_LIMITATIONS.md](docs/KNOWN_LIMITATIONS.md).
 
