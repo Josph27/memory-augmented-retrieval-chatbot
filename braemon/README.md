@@ -1,16 +1,49 @@
-# React + Vite
+# Breamon — Custom React Frontend
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+Breamon is the React 18 SPA frontend for the multi-agent typed-memory RAG chatbot.
+It wraps `@chainlit/react-client` WebSocket hooks with a custom dark-themed UI
+("Stitch" design system) and multi-page workspace (chats, documents, memories,
+diagnostics, retrieval logs).
 
-Currently, two official plugins are available:
+## Quick start
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+```bash
+cd braemon
+npm install
+npm run dev
+```
 
-## React Compiler
+The dev server runs on port 5173 and proxies `/api/*` and `/ws` to the Python
+Chainlit backend on `localhost:8000`.
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+The Python backend must be running first (`uv run python startup.py -w`).
 
-## Expanding the Oxlint configuration
+## Architecture
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and Oxlint's TypeScript related rules in your project.
+- **7 routes**: Home, Chat, Chats, Documents, Memories, Diagnostics, RetrievalLogs
+- **2 data channels**: REST API (20 functions via Vite proxy) + Chainlit WebSocket
+- **Design system**: "Stitch" — 50 M3 colors, 5 semantic aliases, Inter typography, Tailwind v4
+- **No TypeScript** — plain JSX with Oxlint
+
+## Scripts
+
+| Script | Purpose |
+|---|---|
+| `npm run dev` | Vite dev server with HMR |
+| `npm run build` | Production build → `dist/` |
+| `npm run lint` | Oxlint static analysis |
+| `npm run test:e2e` | Puppeteer E2E chat tests |
+| `npm run preview` | Preview production build |
+
+## Key files
+
+| File | Role |
+|---|---|
+| `src/main.jsx` | Bootstrap: Recoil, ChainlitAPI, AuthWrapper, ModelLoadingScreen |
+| `src/App.jsx` | Route definitions (7 routes) |
+| `src/api.js` | REST client — 20 functions |
+| `src/index.css` | Stitch design tokens + custom utilities |
+| `src/components/ChainlitChat.jsx` | Core chat: WebSocket, messages, trace display |
+| `src/components/ModelLoadingScreen.jsx` | Startup gate: polls backend until models ready |
+
+See `.doc.md` for comprehensive documentation.

@@ -7,8 +7,8 @@
 	const LIFECYCLE_OVERLAY_ID = "memory-lifecycle-overlay";
 	const productState = { view: "home", active: null, chatId: null };
 	const answerInspections = [];
-	const renderScheduled = false;
-	const inspectorRenderScheduled = false;
+	let renderScheduled = false;
+	let inspectorRenderScheduled = false;
 	const firstProductStateReceived = false;
 
 	// Show the loading overlay immediately — the backend is loading models.

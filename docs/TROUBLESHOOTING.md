@@ -37,7 +37,7 @@ python scripts/rebuild_long_term_memory_index.py
 ```bash
 # Increase working memory budgets (in .env or exported):
 BASE_MEMORY_BUDGET=8192          # from 4096
-DOCUMENT_MEMORY_CAP=32768        # from 16384
+DOCUMENT_MEMORY_CAP=65536        # from 49152
 CHAT_MEMORY_CAP=16384            # from 8192
 ```
 
@@ -243,6 +243,26 @@ grep -i "error\|timeout\|context_length" logs/*.log
 4. Check Vite proxy is forwarding correctly — browser DevTools Network tab should show `/api/*` calls returning correct data.
 
 **Known issue:** The Chainlit chat sidebar and the custom Chats page maintain separate state. Ending a chat from one may not instantly reflect in the other without navigation.
+
+---
+
+## Frontend stuck on "Loading models…"
+
+**Symptoms:** The braemon frontend shows a spinner with "Loading models…" and never loads the app. The backend is running and the API is reachable.
+
+**Diagnosis:** The `ModelLoadingScreen` component polls `GET /api/models/status` every 500ms and blocks rendering until `{ ready: true }`. If the backend's model warmup failed or the endpoint is returning an unexpected response, the screen stays forever (120s timeout, then error).
+
+**Fix:**
+
+1. Check that the backend model warmup succeeded — look for "Model warm-up" messages in the Python server output.
+2. Verify `GET /api/models/status` returns `{"ready": true}`:
+
+   ```bash
+   curl -s http://localhost:8000/api/models/status
+   ```
+
+3. If the backend is running but the endpoint returns 404, restart the Python server — the API routes may not have registered correctly.
+4. The 120s timeout shows a "Backend Unavailable" screen with a Retry button. Click Retry to re-poll.
 
 ---
 

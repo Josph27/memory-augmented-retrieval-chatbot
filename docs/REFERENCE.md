@@ -1,6 +1,6 @@
 # Reference
 
-> Information-oriented. Links to explanation in `ARCHITECTURE.md`.
+> Information-oriented. Configuration defaults match `src/settings.py` (canonical source of truth). Links to explanation in `ARCHITECTURE.md`.
 
 ## Core Types
 
@@ -13,7 +13,7 @@ Literal union of known memory-source identifiers:
 | Value | Meaning | Storage |
 |---|---|---|
 | `recent_messages` | newest same-chat raw messages | SQLite `messages` |
-| `structured_memory` | durable facts, preferences, decisions, corrections, tasks, constraints | SQLite `long_term_memories` + Chroma vector index |
+| `structured_memory` | durable facts, preferences, decisions, corrections, tasks, constraints — 10 categories with TTL | SQLite `long_term_memories` + sqlite-vec vector index (`vec_memories` table) |
 | `document_memory` | uploaded document chunks | Chroma |
 | `current_chat_gist` | active-chat lossy orientation scaffold | SQLite `chat_gists` |
 | `current_chat_span` | older exact evidence from the active chat | SQLite `messages` (via span extraction) |
@@ -165,7 +165,7 @@ All agents in `src/agents/`.
 
 ## Configuration Variables
 
-All variables from `AppConfig` (env vars loaded in `src/config.py`). Defaults as of current code.
+All variables from `src/settings.py` (single source of truth), loaded into `AppConfig` in `src/config.py`. Defaults as of current code.
 
 ### Model
 
@@ -188,14 +188,14 @@ All variables from `AppConfig` (env vars loaded in `src/config.py`). Defaults as
 | `BASE_MEMORY_BUDGET` | 4096 | Base working memory budget for general chat |
 | `MEMORY_RECALL_BUDGET_TOKENS` | 8192 | Budget for memory-recall profile |
 | `CHAT_MEMORY_CAP` | 8192 | Max tokens for chat-context profile |
-| `DOCUMENT_MEMORY_CAP` | 16384 | Max tokens for document-only profile |
+| `DOCUMENT_MEMORY_CAP` | 49152 | Max tokens for document-only profile |
 | `MULTI_SCOPE_MEMORY_CAP` | 16384 | Max tokens for mixed memory+document |
 | `LONG_DOCUMENT_MEMORY_CAP` | 32768 | Max tokens for long-document profile |
 | `GLOBAL_SUMMARY_BUDGET_TOKENS` | 65536 | Base budget for global summary |
 | `GLOBAL_SUMMARY_MAX_BUDGET_TOKENS` | 131072 | Max budget for global summary |
 | `GLOBAL_SUMMARY_RESERVED_TOKENS` | 4096 | Reserved tokens in global summary mode |
 | `REQUIRED_EVIDENCE_HEADROOM_RATIO` | 0.25 | Extra budget margin for required evidence |
-| `MIN_OPTIONAL_CANDIDATE_UTILITY` | 0.15 | Minimum utility score for optional candidates |
+| `MINIMUM_OPTIONAL_CANDIDATE_UTILITY` | 0.15 | Minimum utility score for optional candidates |
 
 ### Memory Processing
 
@@ -203,15 +203,15 @@ All variables from `AppConfig` (env vars loaded in `src/config.py`). Defaults as
 |---|---|---|
 | `RAW_MESSAGE_LIMIT` | 8 | Max raw messages per batch |
 | `MEMORY_UPDATE_BATCH_SIZE` | 6 | Messages per memory-update batch |
-| `MEMORY_UPDATE_POLICY` | `agentic_each_turn` | `scheduled`, `agentic_each_turn`, or `chat_end_only` |
-| `RECENT_MESSAGES_MAX_COUNT` | 32 | Max recent messages in context |
+| `MEMORY_UPDATE_POLICY` | `scheduled` | `scheduled`, `agentic_each_turn`, or `chat_end_only` |
+| `RECENT_MESSAGES_MAX_COUNT` | 8 | Max recent messages in context |
 | `MEMORY_UPDATE_TRIGGER_TOKENS` | 1000 | Unsummarized tokens before triggering update |
 | `MEMORY_UPDATE_MAX_INPUT_TOKENS` | 4000 | Max tokens per update batch |
 | `MEMORY_UPDATE_MAX_MESSAGES` | 64 | Max messages per update batch |
 | `MEMORY_RECENT_PROTECTION_TOKENS` | 1500 | Recent tokens protected from summarization |
 | `MEMORY_REPLAY_TRIGGER_TOKENS` | 4000 | Unsummarized tokens before replay trigger |
 | `MEMORY_REPLAY_MAX_INPUT_TOKENS` | 8000 | Max tokens per replay batch |
-| `MEMORY_REPLAY_MAX_MESSAGES` | 2 | Max messages per replay batch |
+| `MEMORY_REPLAY_MAX_MESSAGES` | 128 ⚠ | Max messages per replay batch. ⚠ Discrepancy: `settings.py` pushes `128` into env; `src/memory/constants.py` hardcodes `2` as Python fallback. Runtime uses env value (128 from settings.py). |
 | `PREVIOUS_CHAT_GIST_EXTRACTOR` | `llm` | `deterministic` or `llm`; LLM mode falls back deterministically |
 | `PREVIOUS_CHAT_GIST_MAX_MESSAGES_PER_GIST` | 5 | Max messages per previous-chat gist batch |
 
@@ -226,36 +226,39 @@ All variables from `AppConfig` (env vars loaded in `src/config.py`). Defaults as
 
 | Env var | Default | Controls |
 |---|---|---|
-| `RERANKER_MODE` | `deterministic` | `deterministic`, `cross_encoder`, `hybrid`, or `llm` |
+| `RERANKER_STARTUP_MODE` | `hybrid` | `hybrid` (fast MiniLM CE + deterministic blend) or `cross_encoder` (pure mxbai CE). Set via `startup.py --hybrid`/`--cross-encoder` flag, or directly. Overrides `RERANKER_MODE` and `RERANKER_CROSS_ENCODER_MODEL`. |
+| `RERANKER_MODE` | `cross_encoder` (base) | `deterministic`, `cross_encoder`, `hybrid`, or `llm`. Startup mode overrides: `hybrid`→`hybrid`, `cross_encoder`→`cross_encoder`. |
 | `RERANKER_LLM_TOP_K` | 10 | Candidates sent to LLM reranker |
 | `RERANKER_LLM_MIN_CONFIDENCE` | 0.55 | Minimum LLM reranker confidence |
-| `RERANKER_CROSS_ENCODER_MODEL` | `BAAI/bge-reranker-v2-m3` | Cross-encoder model name |
-| `RERANKER_CROSS_ENCODER_TOP_K` | 10 | Candidates scored by cross-encoder |
-| `RERANKER_CROSS_ENCODER_WEIGHT` | 0.65 | Cross-encoder weight vs deterministic |
-| `RERANKER_HYBRID_BACKEND` | `auto` | Hybrid reranker backend selection |
+| `RERANKER_CROSS_ENCODER_MODEL` | `cross-encoder/ms-marco-MiniLM-L12-v2` | Cross-encoder model. `--cross-encoder` startup → `mixedbread-ai/mxbai-rerank-xsmall-v1`. |
+| `RERANKER_CROSS_ENCODER_WEIGHT` | 0.65 | Cross-encoder weight vs deterministic. `--cross-encoder` → 1.0. |
+| `RERANKER_HYBRID_BACKEND` | `cross_encoder` (after startup) | `auto` or `cross_encoder`. Startup `hybrid` → `cross_encoder` (skips LLM gate). |
 | `RERANKER_LLM_AMBIGUITY_MARGIN` | 0.15 | Score margin triggering LLM gate |
 | `RERANKER_LLM_REQUIRE_CROSS_SOURCE_CONFLICT` | `true` | Require multi-source conflict for LLM gate |
 | `RERANKER_LLM_PROVENANCE_QUERIES` | `true` | Trigger LLM reranking on provenance queries |
+
+> **Note:** `RERANKER_CROSS_ENCODER_TOP_K` is NOT an env var. It is a Python constant (`500`) in `src/retrieval/reranker.py` — the number of candidates submitted to the cross-encoder before per-source normalization.
 
 ### Documents
 
 | Env var | Default | Controls |
 |---|---|---|
 | `DOCUMENT_RETRIEVAL_MODE` | `langchain_chroma` | Document retrieval backend |
-| `EMBEDDING_MODEL_NAME` | `sentence-transformers/all-MiniLM-L6-v2` | Embedding model |
-| `DOCUMENT_TOP_K` | 8 | Chunks retrieved per query |
+| `EMBEDDING_MODEL_NAME` | `BAAI/bge-small-en-v1.5` | Embedding model (384-dim, ~130 MB) |
+| `DOCUMENT_TOP_K` | 18 | Chunks in prompt after reranking |
+| `DOCUMENT_RETRIEVAL_FETCH_LIMIT` | 42 | Chunks fetched from Chroma before reranking |
 | `DOCUMENT_CHUNKER` | `custom` | `custom` or `langchain_recursive` |
-| `DOCUMENT_CHUNK_SIZE` | 1000 | Target characters per chunk |
-| `DOCUMENT_CHUNK_OVERLAP` | 150 | Chunk overlap |
+| `DOCUMENT_CHUNK_SIZE` | 1024 | Target characters per chunk |
+| `DOCUMENT_CHUNK_OVERLAP` | 164 | Chunk overlap (16% of chunk_size) |
 | `LANGCHAIN_CHROMA_PERSIST_DIR` | `data/chroma` | Chroma storage directory |
-| `LANGCHAIN_CHUNK_SIZE` | 1000 | LangChain splitter chunk size |
-| `LANGCHAIN_CHUNK_OVERLAP` | 150 | LangChain splitter overlap |
+| `LANGCHAIN_CHUNK_SIZE` | 1024 | LangChain splitter chunk size |
+| `LANGCHAIN_CHUNK_OVERLAP` | 164 | LangChain splitter overlap |
 
 ### Structured Memory Retrieval
 
 | Env var | Default | Controls |
 |---|---|---|
-| `STRUCTURED_MEMORY_RETRIEVAL_MODE` | `sqlite` | `sqlite`, `vector`, or `hybrid` |
+| `STRUCTURED_MEMORY_RETRIEVAL_MODE` | `hybrid` | `sqlite`, `vector`, or `hybrid` |
 | `LONG_TERM_MEMORY_CHROMA_PERSIST_DIR` | (same as `LANGCHAIN_CHROMA_PERSIST_DIR`) | Chroma directory for long-term memory vectors |
 | `LONG_TERM_MEMORY_COLLECTION` | `long_term_memory` | Chroma collection name |
 
@@ -270,11 +273,26 @@ All variables from `AppConfig` (env vars loaded in `src/config.py`). Defaults as
 | `DIRECT_RAW_RETRIEVAL_CANDIDATES` | 12 | Max direct raw retrieval candidates |
 | `RAW_SPAN_OVERLAP_THRESHOLD` | 0.7 | Overlap threshold for span folding |
 
+### LangGraph Pipeline
+
+| Env var | Default | Controls |
+|---|---|---|
+| `LANGGRAPH_MAX_DIRECT_RETRIEVAL_CANDIDATES` | 160 | Max candidates from direct retrieval nodes |
+| `LANGGRAPH_MAX_GIST_EXPANSION_CANDIDATES` | 80 | Max candidates from gist expansion nodes |
+
 ### Orchestration
 
 | Env var | Default | Controls |
 |---|---|---|
-| `ORCHESTRATION_MODE` | `langgraph_demo` | `native`, `langgraph_shadow`, or `langgraph_demo` |
+| `ORCHESTRATION_MODE` | `native` | `native`, `langgraph_shadow`, or `langgraph_demo` |
+
+### Debug
+
+| Env var | Default | Controls |
+|---|---|---|
+| `DEMO_MEMORY_TRACE` | `false` | Print memory trace blocks per turn |
+| `RETRIEVAL_LOG_ENABLED` | `true` | Write per-turn retrieval logs to disk |
+| `CHAT_DOCUMENT_SCOPE_STICKY` | `true` | Chat-scoped document visibility |
 
 ### Database
 
@@ -286,7 +304,7 @@ All variables from `AppConfig` (env vars loaded in `src/config.py`). Defaults as
 
 ## Database Schema
 
-9 tables in `src/database.py`.
+10 tables in `src/database.py`.
 
 | Table | Purpose | Key columns |
 |---|---|---|
@@ -295,7 +313,8 @@ All variables from `AppConfig` (env vars loaded in `src/config.py`). Defaults as
 | `chat_memory_state` | Per-chat structured memory cache | `chat_id PK FK(chat)`, `memory_json` |
 | `chat_gists` | Gist summaries with source-message ranges | `id PK`, `chat_id FK`, `source_type`, `gist_text`, `topics_json`, `decisions_json`, `open_tasks_json`, `start_message_id`, `end_message_id` |
 | `long_term_memories` | Durable cross-chat structured memory | `id PK`, `namespace_json`, `namespace_path`, `memory_id`, `category`, `key`, `value`, `confidence`, `status`, `source_chat_id`, UNIQUE on `(namespace_path, memory_id)` |
-| `document_records` | Document lifecycle metadata | `id TEXT PK`, `file_name`, `status CHECK(Uploading/Indexing/Ready/Failed/deleted)`, `chunk_count`, `error` |
+| `document_records` | Document lifecycle metadata | `id TEXT PK`, `file_name`, `status CHECK(Uploading/Indexing/Ready/Failed/deleted)`, `chunk_count`, `error`, `summary_text` |
+| `document_summaries` | LLM-generated document summaries | Populated by `DocumentIngestionAgent` during indexing |
 | `chat_documents` | Chat-document association | `(chat_id, document_id) PK`, `selected`, FK to chats + document_records |
 | `operation_results` | Idempotent operation keys (upload dedup) | `operation_id PK`, `operation_type`, `scope_id`, `result_ref` |
 | `answer_inspections` | Per-answer observability | `assistant_message_id PK FK(messages)`, `chat_id`, `trace_id`, `payload_json` |
@@ -316,7 +335,8 @@ All routes registered in `src/api_routes.py` on Chainlit's FastAPI app.
 | `POST` | `/api/chats/{chat_id}/fork` | Fork a chat (copy messages to new chat) |
 | `POST` | `/api/chats/{chat_id}/end` | End a chat (mark inactive) |
 | `POST` | `/api/chats/{chat_id}/reactivate` | Reactivate an ended chat |
-| `POST` | `/api/chats/{chat_id}/consolidate` | Trigger memory consolidation (6s timeout) |
+| `POST` | `/api/chats/{chat_id}/consolidate` | Trigger memory consolidation (30s timeout) |
+| `GET` | `/api/chats/{chat_id}/consolidation-log` | Get consolidation log text |
 | `DELETE` | `/api/chats/{chat_id}` | Hard delete a chat |
 
 ### Documents
@@ -342,7 +362,9 @@ All routes registered in `src/api_routes.py` on Chainlit's FastAPI app.
 
 | Method | Path | Purpose |
 |---|---|---|
-| `GET` | `/api/stats` | System stats: active chats, memory count, document count, version |
+| `GET` | `/api/models/status` | Returns `{ready: bool}` — model reachability |
+| `GET` | `/api/retrieval-logs/{chat_id}/{turn_index}` | Get per-turn retrieval debug log |
+| `GET` | `/api/stats` | System stats: active chats, memory count, document count, version `v2.4.1` |
 
 ---
 

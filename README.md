@@ -34,9 +34,10 @@ heavy model weight and constrained development hardware.
 Chainlit UI
 -> ChatService
 -> CoordinatorAgent
--> Native fallback preparation
--> LangGraph route/retrieve/expand/rerank/context/validate
--> authoritative ContextPacket
+-> Routing → Retrieval → Reranking
+-> ContextManagerAgent (deterministic budget + evidence selection)
+-> [optional] LangGraph shadow comparison
+-> ContextPacket assembly → Prompt validation
 -> AnswerAgent / model endpoint
 -> assistant message persistence
 -> structured-memory update
@@ -51,18 +52,20 @@ architecture.
 
 ## Quick start
 
-1. Create a local environment file:
+1. Create a local environment file. If `.env.example` exists, copy it:
 
    ```bash
    cp .env.example .env
    ```
+
+   Otherwise, create `.env` with the variables shown in step 2.
 
 2. Edit `.env` for your model endpoint:
 
    ```env
    OPENAI_API_KEY=dummy
    OPENAI_BASE_URL=http://localhost:11434/v1
-   MODEL_NAME=qwen2.5:3b
+   MODEL_NAME=google/gemma-4-31B-it
    ```
 
 3. Install dependencies:
@@ -102,7 +105,9 @@ RERANKER_STARTUP_MODE=cross_encoder uv run chainlit run app.py -w
 
 ## Custom Frontend (Optional)
 
-While the app serves a fully functional Chainlit UI on port 8000, there is also an experimental standalone React frontend located in the `braemon/` directory. It uses the `@chainlit/react-client` SDK to connect to the Python backend.
+While the app serves a fully functional Chainlit UI on port 8000, there is also a standalone React frontend located in the `braemon/` directory. It uses the `@chainlit/react-client` SDK to connect to the Python backend and provides a multi-page workspace (chats, documents, memories, diagnostics, retrieval logs).
+
+See [braemon/.doc.md](braemon/.doc.md) for comprehensive frontend documentation.
 
 To run it:
 
@@ -143,8 +148,8 @@ Important optional variables:
 | `STRUCTURED_MEMORY_RETRIEVAL_MODE` | `hybrid` | Structured-memory retrieval mode: `sqlite`, `vector`, or `hybrid`. |
 | `ROUTING_MODE` | `hybrid` | `rule` is canonical; `hybrid` optionally lets the LLM add typed retrieval sources while preserving deterministic sources. |
 | `MEMORY_UPDATE_POLICY` | `scheduled` | `agentic_each_turn` makes LangMem evaluate each completed turn; `scheduled` batches by token threshold. |
-| `PREVIOUS_CHAT_GIST_EXTRACTOR` | `deterministic` | Set to `llm` to use model-backed previous-chat gists with deterministic fallback. |
-| `RERANKER_MODE` | `cross_encoder` | Reranking mode: `deterministic`, `cross_encoder`, `hybrid`, or `llm`. |
+| `PREVIOUS_CHAT_GIST_EXTRACTOR` | `llm` | Set to `deterministic` to use no-LLM previous-chat gists. |
+| `RERANKER_MODE` | `cross_encoder` | Reranking mode: `deterministic`, `cross_encoder`, `hybrid`, or `llm`. Overridden by `RERANKER_STARTUP_MODE` — defaults to `hybrid` in practice. |
 | `DEMO_MEMORY_TRACE` | `0` | Optional message-level trace display. |
 
 See [.env.example](.env.example) for the current runnable defaults.
@@ -218,11 +223,18 @@ interpretation.
 
 ```text
 app.py                         Chainlit entry point and UI callbacks
+startup.py                     CLI launcher with reranker mode flags
 src/                           Application, agents, retrieval, memory, documents
 src/orchestration/             LangGraph demo orchestration
 src/context/                   Context budgets, selection, ContextPacket building
 src/retrieval/                 Source retrievers and rerankers
 src/documents/                 Document loading, splitting, lifecycle resolution
+src/memory/                    Short-term, structured (LangMem), episodic (gist) memory
+src/lifecycle/                 Chat operation guards
+src/actions/                   Chat-end and chat-fork actions
+src/inspection/                Answer inspector for post-hoc observability
+braemon/                       Custom React frontend (Vite, Tailwind, Chainlit SDK)
+scripts/                       Operational and inspection scripts
 evals/                         Evaluation adapters and benchmark runners
 tests/                         Unit, integration, and browser E2E tests
 public/product-navigation.js   Product navigation and lifecycle UI behavior

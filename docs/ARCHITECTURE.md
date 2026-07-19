@@ -14,7 +14,7 @@ User → Route → Persist → Retrieve → Rerank → Build Context
      → LangGraph (optional) → Legacy Context → Compare → Validate → Generate → Memory Update
 ```
 
-Two storage backends: **SQLite** (chats, messages, structured memories, gists) and **Chroma** (document chunks, long-term memory vectors). All memory sources normalize into `MemoryCandidate`, all context assembles into `ContextPacket`.
+Two storage backends: **SQLite** (chats, messages, structured memories, gists, long-term memory vectors via sqlite-vec) and **Chroma** (document chunks). All memory sources normalize into `MemoryCandidate`, all context assembles into `ContextPacket`.
 
 ---
 
@@ -210,7 +210,7 @@ graph TB
 | **actions/** | lifecycle, memory |
 | **inspection/** | core |
 
-Direction is top-down: agents → retrieval/context/routing → memory → core. `memory → retrieval` allows the structured memory retriever to query both SQLite and Chroma. `memory → context` is for token estimation during batch scheduling.
+Direction is top-down: agents → retrieval/context/routing → memory → core. `memory → retrieval` allows the structured memory retriever to query SQLite + sqlite-vec (vector). `memory → context` is for token estimation during batch scheduling.
 
 ---
 
@@ -403,7 +403,7 @@ sequenceDiagram
 | Compare | legacy messages + trace packet | `ContextComparison` (overlap, diffs, warnings) |
 | Validate | `ContextPacket` + user message | `PromptAssemblyResult` (valid/invalid + final messages) |
 | Generate | final model_messages | answer string |
-| Memory Update | chat messages | structured memory records in SQLite + Chroma |
+| Memory Update | chat messages | structured memory records in SQLite (sqlite-vec for vectors) |
 
 ### Core Data Types (all in `src/core/contracts.py`)
 
@@ -445,7 +445,7 @@ Actions         ChatEndAction, ChatForkAction (lifecycle finalization)
        │
 Inspection      Per-answer observability (answer_inspector.py)
        │
-Storage         SQLite (9 tables) + Chroma (vector DB) + LLM Provider (via ModelWrapper)
+Storage         SQLite (10 tables, sqlite-vec for structured memory vectors) + Chroma (document vectors) + LLM Provider (via ModelWrapper)
 ```
 
 ### Memory Sources → Storage Mapping
@@ -453,7 +453,7 @@ Storage         SQLite (9 tables) + Chroma (vector DB) + LLM Provider (via Model
 | Source | Storage | Retriever |
 |--------|---------|-----------|
 | `recent_messages` | SQLite `messages` | `RecentMessagesRetriever` |
-| `structured_memory` | SQLite `long_term_memories` + Chroma | `StructuredMemoryRetriever` |
+| `structured_memory` | SQLite `long_term_memories` + sqlite-vec | `StructuredMemoryRetriever` |
 | `document_memory` | Chroma | `LangChainChromaRetriever` |
 | `current_chat_gist` | SQLite `chat_gists` | `CurrentChatGistRetriever` |
 | `current_chat_span` | SQLite `messages` | `CurrentChatSpanRetriever` |
@@ -464,9 +464,11 @@ Storage         SQLite (9 tables) + Chroma (vector DB) + LLM Provider (via Model
 
 | Mode | Behavior |
 |------|----------|
-| `native` (default) | CoordinatorAgent's imperative pipeline only |
+| `native` (default) | CoordinatorAgent's imperative pipeline only. `LANGGRAPH_DEMO`/`compare` modes skipped. |
 | `langgraph_demo` | LangGraph StateGraph pipeline is authoritative; native is fallback |
 | `compare` | Both run; native is authoritative; LangGraph is comparison-only |
+
+**Default:** `ORCHESTRATION_MODE=native` (set in `settings.py`).
 
 ### Fallback Chain
 
@@ -483,19 +485,17 @@ pipeline misconfiguration from breaking user-visible answers.
 
 ### 6.1 Chunk Size Aligned to Embedding Model
 
-The embedding model `all-MiniLM-L6-v2` caps input at 256 word-pieces and was
-trained at 128 tokens. Chunk size is now 256 characters (was 1000), with 22%
-overlap (56 characters). This ensures the model embeds full chunk content
-without silent truncation.
+The embedding model `BAAI/bge-small-en-v1.5` has a 512-token context window.
+Chunk size is 1024 characters with 164-character overlap (~16%).
 
-Env vars: `LANGCHAIN_CHUNK_SIZE` (256), `LANGCHAIN_CHUNK_OVERLAP` (56).
+Env vars: `LANGCHAIN_CHUNK_SIZE` (1024), `LANGCHAIN_CHUNK_OVERLAP` (164).
 
 ### 6.2 Hybrid Retrieval (Semantic + Lexical)
 
-`LangChainChromaRetriever.retrieve()` fetches 2× the requested limit from
-Chroma, then blends 70% semantic similarity with 30% lexical overlap score via
-`_hybrid_rerank()`. Lexical scoring catches exact string matches (e.g. "Problem
-3") that embedding models encode weakly.
+`LangChainChromaRetriever.retrieve()` fetches `DOCUMENT_RETRIEVAL_FETCH_LIMIT`
+chunks from Chroma (default 42), then performs deterministic scoring.
+The retriever also supports neighbor chunk expansion (±1 context chunks)
+and pre-computed document summary retrieval for summary queries.
 
 ### 6.3 Neighbor Chunk Expansion
 
@@ -505,9 +505,9 @@ appended. Not counted toward the retrieval limit. Marked with
 
 ### 6.4 Intent-Aware Top-K
 
-`DOCUMENT_TOP_K` defaults to 40 (was 8), scaled 5× to match the ~4× smaller
-chunks. Route planner `document_memory` source limit is 20. The dispatcher
-boosts to 40 when `context_profile == "document_question"`.
+`DOCUMENT_TOP_K` defaults to 18 (was 8). The retriever fetches
+`DOCUMENT_RETRIEVAL_FETCH_LIMIT` (42) from Chroma, then reranking selects
+the top `DOCUMENT_TOP_K` most relevant chunks for context assembly.
 
 ### 6.5 Document Summarization at Ingestion
 
@@ -548,9 +548,73 @@ User query
   → RetrieverDispatcher.retrieve()
       → LangChainChromaRetriever.retrieve()
           → _try_summary_candidate() — pre-computed summary for summary queries
-          → Chroma similarity_search (2× limit)
-          → _hybrid_rerank() — 70% semantic + 30% lexical blend
+          → Chroma similarity_search (fetches DOCUMENT_RETRIEVAL_FETCH_LIMIT chunks)
+          → deterministic scoring (BM25 + semantic similarity)
           → _expand_neighbors() — ±1 context chunks
   → MemoryReranker.rank() — skip_rerank candidates preserve score
   → ContextManagerAgent → ContextPacket → LLM
 ```
+
+---
+
+## 7. Frontend Architecture (Breamon)
+
+A standalone React 18 SPA in `braemon/` wraps the Chainlit WebSocket protocol
+with a custom multi-page workspace and dark-only "Stitch" design system.
+
+### 7.1 Data Channels
+
+Two independent channels connect to the Python backend:
+
+| Channel | Tech | Path | Purpose |
+|---|---|---|---|
+| REST | `fetch()` / XHR | 20 functions via Vite proxy `/api/*` → `:8000` | CRUD for chats, documents, memories, stats, retrieval logs |
+| WebSocket | `@chainlit/react-client` v0.4.2 | Vite proxy `/ws` (ws:true) → `:8000` | Real-time chat streaming, file upload, session management |
+
+### 7.2 Routes and Pages
+
+7 routes, all sharing a fixed top navigation via `<Layout>`:
+
+| Route | Page | Purpose |
+|---|---|---|
+| `/` | Home | Landing: new chat, recent threads, quick-nav cards |
+| `/chat/:chatId?` | Chat | Two-panel: thread sidebar + `<ChainlitChat>` |
+| `/chats` | Chats | Full thread browser (active/inactive tables) |
+| `/documents` | Documents | Document library with soft-delete lifecycle |
+| `/memories` | Memories | Expandable memory vault with soft-delete |
+| `/diagnostics` | Diagnostics | System stats, build info, browser environment |
+| `/retrieval-logs/:chatId/:turnIndex` | RetrievalLogs | Per-turn retrieval candidate debug table |
+
+### 7.3 Core Chat Component
+
+`ChainlitChat.jsx` uses 4 Chainlit SDK hooks (`useChatSession`, `useChatMessages`,
+`useChatInteract`, `useChatData`) and provides:
+
+- Recursive message flattening from Chainlit's nested `steps[]`
+- Deterministic sort (createdAt + user-before-assistant tiebreaker)
+- Trace extraction from `<!--breamon-trace:...-->` HTML comments → 7-section collapsible panel
+- File upload via Chainlit SDK with progress bar
+- Consolidation log modal for memory batch inspection
+- Processing stage indicator ("Indexing files" / "Generating answer")
+
+### 7.4 Product Shell
+
+`public/product-navigation.js` (vanilla JS) overlays Chainlit's default UI with:
+
+- Custom lifecycle toolbar (End/Fork/New Chat/Home/Consolidation Log buttons)
+- Answer Inspector slide-out panel (overview, evidence summary, source details, diagnostics)
+- Consolidation Log panel (batch-by-batch memory extraction results)
+- Lifecycle overlay spinner during end/fork operations
+- Sidebar thread status badges ("Ended")
+
+Communication with the Python backend via `window.postMessage` protocol
+(source `"memory-chatbot-ui"`).
+
+### 7.5 Startup Gate
+
+`ModelLoadingScreen` polls `GET /api/models/status` every 500ms until
+`{ ready: true }`. 120s timeout with retry button. Blocks all rendering
+until the backend's embedding model, cross-encoder, and tokenizer are
+loaded into RAM.
+
+See [braemon/.doc.md](../braemon/.doc.md) for the full frontend reference.
