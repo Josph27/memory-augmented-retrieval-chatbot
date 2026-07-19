@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import sqlite3
 from dataclasses import dataclass, field
@@ -14,6 +15,8 @@ try:  # pragma: no cover - optional dependency path
 except Exception:  # pragma: no cover - keep import optional
     LangGraphInMemoryStore = None
 
+
+_LOGGER = logging.getLogger(__name__)
 
 DEFAULT_USER_NAMESPACE = ("user", "default", "semantic_memory")
 DEFAULT_PROJECT_NAMESPACE = ("project", "default", "semantic_memory")
@@ -232,7 +235,7 @@ class SQLiteLongTermMemoryStore:
                 StructuredMemoryVectorSync as DefaultStructuredMemoryVectorSync,
             )
 
-            self.vector_sync = DefaultStructuredMemoryVectorSync.from_env()
+            self.vector_sync = DefaultStructuredMemoryVectorSync.from_env(database=self.database)
 
     def upsert(self, record: LongTermMemoryWrite) -> None:
         """Insert or update one memory row."""
@@ -298,7 +301,14 @@ class SQLiteLongTermMemoryStore:
                 f"Structured-memory SQLite upsert missing after commit: {record.memory_id}"
             )
         if self.vector_sync is not None:
-            self.vector_sync.sync_record(stored)
+            try:
+                self.vector_sync.sync_record(stored)
+            except Exception:
+                _LOGGER.exception(
+                    "vec0 sync failed for memory_id=%s namespace=%s",
+                    record.memory_id,
+                    namespace_path(record.namespace),
+                )
 
     def get(self, namespace: tuple[str, ...], memory_id: str) -> LongTermMemoryRecord | None:
         """Get one memory row by namespace and key."""

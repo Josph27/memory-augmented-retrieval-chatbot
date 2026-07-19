@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import sqlite3
 import json
+from collections.abc import Callable
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -102,11 +103,29 @@ class Database:
         self.init_schema()
 
     @contextmanager
-    def connect(self) -> Iterator[sqlite3.Connection]:
-        """Open a connection with row dictionaries enabled."""
-        connection = sqlite3.connect(self.path)
+    def connect(
+        self,
+        extensions: list[Callable[[sqlite3.Connection], None]] | None = None,
+    ) -> Iterator[sqlite3.Connection]:
+        """Open a connection with WAL mode, busy timeout, and row dicts.
+
+        When *extensions* are provided each callable is invoked with the
+        new connection after extension loading is enabled.  Loading is
+        disabled again before the connection is yielded so that the SQL
+        ``load_extension()`` function is unavailable to subsequent queries.
+        """
+        connection = sqlite3.connect(self.path, timeout=30.0)
         connection.row_factory = sqlite3.Row
+        connection.execute("PRAGMA journal_mode = WAL")
+        connection.execute("PRAGMA busy_timeout = 30000")
         connection.execute("PRAGMA foreign_keys = ON")
+        if extensions:
+            connection.enable_load_extension(True)
+            try:
+                for loader in extensions:
+                    loader(connection)
+            finally:
+                connection.enable_load_extension(False)
         try:
             yield connection
             connection.commit()

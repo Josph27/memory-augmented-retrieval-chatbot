@@ -227,18 +227,12 @@ class ShortTermMemory:
         scheduling_profile: SchedulingProfileName = "online",
     ) -> bool:
         """Update structured memory from one token-aware batch if threshold is met."""
-        if (
-            scheduling_profile == "online"
-            and self.memory_update_policy == "chat_end_only"
-        ):
+        if scheduling_profile == "online" and self.memory_update_policy == "chat_end_only":
             self.last_saved_memory_rows = []
             self.last_processed_message_ids = []
             self.last_schedule_profile = scheduling_profile
             return False
-        if (
-            scheduling_profile == "online"
-            and self.memory_update_policy == "agentic_each_turn"
-        ):
+        if scheduling_profile == "online" and self.memory_update_policy == "agentic_each_turn":
             return self.update_memory_for_latest_turn(chat_id)
 
         self.last_saved_memory_rows = []
@@ -411,6 +405,17 @@ class ShortTermMemory:
             # latest state, but do NOT mark these messages summarized — they
             # remain pending and will be retried on the next consolidate call.
             self.database.upsert_chat_memory_state(chat_id, dumps_memory_state(result.memory_state))
+            failed_saved_records = getattr(self.structured_memory, "last_saved_records", [])
+            saved_rows = [memory_write_to_trace_row(r) for r in failed_saved_records]
+            dump_memory_consolidation_log(
+                chat_id=chat_id,
+                messages=messages,
+                drops=drops,
+                saved=saved_rows,
+                profile_name=profile_name,
+                accepted=False,
+                rejection_reason=f"extraction_failed:{reason}",
+            )
             print(
                 "memory_update_timing "
                 f"chat_id={chat_id} profile={profile_name} triggered=True accepted=False "
@@ -438,6 +443,8 @@ class ShortTermMemory:
                 drops=drops,
                 saved=saved_rows,
                 profile_name=profile_name,
+                accepted=True,
+                rejection_reason=reason,
             )
             print(
                 "memory_update_timing "
@@ -466,6 +473,7 @@ class ShortTermMemory:
             drops=drops,
             saved=saved_rows,
             profile_name=profile_name,
+            accepted=True,
         )
         print(
             "memory_update_timing "
@@ -680,25 +688,34 @@ def dump_memory_consolidation_log(
     drops: list[dict[str, Any]],
     saved: list[dict[str, Any]],
     profile_name: str,
+    *,
+    accepted: bool | None = None,
+    rejection_reason: str | None = None,
 ) -> Path:
-    """Dump one memory consolidation batch to a JSON log file."""
+    """Dump one memory consolidation batch to a JSON log file.
+
+    When ``accepted`` and ``rejection_reason`` are provided they are written
+    into the batch metadata so the frontend can distinguish successful
+    extractions, graceful no-ops, and LLM failures.
+    """
     log_dir = Path("logs/memory") / chat_id
     log_dir.mkdir(parents=True, exist_ok=True)
     message_ids = [m.id for m in messages]
     filepath = log_dir / f"batch_{message_ids[0]}_{message_ids[-1]}.json"
-    batch = {
+    batch: dict[str, Any] = {
         "profile": profile_name,
         "message_ids": message_ids,
-        "messages": [
-            {"id": m.id, "role": m.role, "content": m.content[:500]}
-            for m in messages
-        ],
+        "messages": [{"id": m.id, "role": m.role, "content": m.content[:500]} for m in messages],
     }
+    if accepted is not None:
+        batch["accepted"] = accepted
+    if rejection_reason:
+        batch["rejection_reason"] = rejection_reason
     entries: list[dict[str, Any]] = []
     for record in saved:
-        entries.append({"status": "used", **record})
+        entries.append({**record, "status": "used"})
     for drop in drops:
-        entries.append({"status": "dropped", **drop})
+        entries.append({**drop, "status": "dropped"})
     with open(filepath, "w") as f:
         json.dump({"batch": batch, "entries": entries}, f, ensure_ascii=False, indent=2)
     return filepath

@@ -551,7 +551,7 @@ function Message({ msg }) {
 	);
 }
 
-export default function ChainlitChat({ chatId, onConsolidate }) {
+export default function ChainlitChat({ chatId, onConsolidate, consolidating = false }) {
 	const { setIdToResume, sendMessage, uploadFile } = useChatInteract();
 	const { connect, disconnect, idToResume } = useChatSession();
 	const { messages } = useChatMessages();
@@ -843,7 +843,7 @@ export default function ChainlitChat({ chatId, onConsolidate }) {
 					<div className="flex gap-sm items-center">
 						<button
 							onClick={handleEndChat}
-							disabled={!connected || loading}
+							disabled={!connected || loading || consolidating}
 							className="bg-dusty-grape/20 border border-lilac-ash/30 text-almond-silk px-3 py-1 rounded-sm text-label-sm flex items-center gap-xs hover:bg-dusty-grape/40 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
 						>
 							<span className="material-symbols-outlined text-[14px]">
@@ -853,7 +853,7 @@ export default function ChainlitChat({ chatId, onConsolidate }) {
 						</button>
 						<button
 							onClick={() => fileInputRef.current?.click()}
-							disabled={!connected || loading}
+							disabled={!connected || loading || consolidating}
 							className="bg-dusty-grape/20 border border-lilac-ash/30 text-almond-silk px-3 py-1 rounded-sm text-label-sm flex items-center gap-xs hover:bg-dusty-grape/40 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
 						>
 							<span className="material-symbols-outlined text-[14px]">
@@ -869,7 +869,7 @@ export default function ChainlitChat({ chatId, onConsolidate }) {
 						/>
 						<button
 							onClick={handleForkChat}
-							disabled={!connected || loading}
+							disabled={!connected || loading || consolidating}
 							className="bg-dusty-grape/20 border border-lilac-ash/30 text-almond-silk px-3 py-1 rounded-sm text-label-sm flex items-center gap-xs hover:bg-dusty-grape/40 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
 						>
 							<span className="material-symbols-outlined text-[14px]">
@@ -879,7 +879,7 @@ export default function ChainlitChat({ chatId, onConsolidate }) {
 						</button>
 						<button
 							onClick={handleConsolidate}
-							disabled={!connected || loading}
+							disabled={!connected || loading || consolidating}
 							className="bg-dusty-grape/20 border border-lilac-ash/30 text-almond-silk px-3 py-1 rounded-sm text-label-sm flex items-center gap-xs hover:bg-dusty-grape/40 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
 						>
 							<span className="material-symbols-outlined text-[14px]">
@@ -889,7 +889,7 @@ export default function ChainlitChat({ chatId, onConsolidate }) {
 						</button>
 						<button
 							onClick={handleConsolidationLog}
-							disabled={!connected || loading}
+							disabled={!connected || loading || consolidating}
 							className="bg-dusty-grape/20 border border-lilac-ash/30 text-almond-silk px-3 py-1 rounded-sm text-label-sm flex items-center gap-xs hover:bg-dusty-grape/40 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
 						>
 							<span className="material-symbols-outlined text-[14px]">
@@ -995,6 +995,13 @@ export default function ChainlitChat({ chatId, onConsolidate }) {
 											<summary className="px-sm py-xs cursor-pointer text-label-sm font-bold bg-surface-container-low">
 												Batch [{msgIds.join(", ")}] &middot;{" "}
 												{batch.batch?.profile || "unknown"}
+												{batch.batch?.accepted === false ? " 🔴 FAILED" : ""}
+												{batch.batch?.accepted === true && entries.length === 0
+													? " 🟢 no memories"
+													: ""}
+												{entries.length > 0
+													? ` (${entries.length} entries)`
+													: ""}
 											</summary>
 											<div className="px-sm py-xs">
 												{msgs.length > 0 && (
@@ -1007,6 +1014,25 @@ export default function ChainlitChat({ chatId, onConsolidate }) {
 													</div>
 												)}
 												<div className="space-y-0.5">
+													{entries.length === 0 &&
+													batch.batch?.rejection_reason ? (
+														<div
+															className={
+																batch.batch?.accepted === false
+																	? "flex items-start gap-xs text-code text-[12px] bg-error/10 border border-error/30 rounded-sm px-xs py-0.5"
+																	: "flex items-start gap-xs text-code text-[12px] bg-success/10 border border-success/30 rounded-sm px-xs py-0.5"
+															}
+														>
+															<span className="shrink-0">
+																{batch.batch?.accepted === false ? "🔴" : "🟢"}
+															</span>
+															<div className="text-on-surface-variant">
+																{batch.batch?.accepted === false
+																	? `Extraction failed: ${batch.batch.rejection_reason}`
+																	: `No memories extracted (${batch.batch.rejection_reason})`}
+															</div>
+														</div>
+													) : null}
 													{entries.map((entry, ei) => (
 														<div
 															key={ei}

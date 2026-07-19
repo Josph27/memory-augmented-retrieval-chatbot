@@ -3,6 +3,7 @@ import asyncio
 import chainlit as cl
 from pathlib import Path
 from src.database import Database
+from src.lifecycle.operation_guard import guarded_chat_operation
 from typing import Any
 
 _database: Database | None = None
@@ -125,19 +126,15 @@ def register_api_routes(database: Database, chat_service_getter: Any) -> None:
             if not chat:
                 return {"error": "not found"}, 404
             svc = get_chat_svc()
-            result = await asyncio.wait_for(
-                asyncio.to_thread(svc.memory.process_all_for_chat_end, chat_id),
-                timeout=30,
-            )
+            with guarded_chat_operation(svc.database.path, chat_id):
+                result = await asyncio.to_thread(
+                    svc.memory.process_all_for_chat_end, chat_id
+                )
             return {
                 "status": "consolidated",
                 "processed": result.processed_message_count,
                 "batches": result.batch_count,
             }
-        except asyncio.TimeoutError:
-            return {
-                "error": "Memory consolidation timed out after 6 seconds — the model may be unresponsive."
-            }, 504
         except Exception as e:
             return {"error": str(e)}, 500
 

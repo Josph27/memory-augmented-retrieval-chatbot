@@ -73,7 +73,7 @@ class UpsertingFakeVectorBackend:
 
 class FakeLongTermMemoryVectorIndex(LongTermMemoryVectorIndex):
     def __init__(self, backend: UpsertingFakeVectorBackend) -> None:
-        super().__init__(database_path=":memory:", vectorstore=backend)
+        super().__init__(vectorstore=backend)
 
 
 class FailingVectorBackend:

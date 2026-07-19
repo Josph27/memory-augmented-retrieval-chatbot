@@ -171,7 +171,7 @@ class StructuredMemoryRetriever:
     def _vector_index(self) -> LongTermMemoryVectorIndex:
         """Return the cached long-term memory vector index, creating it once."""
         if self.vector_index is None:
-            self.vector_index = LongTermMemoryVectorIndex.from_env()
+            self.vector_index = LongTermMemoryVectorIndex.from_env(database=self.database)
         return self.vector_index
 
     def _vector_records(

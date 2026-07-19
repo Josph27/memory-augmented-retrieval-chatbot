@@ -2,11 +2,14 @@ from __future__ import annotations
 
 import os
 import sqlite3
+from contextlib import contextmanager
 from dataclasses import dataclass
-from pathlib import Path
-from typing import Any, Protocol
+from typing import TYPE_CHECKING, Any, Iterator, Protocol
 
 import numpy as np
+
+if TYPE_CHECKING:
+    from src.database import Database
 
 from src.memory.long_term_store import (
     LongTermMemoryRecord,
@@ -62,27 +65,45 @@ class LongTermMemorySearchResult:
     metadata: dict[str, Any] | None = None
 
 
+def _load_sqlite_vec(conn: sqlite3.Connection) -> None:
+    """Load sqlite-vec extension and ensure the vec0 virtual table exists."""
+    import sqlite_vec
+
+    sqlite_vec.load(conn)
+    conn.execute(
+        f"CREATE VIRTUAL TABLE IF NOT EXISTS {VEC_TABLE} "
+        "USING vec0(embedding float[384] distance_metric=cosine)"
+    )
+
+
 class LongTermMemoryVectorIndex:
-    """sqlite-vec semantic index for structured long-term memories."""
+    """sqlite-vec semantic index for structured long-term memories.
+
+    All database access goes through ``Database.connect()`` so every
+    connection inherits WAL mode, busy timeout, lifecycle commit, and
+    rollback-on-exception.  The sqlite-vec extension is loaded per
+    connection via the ``extensions`` parameter.
+    """
 
     def __init__(
         self,
-        database_path: str | Path = "data/chatbot.db",
+        database: "Database | None" = None,
         embedding_model_name: str = DEFAULT_EMBEDDING_MODEL,
-        db: sqlite3.Connection | None = None,
         vectorstore: VectorIndexBackend | None = None,
     ) -> None:
-        self._database_path = str(database_path)
         self.embedding_model_name = embedding_model_name
-        self._db = db
         self._vector_store = vectorstore
         self._embeddings_cache: Any = None
+        self._database = database
 
     @classmethod
-    def from_env(cls) -> "LongTermMemoryVectorIndex":
+    def from_env(
+        cls,
+        database: "Database | None" = None,
+    ) -> "LongTermMemoryVectorIndex":
         """Build the sqlite-vec long-term memory index from environment values."""
         return cls(
-            database_path=os.getenv("DATABASE_PATH", "data/chatbot.db"),
+            database=database,
             embedding_model_name=os.getenv("EMBEDDING_MODEL_NAME", DEFAULT_EMBEDDING_MODEL),
         )
 
@@ -112,13 +133,11 @@ class LongTermMemoryVectorIndex:
             for record, embedding in zip(active_records, embeddings, strict=True):
                 blob = np.array(embedding, dtype=np.float32).tobytes()
                 rows.append((record.rowid, blob))  # type: ignore[arg-type]
-            db = self._get_db()
-            if db is not None:
-                db.executemany(
+            with self._vec_connect() as conn:
+                conn.executemany(
                     f"INSERT OR REPLACE INTO {VEC_TABLE}(rowid, embedding) VALUES (?, ?)",
                     rows,
                 )
-                db.commit()
 
         return LongTermMemoryIndexResult(
             indexed_count=len(active_records),
@@ -136,13 +155,11 @@ class LongTermMemoryVectorIndex:
             return
         embedding = self._embeddings().embed_query(memory_record_to_index_text(record))
         blob = np.array(embedding, dtype=np.float32).tobytes()
-        db = self._get_db()
-        if db is not None:
-            db.execute(
+        with self._vec_connect() as conn:
+            conn.execute(
                 f"INSERT OR REPLACE INTO {VEC_TABLE}(rowid, embedding) VALUES (?, ?)",
                 [record.rowid, blob],
             )
-            db.commit()
 
     def delete_record(
         self,
@@ -150,29 +167,27 @@ class LongTermMemoryVectorIndex:
         memory_id: str,
     ) -> None:
         """Idempotently remove one derived vector entry by rowid."""
-        db = self._get_db()
-        if db is None:
-            # Test injection — look up rowid from reverse record_lookup
-            if self._vector_store is not None:
-                rev = getattr(
-                    self._vector_store,
-                    "reverse_record_lookup",
-                    {},
-                )
-                target_rowid = rev.get((namespace_path(namespace), memory_id))
-                if target_rowid is not None:
-                    self._vector_store.remove_vectors([target_rowid])
-            return
-        row = db.execute(
-            "SELECT id AS rowid FROM long_term_memories WHERE namespace_path = ? AND memory_id = ?",
-            (namespace_path(namespace), memory_id),
-        ).fetchone()
-        if row is not None:
-            db.execute(
-                f"DELETE FROM {VEC_TABLE} WHERE rowid = ?",
-                [row["rowid"]],
+        if self._vector_store is not None:
+            rev = getattr(
+                self._vector_store,
+                "reverse_record_lookup",
+                {},
             )
-            db.commit()
+            target_rowid = rev.get((namespace_path(namespace), memory_id))
+            if target_rowid is not None:
+                self._vector_store.remove_vectors([target_rowid])
+            return
+        with self._vec_connect() as conn:
+            row = conn.execute(
+                "SELECT id AS rowid FROM long_term_memories "
+                "WHERE namespace_path = ? AND memory_id = ?",
+                (namespace_path(namespace), memory_id),
+            ).fetchone()
+            if row is not None:
+                conn.execute(
+                    f"DELETE FROM {VEC_TABLE} WHERE rowid = ?",
+                    [row["rowid"]],
+                )
 
     def rebuild_from_store(
         self,
@@ -195,20 +210,19 @@ class LongTermMemoryVectorIndex:
 
         # Batch lookup rowids → (namespace_path, memory_id)
         rowids = [rowid for rowid, _ in results]
-        db = self._get_db()
         lookup: dict[int, tuple[str, str]] = {}
         if self._vector_store is not None:
-            # Test injection — use record_lookup from fake backend
             lookup = getattr(self._vector_store, "record_lookup", {})
-        elif db is not None and rowids:
-            placeholders = ",".join("?" for _ in rowids)
-            rows = db.execute(
-                f"SELECT id AS rowid, namespace_path, memory_id FROM long_term_memories "
-                f"WHERE id IN ({placeholders})",
-                rowids,
-            ).fetchall()
-            for row in rows:
-                lookup[row["rowid"]] = (row["namespace_path"], row["memory_id"])
+        elif rowids and self._database is not None:
+            with self._database.connect() as conn:
+                placeholders = ",".join("?" for _ in rowids)
+                rows = conn.execute(
+                    f"SELECT id AS rowid, namespace_path, memory_id "
+                    f"FROM long_term_memories WHERE id IN ({placeholders})",
+                    rowids,
+                ).fetchall()
+                for row in rows:
+                    lookup[row["rowid"]] = (row["namespace_path"], row["memory_id"])
 
         converted: list[LongTermMemorySearchResult] = []
         for rowid, score in results:
@@ -237,40 +251,30 @@ class LongTermMemoryVectorIndex:
         # Production path — embed query then search vec0
         embedding = self._embeddings().embed_query(query)
         blob = np.array(embedding, dtype=np.float32).tobytes()
-        db = self._get_db()
-        if db is None:
-            return []
-        rows = db.execute(
-            f"SELECT rowid, distance FROM {VEC_TABLE} "
-            "WHERE embedding MATCH ? AND k = ? "
-            "ORDER BY distance",
-            [blob, limit],
-        ).fetchall()
+        with self._vec_connect() as conn:
+            rows = conn.execute(
+                f"SELECT rowid, distance FROM {VEC_TABLE} "
+                "WHERE embedding MATCH ? AND k = ? "
+                "ORDER BY distance",
+                [blob, limit],
+            ).fetchall()
         # Cosine distance ∈ [0, 2] → similarity ∈ [0, 1]
         return [(r["rowid"], max(0.0, 1.0 - r["distance"] / 2.0)) for r in rows]
 
-    def _get_db(self) -> sqlite3.Connection | None:
-        """Return the sqlite-vec powered connection, creating the vec0 table if needed."""
-        if self._vector_store is not None:
-            return None
-        if self._db is not None:
-            self._ensure_vec_table(self._db)
-            return self._db
-        conn = sqlite3.connect(self._database_path)
-        conn.enable_load_extension(True)
-        import sqlite_vec
+    @contextmanager
+    def _vec_connect(self) -> Iterator[sqlite3.Connection]:
+        """Context manager for a Database connection with sqlite-vec loaded.
 
-        sqlite_vec.load(conn)
-        self._ensure_vec_table(conn)
-        self._db = conn
-        return conn
-
-    def _ensure_vec_table(self, conn: sqlite3.Connection) -> None:
-        """Create the vec0 virtual table if it doesn't exist."""
-        conn.execute(
-            f"CREATE VIRTUAL TABLE IF NOT EXISTS {VEC_TABLE} "
-            "USING vec0(embedding float[384] distance_metric=cosine)"
-        )
+        Asserts that ``_database`` is available — test mode with a fake
+        ``_vector_store`` should short-circuit before reaching this point.
+        """
+        if self._database is None:
+            raise VectorIndexUnavailable(
+                "LongTermMemoryVectorIndex._database is None — "
+                "production use requires a Database instance."
+            )
+        with self._database.connect(extensions=[_load_sqlite_vec]) as conn:
+            yield conn
 
     def _embeddings(self) -> Any:
         """Return a cached HuggingFace embedding model."""

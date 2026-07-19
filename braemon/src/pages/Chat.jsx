@@ -1,5 +1,5 @@
 import { useParams, Link, useNavigate } from "react-router-dom";
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback } from "react";
 import ChainlitChat from "../components/ChainlitChat";
 import ChatActions from "../components/ChatActions";
 import { fetchChats, createChat, consolidateChat } from "../api";
@@ -11,7 +11,6 @@ export default function Chat() {
 	const [inactiveOpen, setInactiveOpen] = useState(false);
 	const [consolidating, setConsolidating] = useState(false);
 	const [consolidateError, setConsolidateError] = useState(null);
-	const consolidateTimeoutRef = useRef(null);
 
 	const refreshChats = useCallback(() => {
 		fetchChats({ limit: 50 }).then(setChats).catch(console.error);
@@ -41,23 +40,11 @@ export default function Chat() {
 		setConsolidating(true);
 		setConsolidateError(null);
 
-		const timeoutPromise = new Promise((_, reject) => {
-			consolidateTimeoutRef.current = setTimeout(() => {
-				reject(
-					new Error(
-						"Memory consolidation timed out after 30 seconds — the model may be unresponsive.",
-					),
-				);
-			}, 30000);
-		});
-
 		try {
-			await Promise.race([consolidateChat(cid), timeoutPromise]);
+			await consolidateChat(cid);
 		} catch (err) {
 			setConsolidateError(err.message || "Memory consolidation failed");
 		} finally {
-			clearTimeout(consolidateTimeoutRef.current);
-			consolidateTimeoutRef.current = null;
 			setConsolidating(false);
 		}
 	};
@@ -193,6 +180,7 @@ export default function Chat() {
 						key={chatId}
 						chatId={chatId}
 						onConsolidate={handleConsolidate}
+						consolidating={consolidating}
 					/>
 				</main>
 			</div>

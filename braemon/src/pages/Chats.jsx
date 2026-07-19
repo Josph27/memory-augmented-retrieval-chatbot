@@ -1,5 +1,5 @@
 import { Link, useNavigate } from "react-router-dom";
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { fetchChats, createChat, consolidateChat } from "../api";
 import ChatActions from "../components/ChatActions";
 
@@ -10,7 +10,6 @@ export default function Chats() {
 	const [error, setError] = useState(null);
 	const [consolidating, setConsolidating] = useState(false);
 	const [consolidateError, setConsolidateError] = useState(null);
-	const consolidateTimeoutRef = useRef(null);
 
 	useEffect(() => {
 		fetchChats()
@@ -51,23 +50,11 @@ export default function Chats() {
 		setConsolidating(true);
 		setConsolidateError(null);
 
-		const timeoutPromise = new Promise((_, reject) => {
-			consolidateTimeoutRef.current = setTimeout(() => {
-				reject(
-					new Error(
-						"Memory consolidation timed out after 30 seconds — the model may be unresponsive.",
-					),
-				);
-			}, 30000);
-		});
-
 		try {
-			await Promise.race([consolidateChat(targetChatId), timeoutPromise]);
+			await consolidateChat(targetChatId);
 		} catch (err) {
 			setConsolidateError(err.message || "Memory consolidation failed");
 		} finally {
-			clearTimeout(consolidateTimeoutRef.current);
-			consolidateTimeoutRef.current = null;
 			setConsolidating(false);
 		}
 	};

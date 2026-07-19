@@ -35,9 +35,11 @@ class StructuredMemoryVectorSync:
     vector_index: StructuredMemoryVectorIndex
 
     @classmethod
-    def from_env(cls) -> "StructuredMemoryVectorSync":
+    def from_env(cls, database: "Any" = None) -> "StructuredMemoryVectorSync":
         """Create the configured long-term-memory vector synchronization adapter."""
-        return cls(vector_index=LongTermMemoryVectorIndex.from_env())
+        from src.memory.long_term_vector_index import LongTermMemoryVectorIndex
+
+        return cls(vector_index=LongTermMemoryVectorIndex.from_env(database=database))
 
     def sync_record(self, record: LongTermMemoryRecord) -> None:
         """Upsert active records and remove inactive records."""

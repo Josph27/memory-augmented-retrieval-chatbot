@@ -265,7 +265,7 @@ class LangMemStructuredMemoryState:
             return MemoryUpdateResult(
                 memory_state={"memories": combined_existing_records},
                 accepted=False,
-                rejection_reason=f"langmem_update_failed:{exc.__class__.__name__}",
+                rejection_reason=f"langmem_update_failed: {exc}",
             )
         try:
             extracted = self.manager.invoke(
@@ -280,7 +280,7 @@ class LangMemStructuredMemoryState:
             return MemoryUpdateResult(
                 memory_state={"memories": combined_existing_records},
                 accepted=False,
-                rejection_reason=f"langmem_update_failed:{exc.__class__.__name__}",
+                rejection_reason=f"langmem_update_failed: {exc}",
             )
 
         records, drops = normalize_langmem_outputs(
@@ -294,6 +294,7 @@ class LangMemStructuredMemoryState:
                 memory_state={"memories": combined_existing_records},
                 accepted=False,
                 rejection_reason="langmem_no_valid_memories",
+                drops=drops,
             )
 
         merged_records = merge_memory_records(combined_existing_records, records)
@@ -307,9 +308,12 @@ class LangMemStructuredMemoryState:
             return MemoryUpdateResult(
                 memory_state={"memories": combined_existing_records},
                 accepted=False,
-                rejection_reason=f"long_term_store_write_failed:{exc.__class__.__name__}",
+                rejection_reason=f"long_term_store_write_failed: {exc}",
+                drops=drops,
             )
-        return MemoryUpdateResult(memory_state={"memories": merged_records}, accepted=True)
+        return MemoryUpdateResult(
+            memory_state={"memories": merged_records}, accepted=True, drops=drops
+        )
 
     @property
     def manager(self) -> LangMemManager:
@@ -356,13 +360,14 @@ class LangMemStructuredMemoryState:
                         "source_message_ids_seen": sorted(source_message_ids),
                     },
                 )
+                existing = self._long_term_store.get(namespace, record["id"])
+                is_new = existing is None
                 self._long_term_store.upsert(write)
-                self.last_saved_records.append(write)
+                if is_new:
+                    self.last_saved_records.append(write)
                 print_saved_memory_trace(source_chat_id, write)
         except Exception as exc:
-            raise RuntimeError(
-                f"failed to persist long-term memory:{exc.__class__.__name__}"
-            ) from exc
+            raise RuntimeError(f"failed to persist long-term memory: {exc}") from exc
 
 
 def create_real_langmem_manager(config: LangMemBackendConfig) -> LangMemManager:
@@ -459,17 +464,21 @@ def normalize_langmem_outputs(
             drops.append(_make_drop_entry(item, "empty_content"))
             continue
 
-        record, drop_reason = normalize_langmem_memory(memory, allowed_source_ids, source_text_by_id)
+        record, drop_reason = normalize_langmem_memory(
+            memory, allowed_source_ids, source_text_by_id
+        )
         if record is not None:
             upsert_normalized_record(records, record)
         else:
             data = memory_to_dict(memory) if not isinstance(memory, dict) else dict(memory)
-            drops.append({
-                "category": data.get("category", "unknown"),
-                "key": str(data.get("key", "")),
-                "value": str(data.get("value", ""))[:200],
-                "drop_reason": drop_reason or "unknown",
-            })
+            drops.append(
+                {
+                    "category": data.get("category", "unknown"),
+                    "key": str(data.get("key", "")),
+                    "value": str(data.get("value", ""))[:200],
+                    "drop_reason": drop_reason or "unknown",
+                }
+            )
     return records, drops
 
 
