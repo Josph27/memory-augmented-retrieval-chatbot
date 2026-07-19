@@ -48,6 +48,8 @@ StructuredMemoryCategory = Literal[
     "upcoming",
     "procedural",
     "corrections",
+    "third_party_facts",
+    "opinions",
 ]
 
 StructuredMemoryStatus = Literal["active", "superseded", "deleted"]
@@ -64,6 +66,8 @@ _CATEGORY_TTL_DAYS: dict[str, int | None] = {
     "upcoming": 40,  # imminent future events
     "procedural": 365,  # reusable methods/instructions
     "corrections": 365,  # audit trail of corrections
+    "third_party_facts": 365,  # facts about other people — same durability as user_facts
+    "opinions": 90,  # transient opinions/views expressed by or about anyone
 }
 
 
@@ -100,6 +104,22 @@ Every memory must be self-contained enough to be understood without
 re-reading the conversation. Preserve qualifiers ("compared to X", "about
 the same as Y"), numbers, names, and concrete details. When in doubt,
 extract.
+
+**Exhaustive scanning**: A single user message often bundles multiple
+unrelated facts. Scan every message for ALL claims, not just the first or
+most salient one. Pay special attention to facts about OTHER PEOPLE —
+these are frequently overlooked but equally valuable.
+
+  "I bought black pants, my friend bought red pants, and he thinks my
+  choice is boring" → THREE separate memories:
+    1. past_events: user bought black pants
+    2. third_party_facts: friend bought red pants
+    3. opinions: friend thinks user's black pants are boring
+
+Do not stop after extracting the first user-centric fact. Re-read each
+message looking for: other people's actions, other people's attributes,
+other people's opinions about the user, and the user's opinions about
+anything.
 
 **Categories — choose the single best fit**:
 
@@ -145,6 +165,21 @@ extract.
   "User corrected vitamin B claim from 'similar to meat' to 'more than
   meat'."
 
+- **third_party_facts**: Facts about people OTHER than the user — friends,
+  colleagues, family members, acquaintances mentioned in the conversation.
+  Same durability as user_facts (slowly-changing). "User's friend bought
+  red pants." "User's colleague Sarah uses Python exclusively." "User's
+  brother lives in Berlin." Values must make the subject unambiguous.
+  Key prefix: use the person's role (friend_, colleague_, brother_, etc.)
+  to distinguish from user-level facts.
+
+- **opinions**: Opinions, views, or judgments expressed by anyone (the user
+  OR others) about anything. These are transient by nature — people change
+  their minds. "User thinks black pants are elegant." "User's friend thinks
+  the user's black pants are boring." "User believes Rust is better than
+  C++ for new projects." This category captures subjective assessments,
+  not objective facts. Frame values to make the opinion-holder clear.
+
 **Temporal awareness**: Choose the category that matches the expected
 lifetime of the fact. Transient states go to user_state (cleans up
 automatically). Historical events go to past_events (permanent). Future
@@ -161,6 +196,23 @@ not hallucination. Do NOT guess without supporting evidence.
 Same concept = same key across turns. Examples: "ml_graphs_exam_stress",
 "prefers_concise_answers", "tum_student_status", "database_choice".
 
+**Key reuse is mandatory when refining or adding detail**: If an existing
+memory already covers the same topic, you MUST reuse its exact key — do
+NOT create a new key for a more specific version of the same fact.
+
+  Existing: key=food_preference_green_tea, value="The user likes green tea."
+  New: "I like green tea with honey"
+  WRONG → new key: food_preference_green_tea_with_honey
+  RIGHT → same key: food_preference_green_tea,
+           value: "The user likes green tea with honey."
+
+Adding detail ("with honey") does not make it a new memory — it makes the
+existing memory more precise. Reuse the key.
+
+Similarly: "I live in Munich" → "I live in Schwabing, Munich" — same key,
+updated value. "I use Python" → "I use Python 3.12 with FastAPI" — same
+key, updated value.
+
 **Corrections and supersession**:
 
 When the user corrects a previous statement: update the original memory in
@@ -172,6 +224,9 @@ When the user strengthens a previous claim with new evidence without
 contradicting it: update the value and optionally recategorize (e.g. from
 user_state to user_facts if it turns out to be durable). Use the same key.
 Do NOT output a corrections entry — the foundation changed, not the claim.
+
+Refinement (adding detail without contradicting) follows the same rule:
+update the value, reuse the same key, do NOT output a corrections entry.
 
 Include source_message_ids for every memory when you can identify which
 messages support it. Include a confidence score (0.0–1.0) reflecting how

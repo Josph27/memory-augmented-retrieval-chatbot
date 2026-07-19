@@ -18,6 +18,8 @@ MEMORY_CATEGORIES = (
     "upcoming",
     "procedural",
     "corrections",
+    "third_party_facts",
+    "opinions",
 )
 
 MEMORY_OPERATION_NAMES = ("upsert", "supersede", "delete")

@@ -66,6 +66,8 @@ def structured_memory_namespaces(chat_id: str | None = None) -> list[tuple[str, 
         ("memory", "upcoming"),
         ("memory", "procedural"),
         ("memory", "corrections"),
+        ("memory", "third_party_facts"),
+        ("memory", "opinions"),
     ]
     if chat_id:
         namespaces.append(("chat", chat_id, "structured_memory"))
