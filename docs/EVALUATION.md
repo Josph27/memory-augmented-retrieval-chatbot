@@ -91,15 +91,15 @@ selected evidence, or because the benchmark requires a strict output format.
 
 The frozen held-out manifest contains 33 cases:
 
-| Family / source dataset | Cases | Main ability tested | Why it is hard |
-|---|---:|---|---|
-| `ruler_qa2` / short-answer retrieval | 5 | Direct factual lookup from a long synthetic history | Requires locating an exact fact or comparison evidence in a large raw-message space. |
-| `event_qa` / event retrieval | 5 | Recall of event facts and actions | Often needs the right event mention, not just a semantically nearby sentence. |
-| `fact_consolidation_sh` / single-hop knowledge update | 4 | Use the latest corrected fact | Tests whether the system trusts supplied conversation evidence over prior world knowledge. |
-| `fact_consolidation_mh` / multi-hop knowledge update | 4 | Combine or compare updated facts | Stresses multi-hop retrieval and context selection; the current system does not implement iterative graph traversal. |
-| `icl_banking77` / in-context classification | 5 | Infer a numeric label from examples | This is closer to task-specific classification than general memory QA. Strict exact-label output matters. |
-| `detective_qa` / natural-language reasoning | 5 | Answer multiple-choice reasoning questions from long narrative context | Requires long-range reading and strict option/JSON formatting. |
-| `infbench_summarization` / summarization | 5 | Summarize a long supplied book-like history | Requires broad coverage; the system has no map-reduce or hierarchical summarizer. |
+| Family / source dataset | Cases | Established official success | Main ability tested | Why it is hard |
+|---|---:|---:|---|---|
+| `ruler_qa2` / short-answer retrieval | 5 | 2/5 | Direct factual lookup from a long synthetic history | Requires locating an exact fact or comparison evidence in a large raw-message space. |
+| `event_qa` / event retrieval | 5 | 1/5 | Recall of event facts and actions | Often needs the right event mention, not just a semantically nearby sentence. |
+| `fact_consolidation_sh` / single-hop knowledge update | 4 | 4/4 | Use the latest corrected fact | Tests whether the system trusts supplied conversation evidence over prior world knowledge. |
+| `fact_consolidation_mh` / multi-hop knowledge update | 4 | 1/4 | Combine or compare updated facts | Stresses multi-hop retrieval and context selection; the current system does not implement iterative graph traversal. |
+| `icl_banking77` / in-context classification | 5 | 1/5 | Infer a numeric label from examples | This is closer to task-specific classification than general memory QA. Strict exact-label output matters. |
+| `detective_qa` / natural-language reasoning | 5 | 3/5 | Answer multiple-choice reasoning questions from long narrative context | Requires long-range reading and strict option/JSON formatting. |
+| `infbench_summarization` / summarization | 5 | 0/5 | Summarize a long supplied book-like history | Requires broad coverage; the system has no map-reduce or hierarchical summarizer. |
 
 Grouped by MemoryAgentBench split, the same manifest contains 10
 `Accurate_Retrieval`, 8 `Conflict_Resolution`, 5 `Test_Time_Learning`, and 10
@@ -176,6 +176,18 @@ The frozen LongMemEval pilot manifest contains 19 cases:
 | `temporal-reasoning` | 3 | Use timing or order of events | The system has limited explicit temporal reasoning. |
 | `knowledge-update` | 3 | Prefer corrected/latest facts over stale facts | Requires update ordering and conflict handling. |
 | `single-session-preference` | 2 | Recall user preferences | Matches the structured-memory use case most closely. |
+
+Corrected judge-pass outcomes by question type:
+
+| Type | Cases | Official pilot metric | Semantic judge | Failed rows |
+|---|---:|---:|---:|---:|
+| `single-session-user` | 5 | 5/5 | 5/5 | 0 |
+| `single-session-assistant` | 2 | 1/2 | 2/2 | 0 |
+| `multi-session` | 4 | 2/4 | 2/4 | 0 |
+| `temporal-reasoning` | 3 | 0/3 | 1/3 | 0 |
+| `knowledge-update` | 3 | 2/3 | 2/3 | 1 |
+| `single-session-preference` | 2 | 0/2 | 0/2 | 2 |
+| Total | 19 | 10/19 | 12/19 | 3 |
 
 LongMemEval metrics and gold-session failure-stage heuristics are approximate
 and should be reported as pilot evidence.
