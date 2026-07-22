@@ -41,6 +41,12 @@ current and intentional unless otherwise noted.
 - Multi-hop reasoning and temporal event reasoning are not fully solved.
 - MAB and LongMemEval runs show quality weaknesses in retrieval, context
   selection, and answer use on hard held-out cases.
+- MAB and LongMemEval include task families beyond the core demo scope:
+  whole-history/book summarization, multi-hop fact consolidation, temporal
+  reasoning, strict in-context classification labels, and narrative
+  multiple-choice formatting. These are useful stress tests, but failures there
+  should not be read as direct failures of uploaded-document RAG or chat
+  lifecycle behavior.
 - LongMemEval support is a pilot adapter, not an official leaderboard scorer.
 - The `--cross-encoder` startup mode (mxbai DeBERTa model, ~142 MB) is
   **experimental**.  It loads a substantially heavier model than the default
