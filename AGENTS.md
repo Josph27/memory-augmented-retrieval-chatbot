@@ -2,6 +2,26 @@
 
 This repository is a TUM practical-course project: a multi-agent typed-memory RAG chatbot.
 
+## Audit and Cleanup Handoff
+
+Before audit or cleanup work:
+
+* Read `docs/audit/README.md` and `docs/audit/decisions.md`, then the workflow,
+  backlog, and task entries relevant to your assignment.
+* Treat findings and recommendations as proposals unless an explicit user
+  decision approves them. Audit documents do not themselves authorize deletions.
+* Verify referenced code against the current checkout; distinguish static
+  evidence, executed checks, hypotheses, and approved product decisions.
+* If the handoff documents are missing or stale, record that limitation in your
+  report and use the code and existing instructions; do not invent prior decisions.
+* When authorized changes affect behavior, entry points, evidence, or task
+  status, update the corresponding audit records within your assigned scope.
+* Respect other workers' edits and ownership. Report conflicting assumptions
+  to the coordinating agent instead of silently changing the shared scope.
+
+The handoff package is maintained under `docs/audit/`; until it exists, use the
+audit reports and decisions supplied in the task context.
+
 ## Project Direction
 
 The system should be a **multi-agent memory-augmented chatbot**.

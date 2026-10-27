@@ -1,0 +1,23 @@
+{
+  "progress.md": "a2e712114459026109fbc634549c9df6001a71f3d322cc13d02a004f7b20f98e",
+  "task_plan.md": "f64ee74c3aef45f4758df643835235bd264b636f82c4540d669eabb6674ea44d",
+  "README.md": "859e90bd8d766399fccd12663c33a85037f726ff5ada429230c10222d92df200",
+  "AGENTS.md": "43c809f9d99db45686a325cd3a959ee5b3e7a49106bdad46d827820fd937296e",
+  "findings.md": "e2d585aa0aaf5c38aad6bbc7cb9a84f0cd6063c8f2cd7754e0323ca9451e60cf",
+  "docs/audit/workflow-map.md": "0db3640537e069dfd9511bfb1a890dc7b4f2120a440a232de336bfacc7cf3400",
+  "docs/audit/test-suite-symbols.md": "43e88405f531868dda561ff328da37da85a447aefde8b5b377fc478fffcb9d18",
+  "docs/audit/test-suite-audit.md": "c5060e90ee7a4b2289106418144c89aa0f7efcf422c3454f19d046e9a4723584",
+  "docs/audit/test-suite-inventory.md": "d7a20171e0972db985b8a29522865b8ae668a4e8a90875c8bb2afceaafb55ab8",
+  "docs/audit/bug-backlog.md": "3b1edcae2d9ed7dc98fa999be9c31d1b2edf2931d459b52bff17b2284447d84c",
+  "docs/audit/cleanup-plan.md": "3ed50155338d2cdb763005f12993eac1d321c12958f87011674404ed0ac0cfa8",
+  "docs/audit/README.md": "57689b7cc11c51f25db2e75ac5919f8be32290cfbbd3736cdef73386a68ec564",
+  "docs/audit/decisions.md": "e82ec6cf50c98ee723f21292e8cfe6b903ee9e64f09eb6dcfa669c33fb51be0b",
+  "docs/audit/reports/02-coverage-audit.reconstructed.md": "ef02d8fcdb46c2166fa0cda3a85e865d5a196787769e23f466179ab884c8328b",
+  "docs/audit/reports/01-initial-audit.reconstructed.md": "7472dc174d64e1cd5764ad9be9c3f87abba0718de56caabfbc481c39e33af100",
+  "docs/audit/reports/03-test-suite-independent-review.md": "f1947d1b61e31661acd51b3dfa44fb3e58ceb7092eebb52723e9959806ea5f2c",
+  "docs/audit/reports/05-test-suite-deterministic-review.md": "4ccf1314272e4fbaa40352ca3fd1473ca88708aa0e650899dfc898121422f37b",
+  "docs/audit/reports/provenance.md": "86a4b73515762c488d2d8163a618b9743560ae0a18d24be71c55d1f413c1e7ec",
+  "docs/audit/reports/README.md": "5fbb86932c703ea9384e853f816e781c628fa87fabab206b72ecb0c47a1ec587",
+  "docs/audit/reports/04-test-suite-lifecycle-review.md": "d814ce7d579de1995f28c7129e46828f3ded6420078b07e1d047987056d19bb3",
+  "docs/audit/reports/current-source-fingerprints.md": "baf83ec21b4b32e019c52cb254e23d742a04d62cd11935179985eaabe1b983e3"
+}

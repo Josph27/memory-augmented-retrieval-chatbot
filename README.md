@@ -10,6 +10,13 @@ The default orchestration mode is `native` with a fast cross-encoder reranker
 **experimental** — it has not been optimized or fully tested due to the
 heavy model weight and constrained development hardware.
 
+## Cleanup and audit status
+
+Current work is the main-baseline recovery and targeted revalidation of the
+existing-test audit. Read [docs/audit/README.md](docs/audit/README.md), then its
+decisions and task ledger. Historical ui-based conclusions are archived and
+must not be treated as verification of this checkout.
+
 ## Implemented features
 
 - ChatGPT-style Chainlit UI with Home, sidebar navigation, active chats, ended
@@ -67,6 +74,21 @@ architecture.
    OPENAI_BASE_URL=http://localhost:11434/v1
    MODEL_NAME=google/gemma-4-31B-it
    ```
+
+   For DeepSeek, copy `local_settings.example.py` to Git-ignored
+   `local_settings.py`, select `PROVIDER = "deepseek"`, and put the key there.
+   Alternatively set `LLM_PROVIDER=deepseek`, `DEEPSEEK_API_KEY`,
+   `DEEPSEEK_BASE_URL` and `DEEPSEEK_MODEL` in the environment or `.env`.
+   Environment values override local settings. Defaults are
+   `https://api.deepseek.com` and `deepseek-flash`, preserved from the working
+   provider setup; override the model if your endpoint requires another ID.
+   Legacy `OPENAI_*`/`MODEL_NAME` values apply only to `custom`.
+
+   Chat and LangMem share provider selection and disable thinking in DeepSeek
+   requests. Resuming a historical chat under DeepSeek uses the current provider
+   model; custom retains the stored model. Application defaults remain in
+   `src/settings.py`; provider resolution lives in `src/provider_settings.py`.
+   Evaluation wrappers with legacy environment gates require separate validation.
 
 3. Install dependencies:
 

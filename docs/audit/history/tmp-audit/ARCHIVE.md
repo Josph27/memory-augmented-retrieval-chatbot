@@ -1,0 +1,3 @@
+# Historical tmp-audit snapshot
+
+Immutable source copies captured 2026-10-27 from tmp-audit at c3ffee2 with dirty provider/audit work. This baseline descended from deprecated ui, not current main. snapshot-sha256.json covers the 16 audit documents, three provider notes, AGENTS.md and README.md. Links to application code refer to the old checkout; that code is not duplicated here. Old completion counts, decisions' temporal wording and findings are historical, not current verification. Read ../../README.md and ../../main-baseline-impact.md first. Exact dirty source versions are in the private recovery archive; see ../../migration.md.

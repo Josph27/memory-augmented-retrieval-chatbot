@@ -1,0 +1,5 @@
+# Migration progress
+
+2026-10-27: Verified private recovery archive of all 28 modified/untracked files and exact source hashes. Original tmp-audit checkout and stashes left untouched. Created codex/audit-main at main 2f56d93 in separate managed worktree. Ported provider into src/provider_settings.py, adapted chat/LangMem config and guards, historical chat model handling and provider tests. Archived 16 audit documents and old notes. Verification/review pending.
+
+Completed provider commit ef0ed2b. All 23 focused checks pass; no unexpected audited violations; four optional dependency platform probes remain blocked. Focused lint passes; app.py has main's pre-existing NATIVE unused import. Independent review found no blockers; three suggested test gaps closed. User explicitly approved private local_settings.py copy after initial auto-review rejection; copy verified ignored/0600 without displaying contents. Final migration evidence and historical archive committed separately. Full app startup, full-suite isolation and main audit revalidation remain pending. See docs/audit/migration.md for harness/setup failures and bounded verification details.
