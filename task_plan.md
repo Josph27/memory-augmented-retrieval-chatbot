@@ -1,11 +1,11 @@
-# Audit revalidation plan — TASK-11
+# Stage5 protection plan — TASK12 / DEC012
 
-Approved 2026-10-27: user asks to finalize proposed points 1–4. Pin source at 1cf4c553b12281fefb7daea5141e9cddfce6ca48; historical old actual checkout c3ffee2 + verified dirty files. Migration TASK-10 remains complete.
+- [x] Verify Git state; preserve reviewed audit package and separate documentation checkpoint.
+- [ ] Classify executable groups/expensive paths; default exclusion policy and commands.
+- [ ] Implement independently reviewed collection/runtime isolation and negative sentinels.
+- [ ] Run and preserve initial per-group baseline with exact dirty source state.
+- [ ] Repair test/infra defects; strengthen misleading tests and fill clear protection gaps in bounded batches.
+- [ ] Independent review and post-repair runs, preserving initial failures.
+- [ ] Per-group statistics, live proposal, readiness/blockers, current ledger and coherent commits.
 
-- [x] Start exact file/coverage ledger; preserve source and historical evidence.
-- [x] Main assessor rerun: new/modified files and their effects on older code/tests.
-- [x] Reconcile every WF/AUD/TSA and historical/new test disposition.
-- [x] Establish verified selected-check isolation; collect/run existing meaningful checks; record failures and unexecuted areas.
-- [x] Reconcile deliverables, update current docs/ledger, integrity check and commit documentation/evidence.
-
-Ownership: external Audit Breamon repository owns six static-assessment/reconciliation docs under docs/audit/revalidation. Coordinator owns coverage manifests, isolation runner/results and top-level handoff. Internal isolation reviewer read-only. No app/test fixes or deletions. No production credentials/data/inference access.
+Constraints: one implementation writer; no app behavior changes, live inference, purge or stash/reset. Main audit chat reads expense/group scope; internal reviewer reads isolation/repair design. Runtime results must distinguish collected cases from function counts and overlapping runs.

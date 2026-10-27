@@ -1,0 +1,9 @@
+{
+  "head": "cb2772925ccfe964371a30e25b5fcfab57e3f178",
+  "branch": "codex/audit-main",
+  "initial_tracked_diff": "",
+  "initial_index_diff": "",
+  "audit_commit": "cb27729",
+  "provider_commit": "ef0ed2b",
+  "notes": "Audit package already reviewed and committed separately; new worktree initially clean. Original tmp-audit dirty state/stashes remain preserved; no secret/runtime contents read."
+}
