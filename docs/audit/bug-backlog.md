@@ -12,6 +12,10 @@ RV001 rebuild syntax/API remains parked. PB-FAIL-003 timeout oracle conflicts wi
 
 S5-UI-03 — native trace-comment presentation: an affected-run screenshot shows serialized breamon-trace comment text visible in the native transcript. app.py appends that metadata; React explicitly strips it in ChainlitChat.jsx. This is observed presentation evidence, not a new blocker fix or a claim that native message formatting is fully verified. Screenshot retained in blockers-affected-browser.tar.gz. Park for a separate UI task; it does not affect the proposed unreferenced diagram deletion.
 
+## CH-UI-01 — React deleted-fetch failure reporting (static finding)
+
+`braemon/src/pages/Documents.jsx` and `Memories.jsx` log a rejected deleted/inactive fetch but do not add it to their `errors` list. If both fetches reject, source inspection indicates the UI reports only the active failure instead of the intended all-failed message; an inactive-only failure reports no page error. This is a static finding, not a runtime reproduction. A controlled React test and a separately scoped behavior/bug-fix decision should precede any shared loader hook; it does not block independently verified backend/evaluation cleanup.
+
 ## MAINT-01 — Simplify the test suite and its supporting infrastructure
 
 Requested by the user in “Braem. audit co-work”, 2026-10-27. Deferred maintenance task, not a prerequisite for completing every coverage gap or starting an independently protected cleanup batch. See TASK13 and [maintainer scope](stage5/maintainer-scope.md).

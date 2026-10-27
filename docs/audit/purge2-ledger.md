@@ -1,5 +1,7 @@
 # PURGE2 consolidation ledger
 
+**Historical checkpoint:** DEC019 reopened this completion claim. The current source, additional dispositions and verification are in the [independent challenge ledger](purge-challenge.md); the source/figures below describe the earlier PURGE2 run.
+
 TASK17 / DEC018. Engineering complete; user PURGE2 functionality confirmation pending. Baseline `ae35188`, clean `codex/audit-main` worktree. User confirmed application functionality after PURGE1; precise manual scenarios and runtime configuration were not specified. Prior [PURGE1 evidence](purge1-completion.md) remains the automated baseline. One implementation writer, independent challenge of consequential batches. No live inference or production data.
 
 | Responsibility / area | Implementations and callers | Meaningful differences / proposed boundary | Protection | Disposition / outcome |
