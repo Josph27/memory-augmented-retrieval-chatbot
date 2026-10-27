@@ -1,11 +1,23 @@
 # Audit and cleanup handoff
 
-Updated 2026-10-27. Current baseline: main `2f56d93a18f7b81a3dbf8a6ccb1f4b4260b94086`, branch `codex/audit-main`.
+Updated2026-10-27. TASK-11 / approved revalidation points1–4 completed. Assessed source: `1cf4c553b12281fefb7daea5141e9cddfce6ca48`, branch `codex/audit-main`, based on main2f56d93. Later audit-only commits do not imply a changed product baseline; source hashes are in the coverage manifest.
 
-Objective: simplify the retained typed-memory chatbot and make its behavior reliably testable before more features. The prior audit used a deprecated ui baseline by mistake. Its completed static assessment remains historical evidence; Stage 4 is reopened for targeted main revalidation. Migration is authorized under DEC-009. No workflow or test removal is approved.
+Objective: make the retained typed-memory chatbot understandable and reliably testable before further features. Stage4 existing-test assessment has now been revalidated against the corrected main-based implementation. The next stage is choosing a bounded protection batch using this evidence. No app/test repair, workflow/test removal, consolidation or restructuring batch is approved by the assessment.
 
-Read [decisions](decisions.md), [task ledger](cleanup-plan.md), [migration and recovery](migration.md), then [main-baseline impact](main-baseline-impact.md). Consult the relevant [workflow map](workflow-map.md), [backlog](bug-backlog.md), and [test assessment](test-suite-audit.md). These deliberately distinguish old evidence from current checks.
+## Reading order
 
-The original audit package is preserved byte-for-byte in [history/tmp-audit](history/tmp-audit/ARCHIVE.md), including reports, dispositions, stable IDs and provider notes. Source links in that archive refer to the old baseline. Do not treat historical source fingerprints or counts as current-main measurements.
+1. [Decisions](decisions.md) and [task ledger](cleanup-plan.md): explicit user approval and next boundaries.
+2. [Current assessment](revalidation/static-assessment.md): conclusions, coverage and remaining uncertainty.
+3. [Coverage ledger](revalidation/coverage-ledger.md), [file assessments](revalidation/file-assessments.md) and [machine manifest](revalidation/coverage-manifest.json): actual old working checkout versus pinned current source;342 relevant union entries reconciled,338currently present.
+4. [Workflow reconciliation](revalidation/workflow-reconciliation.md) and [findings register](revalidation/findings-register.md): all16WF,20AUD,13TSA, material recommendations and4newRV observations.
+5. [Test assessment](revalidation/test-assessment.md) and [inventory](revalidation/test-inventory.md):80historical identities reconciled,80current Python sources/643lexical test functions, JS/browser/manual/eval/shell/config consumers. Counts do not establish coverage or passing behavior.
+6. [Executed checks](revalidation/execution.md), [machine outcomes](revalidation/execution-results.json), [unexecuted reasons](revalidation/unexecuted-checks.json) and [independent review](revalidation/review-notes.md).
+7. [Migration/recovery](migration.md) and [unchanged historical package](history/tmp-audit/ARCHIVE.md): baseline provenance and exact old evidence. Historical findings are superseded where current records say so.
 
-Preserve MemoryCandidate → ranking/budgeting → ContextPacket → answer → memory update, SQLite persistence, LangMem cross-chat memory, document RAG, traces, lifecycle and evaluations. Product decisions remain the user's. Bugs stay parked unless they block the authorized task.
+## Evidence limits
+
+628distinct deterministic checks:578passed,49failed,1skipped;1real-model case deselected. A separate17overlapping canonical-offline checks yielded9pass8fail. These are bounded OS-confined configurations, not a clean whole-suite/default-app result. Existing fake backends remain; genuine temporary Chroma persistence passed4checks. Failed prerequisites and stale/contradictory assertions are recorded without app/test changes.
+
+AUD17's exact-equality prompt argument and AUD20's separate structured-vector directory mechanism are superseded. Request parity, live providers/extraction, native sqlite-vec embedding behavior, browser/API lifecycle and listed optional/runtime scenarios remain unverified. The audit's file/responsibility coverage is complete at its documented depth; every branch/helper/flag is not certified.
+
+Preserve MemoryCandidate → ranking/budgeting → ContextPacket → answer → memory update, SQLite history, recent memory, LangMem cross-chat memory, document RAG, traces, lifecycle and useful evaluations. Product policy remains the user's; documentation is evidence to check, not inferred requirements. No secret/private/runtime contents inspected. Original tmp-audit checkout and stashes remain intact.

@@ -1,0 +1,80 @@
+[
+  {
+    "path": "tests/e2e/conftest.py",
+    "test_functions": 0,
+    "reason": "Browser failure-report hook; not a standalone test. Browser execution not selected."
+  },
+  {
+    "path": "tests/e2e/product_behavior_chainlit_app.py",
+    "test_functions": 0,
+    "reason": "Alternative browser fixture application; requires separately reviewed server/model/startup isolation."
+  },
+  {
+    "path": "tests/e2e/test_product_behavior_browser.py",
+    "test_functions": 13,
+    "reason": "Requires browser, live local service/process lifecycle and separate startup isolation."
+  },
+  {
+    "path": "tests/product_behavior/__init__.py",
+    "test_functions": 0,
+    "reason": "Package marker; no tests."
+  },
+  {
+    "path": "tests/product_behavior/test_runner.py",
+    "test_functions": 3,
+    "reason": "Even non-browser oracle selection dynamically imports app and triggers eager model warm-up."
+  },
+  {
+    "path": "tests/test_backend.py",
+    "test_functions": 0,
+    "reason": "Manual live backend probe; no collected test functions."
+  },
+  {
+    "path": "tests/test_chainlit_chat_actions.py",
+    "test_functions": 14,
+    "reason": "Imports app before fixtures; eager service/model preload requires a separate reviewed collection setup."
+  },
+  {
+    "path": "tests/test_chainlit_memory_trace_helpers.py",
+    "test_functions": 3,
+    "reason": "Imports app before fixtures; helper assertions do not justify unreviewed eager startup."
+  },
+  {
+    "path": "tests/test_final_eval_wrappers.py",
+    "test_functions": 16,
+    "reason": "Spawns shell/Python subprocesses and wrapper artifacts; needs separate confined subprocess contract setup."
+  },
+  {
+    "path": "tests/test_targeted_eval_wrapper.py",
+    "test_functions": 2,
+    "reason": "Spawns wrapper subprocesses; needs separate confined subprocess contract setup."
+  },
+  {
+    "path": "braemon/e2e/chat-messages.test.mjs",
+    "reason": "Browser/socket probe requires running services; real messages/processes would need separately reviewed isolation."
+  },
+  {
+    "path": "braemon/e2e/smoke.test.mjs",
+    "reason": "Browser/socket probe requires running services; real messages/processes would need separately reviewed isolation."
+  },
+  {
+    "path": "tests/test_socket.cjs",
+    "reason": "Browser/socket probe requires running services; real messages/processes would need separately reviewed isolation."
+  },
+  {
+    "path": "tests/test_socket.js",
+    "reason": "Browser/socket probe requires running services; real messages/processes would need separately reviewed isolation."
+  },
+  {
+    "path": "tests/test_socket_2.js",
+    "reason": "Browser/socket probe requires running services; real messages/processes would need separately reviewed isolation."
+  },
+  {
+    "path": "evals/test_short_term_memory.py",
+    "reason": "Standalone diagnostic, not pytest coverage; static audited only."
+  },
+  {
+    "path": "tests/test_memory_reranker.py::test_cross_encoder_backend_preload_loads_model",
+    "reason": "Explicitly requires real model assets; deselected with exact-ID assertion, no download/cache access."
+  }
+]

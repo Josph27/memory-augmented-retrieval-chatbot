@@ -1,0 +1,648 @@
+{
+  "AUD-01": [
+    "docs/audit/history/tmp-audit/docs/audit/README.md",
+    "docs/audit/history/tmp-audit/docs/audit/bug-backlog.md",
+    "docs/audit/history/tmp-audit/docs/audit/cleanup-plan.md",
+    "docs/audit/history/tmp-audit/docs/audit/decisions.md",
+    "docs/audit/history/tmp-audit/docs/audit/reports/01-initial-audit.reconstructed.md",
+    "docs/audit/history/tmp-audit/docs/audit/reports/02-coverage-audit.reconstructed.md",
+    "docs/audit/history/tmp-audit/docs/audit/workflow-map.md"
+  ],
+  "AUD-02": [
+    "docs/audit/history/tmp-audit/docs/audit/bug-backlog.md",
+    "docs/audit/history/tmp-audit/docs/audit/cleanup-plan.md",
+    "docs/audit/history/tmp-audit/docs/audit/reports/02-coverage-audit.reconstructed.md",
+    "docs/audit/history/tmp-audit/docs/audit/workflow-map.md"
+  ],
+  "AUD-03": [
+    "docs/audit/history/tmp-audit/docs/audit/bug-backlog.md",
+    "docs/audit/history/tmp-audit/docs/audit/decisions.md",
+    "docs/audit/history/tmp-audit/docs/audit/reports/02-coverage-audit.reconstructed.md",
+    "docs/audit/history/tmp-audit/docs/audit/workflow-map.md"
+  ],
+  "AUD-04": [
+    "docs/audit/history/tmp-audit/docs/audit/bug-backlog.md",
+    "docs/audit/history/tmp-audit/docs/audit/reports/02-coverage-audit.reconstructed.md",
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-audit.md",
+    "docs/audit/history/tmp-audit/docs/audit/workflow-map.md"
+  ],
+  "AUD-05": [
+    "docs/audit/history/tmp-audit/docs/audit/bug-backlog.md",
+    "docs/audit/history/tmp-audit/docs/audit/reports/02-coverage-audit.reconstructed.md",
+    "docs/audit/history/tmp-audit/docs/audit/workflow-map.md"
+  ],
+  "AUD-06": [
+    "docs/audit/history/tmp-audit/docs/audit/bug-backlog.md",
+    "docs/audit/history/tmp-audit/docs/audit/reports/02-coverage-audit.reconstructed.md",
+    "docs/audit/history/tmp-audit/docs/audit/reports/03-test-suite-independent-review.md",
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-audit.md"
+  ],
+  "AUD-07": [
+    "docs/audit/history/tmp-audit/docs/audit/bug-backlog.md",
+    "docs/audit/history/tmp-audit/docs/audit/cleanup-plan.md",
+    "docs/audit/history/tmp-audit/docs/audit/reports/02-coverage-audit.reconstructed.md",
+    "docs/audit/history/tmp-audit/docs/audit/reports/03-test-suite-independent-review.md",
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-audit.md",
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-inventory.md",
+    "docs/audit/history/tmp-audit/docs/audit/workflow-map.md"
+  ],
+  "AUD-08": [
+    "docs/audit/history/tmp-audit/docs/audit/bug-backlog.md",
+    "docs/audit/history/tmp-audit/docs/audit/workflow-map.md"
+  ],
+  "AUD-09": [
+    "docs/audit/history/tmp-audit/docs/audit/bug-backlog.md",
+    "docs/audit/history/tmp-audit/docs/audit/reports/02-coverage-audit.reconstructed.md",
+    "docs/audit/history/tmp-audit/docs/audit/workflow-map.md"
+  ],
+  "AUD-10": [
+    "docs/audit/history/tmp-audit/docs/audit/bug-backlog.md",
+    "docs/audit/history/tmp-audit/docs/audit/workflow-map.md"
+  ],
+  "AUD-11": [
+    "docs/audit/history/tmp-audit/docs/audit/bug-backlog.md",
+    "docs/audit/history/tmp-audit/docs/audit/decisions.md",
+    "docs/audit/history/tmp-audit/docs/audit/workflow-map.md"
+  ],
+  "AUD-12": [
+    "docs/audit/history/tmp-audit/docs/audit/bug-backlog.md",
+    "docs/audit/history/tmp-audit/docs/audit/workflow-map.md"
+  ],
+  "AUD-13": [
+    "docs/audit/history/tmp-audit/docs/audit/bug-backlog.md",
+    "docs/audit/history/tmp-audit/docs/audit/workflow-map.md"
+  ],
+  "AUD-14": [
+    "docs/audit/history/tmp-audit/docs/audit/bug-backlog.md",
+    "docs/audit/history/tmp-audit/docs/audit/decisions.md"
+  ],
+  "AUD-15": [
+    "docs/audit/history/tmp-audit/docs/audit/bug-backlog.md"
+  ],
+  "AUD-16": [
+    "docs/audit/history/tmp-audit/docs/audit/bug-backlog.md",
+    "docs/audit/history/tmp-audit/docs/audit/decisions.md",
+    "docs/audit/history/tmp-audit/docs/audit/workflow-map.md"
+  ],
+  "AUD-17": [
+    "docs/audit/history/tmp-audit/docs/audit/bug-backlog.md",
+    "docs/audit/history/tmp-audit/docs/audit/cleanup-plan.md",
+    "docs/audit/history/tmp-audit/docs/audit/reports/02-coverage-audit.reconstructed.md",
+    "docs/audit/history/tmp-audit/docs/audit/reports/03-test-suite-independent-review.md",
+    "docs/audit/history/tmp-audit/docs/audit/reports/05-test-suite-deterministic-review.md",
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-audit.md",
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-inventory.md",
+    "docs/audit/history/tmp-audit/docs/audit/workflow-map.md"
+  ],
+  "AUD-18": [
+    "docs/audit/history/tmp-audit/docs/audit/bug-backlog.md",
+    "docs/audit/history/tmp-audit/docs/audit/reports/02-coverage-audit.reconstructed.md",
+    "docs/audit/history/tmp-audit/docs/audit/workflow-map.md"
+  ],
+  "AUD-19": [
+    "docs/audit/history/tmp-audit/docs/audit/bug-backlog.md",
+    "docs/audit/history/tmp-audit/docs/audit/decisions.md",
+    "docs/audit/history/tmp-audit/docs/audit/reports/02-coverage-audit.reconstructed.md",
+    "docs/audit/history/tmp-audit/docs/audit/workflow-map.md"
+  ],
+  "AUD-20": [
+    "docs/audit/history/tmp-audit/docs/audit/README.md",
+    "docs/audit/history/tmp-audit/docs/audit/bug-backlog.md",
+    "docs/audit/history/tmp-audit/docs/audit/reports/01-initial-audit.reconstructed.md",
+    "docs/audit/history/tmp-audit/docs/audit/reports/02-coverage-audit.reconstructed.md",
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-audit.md"
+  ],
+  "DEC-001": [
+    "docs/audit/history/tmp-audit/docs/audit/cleanup-plan.md",
+    "docs/audit/history/tmp-audit/docs/audit/decisions.md",
+    "docs/audit/history/tmp-audit/docs/audit/reports/03-test-suite-independent-review.md",
+    "docs/audit/history/tmp-audit/docs/audit/reports/04-test-suite-lifecycle-review.md",
+    "docs/audit/history/tmp-audit/docs/audit/reports/05-test-suite-deterministic-review.md",
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-audit.md",
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-inventory.md"
+  ],
+  "DEC-002": [
+    "docs/audit/history/tmp-audit/docs/audit/decisions.md"
+  ],
+  "DEC-003": [
+    "docs/audit/history/tmp-audit/docs/audit/decisions.md"
+  ],
+  "DEC-004": [
+    "docs/audit/history/tmp-audit/docs/audit/decisions.md"
+  ],
+  "DEC-005": [
+    "docs/audit/history/tmp-audit/docs/audit/decisions.md"
+  ],
+  "DEC-006": [
+    "docs/audit/history/tmp-audit/docs/audit/cleanup-plan.md",
+    "docs/audit/history/tmp-audit/docs/audit/decisions.md",
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-audit.md"
+  ],
+  "DEC-007": [
+    "docs/audit/history/tmp-audit/docs/audit/decisions.md"
+  ],
+  "DEC-008": [
+    "docs/audit/history/tmp-audit/docs/audit/README.md",
+    "docs/audit/history/tmp-audit/docs/audit/cleanup-plan.md",
+    "docs/audit/history/tmp-audit/docs/audit/decisions.md"
+  ],
+  "DEC-101": [
+    "docs/audit/history/tmp-audit/docs/audit/README.md",
+    "docs/audit/history/tmp-audit/docs/audit/cleanup-plan.md",
+    "docs/audit/history/tmp-audit/docs/audit/decisions.md",
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-audit.md"
+  ],
+  "DEC-102": [
+    "docs/audit/history/tmp-audit/docs/audit/decisions.md",
+    "docs/audit/history/tmp-audit/docs/audit/workflow-map.md"
+  ],
+  "DEC-103": [
+    "docs/audit/history/tmp-audit/docs/audit/decisions.md",
+    "docs/audit/history/tmp-audit/docs/audit/reports/04-test-suite-lifecycle-review.md",
+    "docs/audit/history/tmp-audit/docs/audit/workflow-map.md"
+  ],
+  "DEC-104": [
+    "docs/audit/history/tmp-audit/docs/audit/decisions.md"
+  ],
+  "DEC-105": [
+    "docs/audit/history/tmp-audit/docs/audit/decisions.md"
+  ],
+  "DEC-106": [
+    "docs/audit/history/tmp-audit/docs/audit/README.md",
+    "docs/audit/history/tmp-audit/docs/audit/decisions.md"
+  ],
+  "DEC-107": [
+    "docs/audit/history/tmp-audit/docs/audit/cleanup-plan.md",
+    "docs/audit/history/tmp-audit/docs/audit/decisions.md"
+  ],
+  "TASK-01": [
+    "docs/audit/history/tmp-audit/docs/audit/cleanup-plan.md"
+  ],
+  "TASK-02": [
+    "docs/audit/history/tmp-audit/docs/audit/cleanup-plan.md"
+  ],
+  "TASK-03": [
+    "docs/audit/history/tmp-audit/docs/audit/cleanup-plan.md",
+    "docs/audit/history/tmp-audit/docs/audit/decisions.md"
+  ],
+  "TASK-04": [
+    "docs/audit/history/tmp-audit/docs/audit/cleanup-plan.md"
+  ],
+  "TASK-05": [
+    "docs/audit/history/tmp-audit/docs/audit/cleanup-plan.md"
+  ],
+  "TASK-06": [
+    "docs/audit/history/tmp-audit/docs/audit/cleanup-plan.md"
+  ],
+  "TASK-07": [
+    "docs/audit/history/tmp-audit/docs/audit/cleanup-plan.md"
+  ],
+  "TASK-08": [
+    "docs/audit/history/tmp-audit/docs/audit/cleanup-plan.md"
+  ],
+  "TASK-09": [
+    "docs/audit/history/tmp-audit/docs/audit/README.md",
+    "docs/audit/history/tmp-audit/docs/audit/cleanup-plan.md",
+    "docs/audit/history/tmp-audit/docs/audit/decisions.md",
+    "docs/audit/history/tmp-audit/docs/audit/reports/03-test-suite-independent-review.md",
+    "docs/audit/history/tmp-audit/docs/audit/reports/04-test-suite-lifecycle-review.md",
+    "docs/audit/history/tmp-audit/docs/audit/reports/05-test-suite-deterministic-review.md",
+    "docs/audit/history/tmp-audit/docs/audit/reports/README.md",
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-audit.md",
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-inventory.md",
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-symbols.md"
+  ],
+  "TS-001": [
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-inventory.md",
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-symbols.md"
+  ],
+  "TS-002": [
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-inventory.md",
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-symbols.md"
+  ],
+  "TS-003": [
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-inventory.md",
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-symbols.md"
+  ],
+  "TS-004": [
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-inventory.md",
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-symbols.md"
+  ],
+  "TS-005": [
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-inventory.md",
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-symbols.md"
+  ],
+  "TS-006": [
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-inventory.md",
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-symbols.md"
+  ],
+  "TS-007": [
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-inventory.md",
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-symbols.md"
+  ],
+  "TS-008": [
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-inventory.md",
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-symbols.md"
+  ],
+  "TS-009": [
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-inventory.md",
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-symbols.md"
+  ],
+  "TS-010": [
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-inventory.md",
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-symbols.md"
+  ],
+  "TS-011": [
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-inventory.md",
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-symbols.md"
+  ],
+  "TS-012": [
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-inventory.md",
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-symbols.md"
+  ],
+  "TS-013": [
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-inventory.md",
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-symbols.md"
+  ],
+  "TS-014": [
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-inventory.md",
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-symbols.md"
+  ],
+  "TS-015": [
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-inventory.md",
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-symbols.md"
+  ],
+  "TS-016": [
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-inventory.md",
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-symbols.md"
+  ],
+  "TS-017": [
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-inventory.md",
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-symbols.md"
+  ],
+  "TS-018": [
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-inventory.md",
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-symbols.md"
+  ],
+  "TS-019": [
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-inventory.md",
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-symbols.md"
+  ],
+  "TS-020": [
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-inventory.md",
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-symbols.md"
+  ],
+  "TS-021": [
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-inventory.md",
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-symbols.md"
+  ],
+  "TS-022": [
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-inventory.md",
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-symbols.md"
+  ],
+  "TS-023": [
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-inventory.md",
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-symbols.md"
+  ],
+  "TS-024": [
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-inventory.md",
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-symbols.md"
+  ],
+  "TS-025": [
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-inventory.md",
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-symbols.md"
+  ],
+  "TS-026": [
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-inventory.md",
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-symbols.md"
+  ],
+  "TS-027": [
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-inventory.md",
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-symbols.md"
+  ],
+  "TS-028": [
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-inventory.md",
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-symbols.md"
+  ],
+  "TS-029": [
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-inventory.md",
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-symbols.md"
+  ],
+  "TS-030": [
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-inventory.md",
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-symbols.md"
+  ],
+  "TS-031": [
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-inventory.md",
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-symbols.md"
+  ],
+  "TS-032": [
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-inventory.md",
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-symbols.md"
+  ],
+  "TS-033": [
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-inventory.md",
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-symbols.md"
+  ],
+  "TS-034": [
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-inventory.md",
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-symbols.md"
+  ],
+  "TS-035": [
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-inventory.md",
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-symbols.md"
+  ],
+  "TS-036": [
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-inventory.md",
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-symbols.md"
+  ],
+  "TS-037": [
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-inventory.md",
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-symbols.md"
+  ],
+  "TS-038": [
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-inventory.md",
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-symbols.md"
+  ],
+  "TS-039": [
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-inventory.md",
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-symbols.md"
+  ],
+  "TS-040": [
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-inventory.md",
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-symbols.md"
+  ],
+  "TS-041": [
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-inventory.md",
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-symbols.md"
+  ],
+  "TS-042": [
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-inventory.md",
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-symbols.md"
+  ],
+  "TS-043": [
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-inventory.md",
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-symbols.md"
+  ],
+  "TS-044": [
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-inventory.md",
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-symbols.md"
+  ],
+  "TS-045": [
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-inventory.md",
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-symbols.md"
+  ],
+  "TS-046": [
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-inventory.md",
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-symbols.md"
+  ],
+  "TS-047": [
+    "docs/audit/history/tmp-audit/docs/audit/reports/04-test-suite-lifecycle-review.md",
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-inventory.md",
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-symbols.md"
+  ],
+  "TS-048": [
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-inventory.md",
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-symbols.md"
+  ],
+  "TS-049": [
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-inventory.md",
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-symbols.md"
+  ],
+  "TS-050": [
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-inventory.md",
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-symbols.md"
+  ],
+  "TS-051": [
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-inventory.md",
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-symbols.md"
+  ],
+  "TS-052": [
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-inventory.md",
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-symbols.md"
+  ],
+  "TS-053": [
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-inventory.md",
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-symbols.md"
+  ],
+  "TS-054": [
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-inventory.md",
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-symbols.md"
+  ],
+  "TS-055": [
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-inventory.md",
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-symbols.md"
+  ],
+  "TS-056": [
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-inventory.md",
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-symbols.md"
+  ],
+  "TS-057": [
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-inventory.md",
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-symbols.md"
+  ],
+  "TS-058": [
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-inventory.md",
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-symbols.md"
+  ],
+  "TS-059": [
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-inventory.md",
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-symbols.md"
+  ],
+  "TS-060": [
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-inventory.md",
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-symbols.md"
+  ],
+  "TS-061": [
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-inventory.md",
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-symbols.md"
+  ],
+  "TS-062": [
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-inventory.md",
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-symbols.md"
+  ],
+  "TS-063": [
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-inventory.md",
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-symbols.md"
+  ],
+  "TS-064": [
+    "docs/audit/history/tmp-audit/docs/audit/reports/04-test-suite-lifecycle-review.md",
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-inventory.md",
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-symbols.md"
+  ],
+  "TS-065": [
+    "docs/audit/history/tmp-audit/docs/audit/reports/04-test-suite-lifecycle-review.md",
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-audit.md",
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-inventory.md",
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-symbols.md"
+  ],
+  "TS-066": [
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-inventory.md",
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-symbols.md"
+  ],
+  "TS-067": [
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-inventory.md",
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-symbols.md"
+  ],
+  "TS-068": [
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-inventory.md",
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-symbols.md"
+  ],
+  "TS-069": [
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-inventory.md",
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-symbols.md"
+  ],
+  "TS-070": [
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-inventory.md",
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-symbols.md"
+  ],
+  "TS-071": [
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-inventory.md",
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-symbols.md"
+  ],
+  "TS-072": [
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-inventory.md",
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-symbols.md"
+  ],
+  "TS-073": [
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-inventory.md",
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-symbols.md"
+  ],
+  "TS-074": [
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-inventory.md",
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-symbols.md"
+  ],
+  "TS-075": [
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-inventory.md",
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-symbols.md"
+  ],
+  "TS-076": [
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-inventory.md",
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-symbols.md"
+  ],
+  "TS-077": [
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-inventory.md",
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-symbols.md"
+  ],
+  "TS-078": [
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-inventory.md",
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-symbols.md"
+  ],
+  "TS-079": [
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-inventory.md",
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-symbols.md"
+  ],
+  "TS-080": [
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-inventory.md",
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-symbols.md"
+  ],
+  "TSA-01": [
+    "docs/audit/history/tmp-audit/docs/audit/cleanup-plan.md",
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-audit.md",
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-inventory.md"
+  ],
+  "TSA-02": [
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-audit.md",
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-inventory.md"
+  ],
+  "TSA-03": [
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-audit.md"
+  ],
+  "TSA-04": [
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-audit.md"
+  ],
+  "TSA-05": [
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-audit.md"
+  ],
+  "TSA-06": [
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-audit.md"
+  ],
+  "TSA-07": [
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-audit.md"
+  ],
+  "TSA-08": [
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-audit.md"
+  ],
+  "TSA-09": [
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-audit.md"
+  ],
+  "TSA-10": [
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-audit.md"
+  ],
+  "TSA-11": [
+    "docs/audit/history/tmp-audit/docs/audit/cleanup-plan.md",
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-audit.md"
+  ],
+  "TSA-12": [
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-audit.md"
+  ],
+  "TSA-13": [
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-audit.md"
+  ],
+  "WF-01": [
+    "docs/audit/history/tmp-audit/docs/audit/bug-backlog.md",
+    "docs/audit/history/tmp-audit/docs/audit/decisions.md",
+    "docs/audit/history/tmp-audit/docs/audit/workflow-map.md"
+  ],
+  "WF-02": [
+    "docs/audit/history/tmp-audit/docs/audit/decisions.md",
+    "docs/audit/history/tmp-audit/docs/audit/workflow-map.md"
+  ],
+  "WF-03": [
+    "docs/audit/history/tmp-audit/docs/audit/bug-backlog.md",
+    "docs/audit/history/tmp-audit/docs/audit/workflow-map.md"
+  ],
+  "WF-04": [
+    "docs/audit/history/tmp-audit/docs/audit/bug-backlog.md",
+    "docs/audit/history/tmp-audit/docs/audit/decisions.md",
+    "docs/audit/history/tmp-audit/docs/audit/workflow-map.md"
+  ],
+  "WF-05": [
+    "docs/audit/history/tmp-audit/docs/audit/workflow-map.md"
+  ],
+  "WF-06": [
+    "docs/audit/history/tmp-audit/docs/audit/bug-backlog.md",
+    "docs/audit/history/tmp-audit/docs/audit/decisions.md",
+    "docs/audit/history/tmp-audit/docs/audit/workflow-map.md"
+  ],
+  "WF-07": [
+    "docs/audit/history/tmp-audit/docs/audit/bug-backlog.md",
+    "docs/audit/history/tmp-audit/docs/audit/workflow-map.md"
+  ],
+  "WF-08": [
+    "docs/audit/history/tmp-audit/docs/audit/bug-backlog.md",
+    "docs/audit/history/tmp-audit/docs/audit/decisions.md",
+    "docs/audit/history/tmp-audit/docs/audit/workflow-map.md"
+  ],
+  "WF-09": [
+    "docs/audit/history/tmp-audit/docs/audit/workflow-map.md"
+  ],
+  "WF-10": [
+    "docs/audit/history/tmp-audit/docs/audit/workflow-map.md"
+  ],
+  "WF-11": [
+    "docs/audit/history/tmp-audit/docs/audit/bug-backlog.md",
+    "docs/audit/history/tmp-audit/docs/audit/workflow-map.md"
+  ],
+  "WF-12": [
+    "docs/audit/history/tmp-audit/docs/audit/bug-backlog.md",
+    "docs/audit/history/tmp-audit/docs/audit/decisions.md",
+    "docs/audit/history/tmp-audit/docs/audit/workflow-map.md"
+  ],
+  "WF-13": [
+    "docs/audit/history/tmp-audit/docs/audit/bug-backlog.md",
+    "docs/audit/history/tmp-audit/docs/audit/workflow-map.md"
+  ],
+  "WF-14": [
+    "docs/audit/history/tmp-audit/docs/audit/workflow-map.md"
+  ],
+  "WF-15": [
+    "docs/audit/history/tmp-audit/docs/audit/bug-backlog.md",
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-inventory.md",
+    "docs/audit/history/tmp-audit/docs/audit/workflow-map.md"
+  ],
+  "WF-16": [
+    "docs/audit/history/tmp-audit/docs/audit/test-suite-inventory.md",
+    "docs/audit/history/tmp-audit/docs/audit/workflow-map.md"
+  ]
+}

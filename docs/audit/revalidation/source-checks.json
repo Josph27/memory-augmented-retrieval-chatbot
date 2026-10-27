@@ -1,0 +1,14 @@
+{
+  "source_head": "1cf4c553b12281fefb7daea5141e9cddfce6ca48",
+  "method": "ast.parse of each pinned current Python source without importing; node compilation of audit execution runner/launcher; Ruff only on new execution infrastructure",
+  "current_python_source_files": 225,
+  "syntax_errors": [
+    [
+      "scripts/rebuild_long_term_memory_index.py",
+      "unexpected indent (<unknown>, line 23)"
+    ]
+  ],
+  "new_infrastructure_ruff": "passed",
+  "new_infrastructure_ast_equivalence": "formatted runner matches exact recorded synthetic-home input after removing unused ast import",
+  "limits": "No claim of full-product lint success or executable CLI correctness. Source syntax error recorded, not repaired."
+}

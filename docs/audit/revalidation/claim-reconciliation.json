@@ -1,0 +1,788 @@
+{
+  "AUD-01": {
+    "disposition": "supported",
+    "assessment": "**AUD-01 \u2014 Supported; confirmed policy/visibility inconsistency, P2**",
+    "document": "findings-register.md",
+    "evidence_row": "| **AUD-01 \u2014 Supported; confirmed policy/visibility inconsistency, P2** | Intentional global document fallback vs scoped Inspector persists. `src/documents/registry.py::DocumentRegistry.resolve:57\u201397`, dispatcher `scoped_source_plan:144\u2013166`, `src/inspection/answer_inspector.py::serialize_candidate:196\u2013209`. Chats with no associations can retrieve global Ready documents; Inspector permits associated IDs. | Both-chat-attached scope tests do not cover empty association. Do not call intentional fallback an unconditional accidental leak, or rely on old AUD-17 to prevent model receipt. Test retrieved/selected/sent/displayed representations, then resolve sharing policy before alignment. |"
+  },
+  "AUD-02": {
+    "disposition": "revised",
+    "assessment": "**AUD-02 \u2014 Revised; confirmed divergence, P1**",
+    "document": "findings-register.md",
+    "evidence_row": "| **AUD-02 \u2014 Revised; confirmed divergence, P1** | REST End still only marks inactive (`src/api_routes.py::register_api_routes.end_chat:100\u2013109`), used by React `ChainlitChat` and `ChatActions`. Native `app.py::end_chat_handler:239\u2013279` uses configured memory/gist `ChatEndAction.execute`; consolidate is separate memory-only operation. | Native processor now returns partial counts on rejected batches (`ShortTermMemory.process_all_for_chat_end:323\u2013366`); normal return can still lead to inactive chat. Exceptions prevent transition. Historical \u201call pending flush before success\u201d guarantee is withdrawn for rejection. Compare native/REST End, rejection, exception, no-op, repeated End and in-flight send; desired incomplete-finalization policy remains open. |"
+  },
+  "AUD-03": {
+    "disposition": "revised",
+    "assessment": "**AUD-03 \u2014 Revised; confirmed representation mismatch, P1**",
+    "document": "findings-register.md",
+    "evidence_row": "| **AUD-03 \u2014 Revised; confirmed representation mismatch, P1** | API delete/activate/deactivate directly mutate SQL by ID (`src/api_routes.py:282\u2013320`), bypassing namespace sync/cache. `SQLiteLongTermMemoryStore.delete:343\u2013356` soft-deletes namespaced SQL and syncs same-DB sqlite-vec. Structured retrieval falls back to legacy cache when the primary namespace/query lookup returns no active records (`StructuredMemoryRetriever._retrieve_sqlite:82\u2013124`), not only when global active SQL is empty; fallback can append additional active SQL records. | Vector hits rehydrate SQL, blocking stale-vector text recall without active SQL; raw/gists/history remain independent. New `normalize_langmem_memory:562\u2013605` attributes user source IDs but no longer verifies textual support with source_text_by_id: revise old \u201csupported re-extraction\u201d to model-instructed, ID-attributed extraction. Canonical delete alone does not establish forgetting. Test namespace/cache/vector/history/future extraction matrix after policy decision. |"
+  },
+  "AUD-04": {
+    "disposition": "revised",
+    "assessment": "**AUD-04 \u2014 Revised; document score concern confirmed, P1**",
+    "document": "findings-register.md",
+    "evidence_row": "| **AUD-04 \u2014 Revised; document score concern confirmed, P1** | Document `_similarity_search:203\u2013241` still prefers Chroma distance API; `normalize_score:369` passes `[0,1]` unchanged and positive similarity contributes to `MemoryReranker.score_candidate:575`. Structured index now converts cosine distance (`LongTermMemoryVectorIndex`); old shared-error claim superseded for that adapter. | CE/hybrid modes, summary bypass, required evidence, cost and neighbor expansion can offset score contribution. No final reversal or quality result proven. Use tagged distance outputs through actual adapter \u2192 weighted score \u2192 packet; scalar-only helper test does not establish score origin. |"
+  },
+  "AUD-05": {
+    "disposition": "supported",
+    "assessment": "**AUD-05 \u2014 Supported; confirmed default resolution, live impact unverified, P1**",
+    "document": "findings-register.md",
+    "evidence_row": "| **AUD-05 \u2014 Supported; confirmed default resolution, live impact unverified, P1** | `src/context/model_profile.py::resolve_context_window:120\u2013163` still lets default application cap supply unknown-model limit; conservative 4096 only applies without other limits. `ModelWrapper.chat:52\u201378` has guard/timeouts but no explicit output-token cap. | Budget pruning exists; actual DeepSeek capacity is unverified. Known-Gemma/unknown-endpoint test is not unknown-model coverage. Verify unknown profile, endpoint override precedence and output reserve/request options offline before changing defaults. |"
+  },
+  "AUD-06": {
+    "disposition": "revised",
+    "assessment": "**AUD-06 \u2014 Revised; conditional scheduling risk strongly supported, P1**",
+    "document": "findings-register.md",
+    "evidence_row": "| **AUD-06 \u2014 Revised; conditional scheduling risk strongly supported, P1** | Scheduled/replay oldest capped batches use no-op disallowed; repeated valid-empty output leaves flags pending (`ShortTermMemory.update_memory_if_needed:224\u2013272`, `_apply_batch:394\u2013432`). New agentic_each_turn uses latest unit and consumes no-ops; chat_end_only skips online work. | Not universal starvation. Batch growth, changed output/limits or End can progress. Minimal scheduled scenario: two user/assistant pairs, max2, protection0, low trigger; first pair always empty, second would succeed; repeat requested IDs. Tests now explicitly cover latest-turn no-op progression. End partial rejection semantics belong AUD-02 too. |"
+  },
+  "AUD-07": {
+    "disposition": "supported",
+    "assessment": "**AUD-07 \u2014 Supported/expanded; confirmed initialization capability, P1**",
+    "document": "findings-register.md",
+    "evidence_row": "| **AUD-07 \u2014 Supported/expanded; confirmed initialization capability, P1** | App module constructs directories/config/Database and eagerly warms service (`app.py:36\u201345,891\u2013902`); Database initializes/migrates schema; early app imports in callback/helper tests and source-oracles remain. Canonical settings imports dotenv and emits env defaults. | No observed data loss. Env-only isolation and post-import fixtures are insufficient. Isolate canonical settings, private-provider resolution, SQL/document Chroma, cwd logs, guard health pings, tokenizer/embedding/CE loaders before import. Inspectors constructing Database remain mutating-capable despite names. |"
+  },
+  "AUD-08": {
+    "disposition": "supported",
+    "assessment": "**AUD-08 \u2014 Supported; confirmed contract mismatch, P2**",
+    "document": "findings-register.md",
+    "evidence_row": "| **AUD-08 \u2014 Supported; confirmed contract mismatch, P2** | Many nested FastAPI handlers still return `(body,status)` tuples; React `api.js::_apiError` relies on response.ok. End/messages/consolidate error paths affected. | New retrieval-log handler uses JSONResponse correctly; do not generalize to every endpoint. Register only custom routes in isolated synthetic app; assert real status/body/client error behavior. No HTTP reproduction by this assessor. |"
+  },
+  "AUD-09": {
+    "disposition": "revised",
+    "assessment": "**AUD-09 \u2014 Revised; API mechanism supported, P2**",
+    "document": "findings-register.md",
+    "evidence_row": "| **AUD-09 \u2014 Revised; API mechanism supported, P2** | `register_api_routes.upload_document:227\u2013271` still accesses `cl.context.request` before try. Unscoped `ChatService.index_document_file:281\u2013299` indexes without registry; unlink remains success-only. Ingestion may now invoke summary model. | Current Documents page no longer calls upload helper; do not claim a current Documents upload button fails. Scoped socket attachments remain active and distinct; exported upload helper and external/CLI API retain consumer potential. Verify route contract then injected-request downstream registry/list/cleanup separately. Fixing request injection alone would not align persistence. |"
+  },
+  "AUD-10": {
+    "disposition": "superseded",
+    "assessment": "**AUD-10 \u2014 Revised; blanket synchronous answer claim superseded, P2**",
+    "document": "findings-register.md",
+    "evidence_row": "| **AUD-10 \u2014 Revised; blanket synchronous answer claim superseded, P2** | `app.py::on_message:175\u2013185` runs turn in executor; consolidate uses to_thread. Indexing/summary before it, deferred memory after answer and native End remain synchronous callbacks. | Responsiveness/cancellation/lock scheduling unmeasured. Test blocked fake indexer, answer and extraction separately with second session; retain guarded lifecycle ordering. |"
+  },
+  "AUD-11": {
+    "disposition": "revised",
+    "assessment": "**AUD-11 \u2014 Revised; confirmed effective-configuration divergence, P2**",
+    "document": "findings-register.md",
+    "evidence_row": "| **AUD-11 \u2014 Revised; confirmed effective-configuration divergence, P2** | New canonical `src/settings.py` and `AppConfig.load` direct attributes coexist with downstream getenv. Default app native/hybrid differs from old demo/rule/deterministic. Graph separately constructs SemanticRouter; native prior-gist gate and graph sources differ. Sticky-document forcing and reranker startup profiles new. | `settings._setenv` preserves env for downstream getenv, but does not make AppConfig direct attributes honor arbitrary env values. Current-gist flag still not proof of active generator wiring. Test actual constructors/source sets under selectors; no authority to remove optional modes. |"
+  },
+  "AUD-12": {
+    "disposition": "revised",
+    "assessment": "**AUD-12 \u2014 Revised; packaging subset supported, P2**",
+    "document": "findings-register.md",
+    "evidence_row": "| **AUD-12 \u2014 Revised; packaging subset supported, P2** | Dockerfile/requirements.txt absent on current main; PyMuPDF and sqlite-vec declared in pyproject. Old missing-PDF/container claims no longer apply. Python>=3.10 vs `evals/product_behavior/runner.py` datetime.UTC remains. New `startup.py::main`, run.sh and uv frontend launch replace old launch assumptions. | No clean install/build/launch tested here. Lockfile/package metadata only inspected, not installed. Verify declared Python/runtime matrix and startup process lifecycle in isolated environment; do not restore removed Docker artifacts. |"
+  },
+  "AUD-13": {
+    "disposition": "supported",
+    "assessment": "**AUD-13 \u2014 Supported/narrowed; confirmed raw wrapper gates, P2**",
+    "document": "findings-register.md",
+    "evidence_row": "| **AUD-13 \u2014 Supported/narrowed; confirmed raw wrapper gates, P2** | Unchanged `scripts/run_final_52.sh:62\u201363` / `run_final_judge.sh:61\u201362` and selected eval configured_model paths still require legacy OPENAI/MODEL_NAME variables before provider-resolved factories. Shared provider module is now `src/provider_settings.py`. | Natural-flow script validates resolved config; not all evaluators reject DeepSeek-only settings. Answer CLI/ANSWER_MODEL precedence and separate judge settings remain distinct. Use synthetic env + intercepted transports/check-mode; no live provider verification inferred. |"
+  },
+  "AUD-14": {
+    "disposition": "revised",
+    "assessment": "**AUD-14 \u2014 Revised; deployment-conditional confirmed exposure, P2 local/P1 untrusted network**",
+    "document": "findings-register.md",
+    "evidence_row": "| **AUD-14 \u2014 Revised; deployment-conditional confirmed exposure, P2 local/P1 untrusted network** | Custom routes lack auth dependencies; app prints user content. New reactivate/delete/consolidate/log surfaces add state/diagnostic access. Readiness endpoint reports warmup completion. Docker 0.0.0.0 premise obsolete. | Fixed local identity is documented, not multi-user tenancy requirement. REST log path validates chat ID; native consolidation window handler has different path handling. Verify anonymous access/path/scope using synthetic temp logs only; no private content read. Deployment boundary unresolved. |"
+  },
+  "AUD-15": {
+    "disposition": "revised",
+    "assessment": "**AUD-15 \u2014 Revised; confirmed evaluation claim limits, P2**",
+    "document": "findings-register.md",
+    "evidence_row": "| **AUD-15 \u2014 Revised; confirmed evaluation claim limits, P2** | Fixture/oracle/full-context/custom-answer paths remain in unchanged runners. New React E2E exists, superseding \u201cno React tests.\u201d Native model fixture now strips Question augmentation. Source/hardcoded-success ProductBehavior oracles remain. | Mock/diagnostic modes retain distinct value and are not deletion candidates. New React tests require live localhost and weakly recognize responses; do not establish lifecycle/answer correctness. Test actual composition and label substitutions accurately. |"
+  },
+  "AUD-16": {
+    "disposition": "supported",
+    "assessment": "**AUD-16 \u2014 Supported; confirmed fork copy boundary, P2**",
+    "document": "findings-register.md",
+    "evidence_row": "| **AUD-16 \u2014 Supported; confirmed fork copy boundary, P2** | `Database.fork_chat:546\u2013713` transaction remaps messages/gists/inspections, not chat_documents. Native compensates failed thread switch; REST returns ID before browser navigation. | Fork without associations may hit global fallback, masking omitted original scope. Existing tests deliberately protect inherited flags/no semantic reprocessing, not document inheritance. Resolve intended sharing before changing associations/caches. |"
+  },
+  "AUD-17": {
+    "disposition": "superseded",
+    "assessment": "**AUD-17 \u2014 Superseded old contradiction; request parity unverified**",
+    "document": "findings-register.md",
+    "evidence_row": "| **AUD-17 \u2014 Superseded old contradiction; request parity unverified** | `validate_model_messages:45\u201393` and `latest_message_index:148\u2013167` now accept original user text contained in augmented final user content. Builder augmentation no longer proves invalidation/fallback. Recording-model real composition test remains present. | Existing recording-model test was executed under confinement but failed before answering: unconditional document-neighbor initialization reached an unavailable offline embedding prerequisite. No request-parity outcome established. Fallback still exists for actual invalid packet/severe warning. Rerun after an explicitly bounded dependency seam/protection batch; compare actual sent evidence/trace and forced fallback separately. |"
+  },
+  "AUD-18": {
+    "disposition": "revised",
+    "assessment": "**AUD-18 \u2014 Revised; partial parity concern supported, P2**",
+    "document": "findings-register.md",
+    "evidence_row": "| **AUD-18 \u2014 Revised; partial parity concern supported, P2** | React now consumes processing-stage, renders trace comments and failed assistant responses. It still does not consume native product-state/product-error/answer-inspections; composer does not derive from durable active flag. | Keyed Chat component remount counters simplistic hasConnected switch-failure inference. No specific reconnect failure proven. Native Inspector differs from React trace dropdown. Isolated browser tests needed for End/reactivate/reload/error/inspection parity. |"
+  },
+  "AUD-19": {
+    "disposition": "supported",
+    "assessment": "**AUD-19 \u2014 Supported; strongly supported edit persistence scenario, P2**",
+    "document": "findings-register.md",
+    "evidence_row": "| **AUD-19 \u2014 Supported; strongly supported edit persistence scenario, P2** | Native editing enabled; framework edit path can re-enter on_message. `SQLiteChainlitDataLayer.update_step/delete_step:48\u201352` no-op; app persists new user. New `Database.update_message_content:1162` used for assistant trace, not edit reconciliation. | Framework source corroboration uses existing dependency environment, not every fresh install. Synthetic edit\u2192reload must compare SQL/history/derived state. No actual loss observed; edit semantics remain product decision. |"
+  },
+  "AUD-20": {
+    "disposition": "superseded",
+    "assessment": "**AUD-20 \u2014 Superseded independent-root mechanism; revised partial-failure/isolation limits**",
+    "document": "findings-register.md",
+    "evidence_row": "| **AUD-20 \u2014 Superseded independent-root mechanism; revised partial-failure/isolation limits** | `SQLiteLongTermMemoryStore.__init__:235\u2013240` passes Database into StructuredMemoryVectorSync and sqlite-vec index; `_vec_connect:265\u2013277` rejects missing DB. Temporary SQL now bounds structured vector file. No separate structured Chroma root. | Document Chroma/caches/cwd logs/embedding downloads remain external. SQL upsert catches sync error after commit; delete can propagate sync error after soft-delete. Verify same-DB index/rowid hydration and partial-failure/repair contracts. Do not preserve obsolete contamination mechanism as current finding. |"
+  },
+  "TSA-01": {
+    "disposition": "supported",
+    "assessment": "TSA-01 **supported/expanded**",
+    "document": "findings-register.md",
+    "evidence_row": "| TSA-01 **supported/expanded** | App-before-fixture and oracle imports remain; now eager preload/canonical settings/logging. Migration runner's bounded isolation is not full collection safety. See AUD-07 and test-assessment prerequisites. |"
+  },
+  "TSA-02": {
+    "disposition": "revised",
+    "assessment": "TSA-02 **revised**",
+    "document": "findings-register.md",
+    "evidence_row": "| TSA-02 **revised** | Separate structured-vector path superseded by same DB; fake manager still pings guard, partial dispatcher maps retain default doc backend, CE/tokenizer preload still live. Explicit fake sync tests remain stronger counterexamples. |"
+  },
+  "TSA-03": {
+    "disposition": "supported",
+    "assessment": "TSA-03 **supported**",
+    "document": "findings-register.md",
+    "evidence_row": "| TSA-03 **supported** | Unchanged ProductBehavior `navigation_all_active`, `navigation_read_only`, `document_large_chunk_retrieval`, source-oracles and test_runner no-error-only assertion still overstate product behavior. Revalidate these despite changed production; preserve real splitter/report contracts while replacing unmeasured claims. |"
+  },
+  "TSA-04": {
+    "disposition": "superseded",
+    "assessment": "TSA-04 **supported; old predicted failure superseded**",
+    "document": "findings-register.md",
+    "evidence_row": "| TSA-04 **supported; old predicted failure superseded** | Existing graph recording-model test still real builder/coordinator; matching now accepts augmentation. Confined execution failed before answering at the offline document-neighbor embedding prerequisite, establishing neither request parity nor the old predicted rejection. Retain and rerun with an explicit bounded dependency seam before considering duplicate protection. |"
+  },
+  "TSA-05": {
+    "disposition": "revised",
+    "assessment": "TSA-05 **revised**",
+    "document": "findings-register.md",
+    "evidence_row": "| TSA-05 **revised** | Chroma scalar helper still untagged, not selected-API proof. Prompt matching changed; document/span tests adapted to containment. Scheduled empty behavior remains, agentic no-op progression differs. Retain characterization without elevating to approved policy. |"
+  },
+  "TSA-06": {
+    "disposition": "revised",
+    "assessment": "TSA-06 **supported/revised fixtures**",
+    "document": "findings-register.md",
+    "evidence_row": "| TSA-06 **supported/revised fixtures** | Cache-only updater test still lacks durable store. New consolidation tests assert SQL survives vec failure; old sync test expects exception, so current contracts conflict. Category/namespace fixtures also stale. Verify/adapt separately; do not remove required storage protection. |"
+  },
+  "TSA-07": {
+    "disposition": "revised",
+    "assessment": "TSA-07 **revised**",
+    "document": "findings-register.md",
+    "evidence_row": "| TSA-07 **revised** | React now has smoke/chat E2E, native fixture changed. Both need isolated services; smoke can accept root/app HTML, chat accepts any non-user nonempty response including errors. Existing native fake fixture still not real provider/Chroma. |"
+  },
+  "TSA-08": {
+    "disposition": "revised",
+    "assessment": "TSA-08 **supported; timeout sibling revised**",
+    "document": "findings-register.md",
+    "evidence_row": "| TSA-08 **supported; timeout sibling revised** | Contention Event still releases immediately, so no forced overlap. Timeout now persists failed assistant plus inspection; old no-assistant assertion is withdrawn. Names may lag assertion. Force barrier only under separately approved protection. |"
+  },
+  "TSA-09": {
+    "disposition": "revised",
+    "assessment": "TSA-09 **revised**",
+    "document": "findings-register.md",
+    "evidence_row": "| TSA-09 **revised** | Root upload probes absent on new baseline; don't restore. test_backend and three JS socket scripts remain manual live diagnostics. Distinct auth/update/connect-error purposes prevent blanket duplicate deletion. |"
+  },
+  "TSA-10": {
+    "disposition": "supported",
+    "assessment": "TSA-10 **supported/expanded**",
+    "document": "findings-register.md",
+    "evidence_row": "| TSA-10 **supported/expanded** | Fake Gemma answer still leaves context tokenizer and new CE/document embedding preloads; new real-CE preload test calls loader unpatched. Fake answer does not certify offline suite. |"
+  },
+  "TSA-11": {
+    "disposition": "supported",
+    "assessment": "TSA-11 **supported**",
+    "document": "findings-register.md",
+    "evidence_row": "| TSA-11 **supported** | Constructor-only non-raw preservation symbol remains. Identify a real mixed-source boundary if worth testing, otherwise single-symbol removal candidate only; raw formatter does not accept arbitrary candidates. Seven anchor siblings retained; no approval. |"
+  },
+  "TSA-12": {
+    "disposition": "revised",
+    "assessment": "TSA-12 **supported, selector implementation revised**",
+    "document": "findings-register.md",
+    "evidence_row": "| TSA-12 **supported, selector implementation revised** | Four q labels still same decision-relevant 100/20 budget/scores/provenance; IDs/generated first token differ. Keep one boundary or recover distinct fixtures. Possible external pytest-node consumers remain invalidator. No reduction approved. |"
+  },
+  "TSA-13": {
+    "disposition": "revised",
+    "assessment": "TSA-13 **supported; manifest premise revised**",
+    "document": "findings-register.md",
+    "evidence_row": "| TSA-13 **supported; manifest premise revised** | Pillow test still checks installed version. requirements.txt absent; pyproject declares Pillow. Relabel smoke or check chosen manifest; clean install separate, no new manifest policy inferred. |"
+  },
+  "WF-01": {
+    "disposition": "revised",
+    "assessment": "**WF-01 startup/provider \u2014 revised**",
+    "document": "workflow-reconciliation.md",
+    "evidence_row": "| **WF-01 startup/provider \u2014 revised** | `startup.py::main`, run.sh, direct Chainlit and .dev scripts \u2192 `app.py` module \u2192 `AppConfig.load`, provider resolver, `chat_service_for_model`. Resume helpers select current noncustom provider model, stored custom model. | Canonical import dotenv/setdefault; private provider file executable config; directories/Database/schema, doc embeddings and CE warmed before readiness true. Both inference clients have provider options/timeout/guard; guards can ping even with fake manager. Readiness means attempt finished, not all models usable. | 13 provider tests cover precedence/serialization/factory/guard, AST pure resume helpers. Full app import/preload/start/stop unverified by assessor; separate migration results bounded. Main/failure/config branches inspected. |"
+  },
+  "WF-02": {
+    "disposition": "revised",
+    "assessment": "**WF-02 Home/create \u2014 supported/revised**",
+    "document": "workflow-reconciliation.md",
+    "evidence_row": "| **WF-02 Home/create \u2014 supported/revised** | Native `on_chat_start/new_chat_handler/nav_home_handler`; first `on_message`; REST create consumed by React Home/Chats/Chat. New `AuthWrapper` and readiness overlay gate React. | Home changes session only. Native new creates SQL then frontend switch, deletes child on switch failure. REST creates before browser navigation; separate compensation. Warmup failures still dismiss readiness gate. | Existing native callback/SQL tests remain; new React smoke does not prove these outcomes. Main/error/compensation branches inspected; browser/auth/model-load lifecycle requires execution. |"
+  },
+  "WF-03": {
+    "disposition": "revised",
+    "assessment": "**WF-03 complete turn \u2014 revised**",
+    "document": "workflow-reconciliation.md",
+    "evidence_row": "| **WF-03 complete turn \u2014 revised** | `app.on_message` pre-persists user/attachments \u2192 executor `ChatService.handle_user_turn` \u2192 `CoordinatorAgent.run_turn`. Native route/retrieve/rank/context prepared; optional graph/shadow; validate selected packet; answer; persist; inspect; deferred memory. | New sticky-doc source forcing, neighbor expansion, cwd retrieval log. Prompt accepts augmented user. Failure now persists assistant failure text and inspection; actual memory may run after failure. Graph error \u2192 native packet; invalid prompt \u2192 legacy short-term prompt. Partial native retrieval error + successful graph can reach generation with failed flag (RV-003). No all-state transaction. | New coordinator tests mostly predicate/route helpers, not full run_turn forcing. Recording-model old test remains actual-request protection; current preloads/default backend must be isolated. Main and changed failure branches inspected; runtime cohort results separate. |"
+  },
+  "WF-04": {
+    "disposition": "revised",
+    "assessment": "**WF-04 persistence/resume/edit \u2014 supported/revised**",
+    "document": "workflow-reconciliation.md",
+    "evidence_row": "| **WF-04 persistence/resume/edit \u2014 supported/revised** | `SQLiteChainlitDataLayer.get_thread/list_threads`, `app.on_chat_resume`, model helpers, React keyed `ChainlitChat`. New assistant trace comments persisted with `Database.update_message_content`. | SQL message history/active flag/trace survives reload; model provider handling ported. Native framework edit can reenter on_message while update/delete_step remain no-op, so persisted and derived history reconciliation unestablished. Component remount counters simplistic ref-only switch failure claim. | Unchanged data-layer/fork/history tests protect SQL; native fixture and new React chat script do not cover edit/reconnect parity. Main/edit source paths inspected; synthetic edit\u2192reload required. |"
+  },
+  "WF-05": {
+    "disposition": "revised",
+    "assessment": "**WF-05 scoped attachment \u2014 revised**",
+    "document": "workflow-reconciliation.md",
+    "evidence_row": "| **WF-05 scoped attachment \u2014 revised** | React/native SDK upload references \u2192 `app.index_uploaded_files` \u2192 guarded `ChatService.index_document_file(chat_id,operation_id)` \u2192 ingestion/loaders/Chroma. | SQL Uploading/Indexing/Ready/Failed, operation claims and association are separate from Chroma. Repeated Ready reuses ID; index failure associates Failed; Ready-write failure leaves Indexing. New ingestion summary uses model and first8000 chars, best-effort; optional summary omitted in most tests. PDF normalization/page limit changed. | Lifecycle retry/status tests retain value; ingestion fake indexer excludes real summary/embedding. Native browser fake fixture checks Ready before model. Full changed main/failure/retry paths inspected; summary/PDF/partial-vector recovery need isolated tests. |"
+  },
+  "WF-06": {
+    "disposition": "revised",
+    "assessment": "**WF-06 global documents/removal \u2014 revised**",
+    "document": "workflow-reconciliation.md",
+    "evidence_row": "| **WF-06 global documents/removal \u2014 revised** | REST upload retained but current Documents page only lists/archive/restores/deletes; upload helper exported without known active React caller. CLI index_document_file still unscoped. New document mutation routes consume `delete_document_chunks`. | API request context before try still invalid; successful unscoped path skips SQL registry. Active/deleted listings and direct activation states added. Hard deletion tries Chroma cleanup and SQL delete; warning/empty-cleanup failure paths differ. No inference that library functionality unnecessary. | No complete HTTP upload/delete integration protection found. Main API/helper/consumer paths inspected; route registration/status/scope/backend error checks required. |"
+  },
+  "WF-07": {
+    "disposition": "revised",
+    "assessment": "**WF-07 scope/retrieval \u2014 revised**",
+    "document": "workflow-reconciliation.md",
+    "evidence_row": "| **WF-07 scope/retrieval \u2014 revised** | `DocumentRegistry.resolve` \u2192 dispatcher scoped plan \u2192 document retriever \u2192 reranker \u2192 neighbor expansion \u2192 manager. Sticky associated documents can force native/graph activation. | Association-free global Ready fallback intentional; Inspector still association-filtered. Empty retrieval retry enriches query with filenames. Fetch_limit42 rather than source-plan top-k; summaries may bypass ranking; postrank \u00b11 neighbors change text/cost. Default doc backend may open even empty non-document expansion. | Existing both-attached scope test and scalar metadata test are narrower. New sticky helper tests do not prove full forced graph selection. Main/empty/filter/fallback branches inspected; tagged distance, summary multidoc, actual top-k/budget and sent/displayed scope require execution. |"
+  },
+  "WF-08": {
+    "disposition": "revised",
+    "assessment": "**WF-08 structured extraction/consolidation/retrieval \u2014 revised**",
+    "document": "workflow-reconciliation.md",
+    "evidence_row": "| **WF-08 structured extraction/consolidation/retrieval \u2014 revised** | `ShortTermMemory` policy selectors \u2192 guard \u2192 `LangMemStructuredMemoryState.update` \u2192 category/ID normalization \u2192 SQL store \u2192 sqlite-vec sync \u2192 cache/flags/log; retriever lexical/vector/hybrid. | New per-category global namespaces, changed categories, source attribution without old lexical support validator. Scheduled oldest/no-op rejection differs from agentic latest/no-op success and chat_end_only. Same DB stores SQL/vec, but separate commits; upsert sync error caught/logged, deletion can propagate. Cwd batch JSON records processing. TTL helper exists but not wired into extracted writes; automatic expiration not established end-to-end. | Changed memory/scheduler/vector tests plus new consolidation durability tests; several namespace/category/error expectations stale. Fake manager does not bypass health guard. Main/rejection/no-op/partial-write paths inspected; real extraction/embedding/vec dimensions and normative expiry unresolved. |"
+  },
+  "WF-09": {
+    "disposition": "revised",
+    "assessment": "**WF-09 memory delete/disable/restore \u2014 revised**",
+    "document": "workflow-reconciliation.md",
+    "evidence_row": "| **WF-09 memory delete/disable/restore \u2014 revised** | React Memories \u2192 direct SQL API mutators; programmatic `SQLiteLongTermMemoryStore.delete`. | API mutates all matching ID namespaces, bypasses vec/cache. Canonical namespaced soft-delete syncs; SQL rehydration filters stale vectors, but cache/raw/gists and future ID-attributed extraction remain recall sources. Restoration can reuse stale derived entries. | Canonical sync tests do not cover API or full forgetting. Main representations/filter/fallback inspected; DEC forgetting scope required for normative erasure test. Synthetic matrix can characterize current behavior without choosing policy. |"
+  },
+  "WF-10": {
+    "disposition": "revised",
+    "assessment": "**WF-10 gists/raw history \u2014 revised**",
+    "document": "workflow-reconciliation.md",
+    "evidence_row": "| **WF-10 gists/raw history \u2014 revised** | Configured `build_previous_chat_gist_generator` \u2192 LLM `FallbackChatGistExtractor`/deterministic fallback; End/backfill/rebuild consumers; current/previous gist/raw/current-span retrievers and `GistRawSpanExpander`. | Bounded ungisted spans \u2192 gist row \u2192 flags, with extraction/insert failure branches. New effective_summarizer provenance. Current rolling summarizer infrastructure remains not proven normal composition. Raw/gist expansion and current query/chronology affected by changed canonical settings/neighbor pipeline though source unchanged. | Previous-gist tests now15 declared functions incl config/fallback; old core run has actual parent_gist/query/count mismatches, not automatically product defects. Main changed generation + connected retrieval branches inspected; factual summary quality/no hidden default-source effects not verified. |"
+  },
+  "WF-11": {
+    "disposition": "revised",
+    "assessment": "**WF-11 End/consolidate/reactivate \u2014 revised**",
+    "document": "workflow-reconciliation.md",
+    "evidence_row": "| **WF-11 End/consolidate/reactivate \u2014 revised** | Native configured ChatEndAction vs REST End mark-inactive; new consolidate worker and React/native log view; REST reactivate. | Native exception keeps active; rejected batch can return partial normally then gist/inactivate. Consolidate is memory-only, no gist transition; RLock ownership and to_thread interleaving need care, no established deadlock claim. Processing/log files are independent writes. | Updated rejected-batch test checks partial counts, not active flag despite name. Thrown failure/no-op/idempotent/gist tests distinct. Main/error/no-op paths inspected; parity, timeout/cancellation and finalization policy require isolated checks. |"
+  },
+  "WF-12": {
+    "disposition": "supported",
+    "assessment": "**WF-12 fork \u2014 supported**",
+    "document": "workflow-reconciliation.md",
+    "evidence_row": "| **WF-12 fork \u2014 supported** | Native action and REST fork \u2192 `Database.fork_chat`; React navigates; native switch failure deletes new chat. | SQL transaction remaps chat-local provenance/history/inspection, inherited semantic flags processed; no chat_documents/cache copy. Association-free child can see global fallback. | Existing fork tests required; fake durable updater inherits changed namespaces/guards. Main/rollback branches inspected; document inheritance remains open policy. |"
+  },
+  "WF-13": {
+    "disposition": "revised",
+    "assessment": "**WF-13 trace/inspection/logs \u2014 revised**",
+    "document": "workflow-reconciliation.md",
+    "evidence_row": "| **WF-13 trace/inspection/logs \u2014 revised** | Coordinator WorkflowTrace/inspection \u2192 SQL; app builds/embeds trace comment in assistant content; React parses dropdown; native bounded Inspector window data; REST raw retrieval/consolidation logs. | Actual packet/request and persisted React/native displays are distinct representations. Raw retrieval logs may contain candidate contents; Inspector filters association scope. Log writes cwd-relative, can be sensitive. Readiness/trace flags do not prove success. | Inspector and recording-model tests retain distinct roles; React E2E doesn't assert trace/scope or actual request. Main emission/filter/read/error paths inspected; all-representation parity needs isolated verification. |"
+  },
+  "WF-14": {
+    "disposition": "revised",
+    "assessment": "**WF-14 frontend/lifecycle/diagnostics \u2014 revised**",
+    "document": "workflow-reconciliation.md",
+    "evidence_row": "| **WF-14 frontend/lifecycle/diagnostics \u2014 revised** | Seven React routes incl RetrievalLogs; SDK socket + REST actions; native product-navigation JS; Vite dev console forwarder. | React now processing-stage, failed messages and embedded trace; lacks native product-state/error/answer-inspections consumers. Composer gates connected/loading/consolidating, not persisted active. New readiness timeout/retry. REST lifecycle differs from native. | New live React smoke/chat scripts weakly assert rendering/responses; native browser fixture fake and preload-sensitive. Functional source/event/error paths inspected, cosmetic CSS not exhaustive. Browser lifecycle/auth/error/reconnect still requires isolated services. |"
+  },
+  "WF-15": {
+    "disposition": "revised",
+    "assessment": "**WF-15 tests/evaluations \u2014 revised**",
+    "document": "workflow-reconciliation.md",
+    "evidence_row": "| **WF-15 tests/evaluations \u2014 revised** | Stable TS inventory reconciles80 historical Python files with80 current sources (82 union);643 current test definitions.59 eval Python sources and seven eval shell scripts; two React E2E plus three socket probes. | Pure metric/export/manifest code retains same responsibility; new settings/guards/default retrievers affect unchanged composition runners. MAB roleless skips structured extraction; LongMem role-aware differs. Oracle/fixed answers and explicit fixture routing remain. Outputs/temp SQL not isolation proof. | See test-assessment/test-inventory; coordinator runs bounded existing cohorts separately. Static assertion/setup assessment and current consumer reconciliation; not every metric branch/live flag combination certified. |"
+  },
+  "WF-16": {
+    "disposition": "revised",
+    "assessment": "**WF-16 operations/launch/forensics \u2014 revised**",
+    "document": "workflow-reconciliation.md",
+    "evidence_row": "| **WF-16 operations/launch/forensics \u2014 revised** | run.sh/startup plus unchanged .dev; Python inspector/index/rebuild/eval tools; new token_monitor; shell final-answer/judge wrappers. | Inspectors can initialize/migrate configured DB. Rebuild vector CLI currently syntax/API-disconnected (RV-001). Token monitor reads Pi session files outside product; no session contents accessed. Final wrappers raw provider gates unchanged. | Source/selector/I/O reviewed; all-flag execution not performed. Old upload probes/Docker absent. Preserve operational value; no removal inferred from broken/optional/no direct import. |"
+  },
+  "TS-001": {
+    "path": "tests/e2e/conftest.py",
+    "declared_test_count_or_state": "0",
+    "assessment": "unchanged bytes; affected callers reassessed; retain reporting hook; not pre-import isolation.",
+    "document": "test-inventory.md"
+  },
+  "TS-002": {
+    "path": "tests/e2e/product_behavior_chainlit_app.py",
+    "declared_test_count_or_state": "0",
+    "assessment": "modified actual source; retain harness/strengthen: visible Question extraction, app preload occurs before substitutions.",
+    "document": "test-inventory.md"
+  },
+  "TS-003": {
+    "path": "tests/e2e/test_product_behavior_browser.py",
+    "declared_test_count_or_state": "13",
+    "assessment": "unchanged bytes; affected callers reassessed; strengthen \u2014 retain native DOM/SQL assertions; portability and environment isolation need work; current canonical/default-backend/storage influence reviewed, not unchanged-unaffected.",
+    "document": "test-inventory.md"
+  },
+  "TS-004": {
+    "path": "tests/product_behavior/__init__.py",
+    "declared_test_count_or_state": "0",
+    "assessment": "unchanged bytes; affected callers reassessed; retain package marker; no independent test assertion.",
+    "document": "test-inventory.md"
+  },
+  "TS-005": {
+    "path": "tests/product_behavior/test_inventory.py",
+    "declared_test_count_or_state": "3",
+    "assessment": "unchanged bytes; affected callers reassessed; retain \u2014 case/oracle registry integrity; frozen counts are artifact contracts, not new product scope; current canonical/default-backend/storage influence reviewed, not unchanged-unaffected.",
+    "document": "test-inventory.md"
+  },
+  "TS-006": {
+    "path": "tests/product_behavior/test_runner.py",
+    "declared_test_count_or_state": "3",
+    "assessment": "unchanged bytes; affected callers reassessed; strengthen:nonbrowser oracles dynamically import app; no-error smoke permits failed rows; not executed.",
+    "document": "test-inventory.md"
+  },
+  "TS-007": {
+    "path": "tests/test_answer_inspector.py",
+    "declared_test_count_or_state": "8",
+    "assessment": "unchanged bytes; affected callers reassessed; retain \u2014 SQL inspection reload/filter/provenance/remap/schema assertions; actual sent context is separate; current canonical/default-backend/storage influence reviewed, not unchanged-unaffected.",
+    "document": "test-inventory.md"
+  },
+  "TS-008": {
+    "path": "tests/test_answer_policy_prompts.py",
+    "declared_test_count_or_state": "5",
+    "assessment": "unchanged bytes; affected callers reassessed; retain \u2014 prompt-content policy assertions; characterize wording, not answer quality or new approval; current canonical/default-backend/storage influence reviewed, not unchanged-unaffected.",
+    "document": "test-inventory.md"
+  },
+  "TS-009": {
+    "path": "tests/test_architecture_layers.py",
+    "declared_test_count_or_state": "9",
+    "assessment": "unchanged bytes; affected callers reassessed; strengthen \u2014 retain distinct protection; specific limits and strengthening evidence in independent report 05; current canonical/default-backend/storage influence reviewed, not unchanged-unaffected.",
+    "document": "test-inventory.md"
+  },
+  "TS-010": {
+    "path": "tests/test_backend.py",
+    "declared_test_count_or_state": "0",
+    "assessment": "modified actual source; retain manual diagnostic/strengthen isolation: zero test definitions; configured model/storage/logging.",
+    "document": "test-inventory.md"
+  },
+  "TS-011": {
+    "path": "tests/test_chainlit_chat_actions.py",
+    "declared_test_count_or_state": "14",
+    "assessment": "unchanged bytes; affected callers reassessed; retain/strengthen:app import before fixtures plus eager dependencies; native delegation not REST parity.",
+    "document": "test-inventory.md"
+  },
+  "TS-012": {
+    "path": "tests/test_chainlit_data_layer.py",
+    "declared_test_count_or_state": "4",
+    "assessment": "unchanged bytes; affected callers reassessed; retain \u2014 SQL history, ended state, stable pagination and thread rename/delete; current canonical/default-backend/storage influence reviewed, not unchanged-unaffected.",
+    "document": "test-inventory.md"
+  },
+  "TS-013": {
+    "path": "tests/test_chainlit_memory_trace_helpers.py",
+    "declared_test_count_or_state": "3",
+    "assessment": "unchanged bytes; affected callers reassessed; retain/strengthen:pure trace checks import app; no execution before safe preload composition.",
+    "document": "test-inventory.md"
+  },
+  "TS-014": {
+    "path": "tests/test_chat_end_action.py",
+    "declared_test_count_or_state": "16",
+    "assessment": "modified actual source; retain/strengthen: returned rejection now partial counts, active state not asserted despite name; thrown errors distinct.",
+    "document": "test-inventory.md"
+  },
+  "TS-015": {
+    "path": "tests/test_chat_fork_action.py",
+    "declared_test_count_or_state": "7",
+    "assessment": "unchanged bytes; affected callers reassessed; strengthen \u2014 retain distinct protection; specific limits and strengthening evidence in independent report 04; current canonical/default-backend/storage influence reviewed, not unchanged-unaffected.",
+    "document": "test-inventory.md"
+  },
+  "TS-016": {
+    "path": "tests/test_chat_gist_summarizer.py",
+    "declared_test_count_or_state": "13",
+    "assessment": "unchanged bytes; affected callers reassessed; retain \u2014 retain distinct protection; specific limits and strengthening evidence in independent report 04; current canonical/default-backend/storage influence reviewed, not unchanged-unaffected.",
+    "document": "test-inventory.md"
+  },
+  "TS-017": {
+    "path": "tests/test_chat_lifecycle.py",
+    "declared_test_count_or_state": "3",
+    "assessment": "unchanged bytes; affected callers reassessed; retain \u2014 retain distinct protection; specific limits and strengthening evidence in independent report 04; current canonical/default-backend/storage influence reviewed, not unchanged-unaffected.",
+    "document": "test-inventory.md"
+  },
+  "TS-018": {
+    "path": "tests/test_chat_service_file_uploads.py",
+    "declared_test_count_or_state": "4",
+    "assessment": "unchanged bytes; affected callers reassessed; strengthen \u2014 retain distinct protection; specific limits and strengthening evidence in independent report 04; current canonical/default-backend/storage influence reviewed, not unchanged-unaffected.",
+    "document": "test-inventory.md"
+  },
+  "TS-019": {
+    "path": "tests/test_chroma_document_store.py",
+    "declared_test_count_or_state": "4",
+    "assessment": "unchanged bytes; affected callers reassessed; retain:genuine temporary Chroma with deterministic embeddings; current4 checks passed under confinement; migration only row-count preservation.",
+    "document": "test-inventory.md"
+  },
+  "TS-020": {
+    "path": "tests/test_context_builder.py",
+    "declared_test_count_or_state": "11",
+    "assessment": "unchanged bytes; affected callers reassessed; retain \u2014 retain distinct protection; specific limits and strengthening evidence in independent report 05; current canonical/default-backend/storage influence reviewed, not unchanged-unaffected.",
+    "document": "test-inventory.md"
+  },
+  "TS-021": {
+    "path": "tests/test_context_comparator.py",
+    "declared_test_count_or_state": "4",
+    "assessment": "unchanged bytes; affected callers reassessed; strengthen \u2014 retain distinct protection; specific limits and strengthening evidence in independent report 05; current canonical/default-backend/storage influence reviewed, not unchanged-unaffected.",
+    "document": "test-inventory.md"
+  },
+  "TS-022": {
+    "path": "tests/test_context_manager_agent.py",
+    "declared_test_count_or_state": "5",
+    "assessment": "unchanged bytes; affected callers reassessed; strengthen \u2014 retain distinct protection; specific limits and strengthening evidence in independent report 05; current canonical/default-backend/storage influence reviewed, not unchanged-unaffected.",
+    "document": "test-inventory.md"
+  },
+  "TS-023": {
+    "path": "tests/test_current_chat_span_retriever.py",
+    "declared_test_count_or_state": "8",
+    "assessment": "modified actual source; retain/strengthen: all-candidate expectations see extra default recent/raw; per-source behavior must be distinguished.",
+    "document": "test-inventory.md"
+  },
+  "TS-024": {
+    "path": "tests/test_direct_raw_retrieval.py",
+    "declared_test_count_or_state": "6",
+    "assessment": "unchanged bytes; affected callers reassessed; strengthen \u2014 retain distinct protection; specific limits and strengthening evidence in independent report 04; current canonical/default-backend/storage influence reviewed, not unchanged-unaffected.",
+    "document": "test-inventory.md"
+  },
+  "TS-025": {
+    "path": "tests/test_document_ingestion_agent.py",
+    "declared_test_count_or_state": "4",
+    "assessment": "unchanged bytes; affected callers reassessed; retain \u2014 retain distinct protection; specific limits and strengthening evidence in independent report 04; current canonical/default-backend/storage influence reviewed, not unchanged-unaffected.",
+    "document": "test-inventory.md"
+  },
+  "TS-026": {
+    "path": "tests/test_document_inspection.py",
+    "declared_test_count_or_state": "3",
+    "assessment": "unchanged bytes; affected callers reassessed; retain \u2014 retain distinct protection; specific limits and strengthening evidence in independent report 04; current canonical/default-backend/storage influence reviewed, not unchanged-unaffected.",
+    "document": "test-inventory.md"
+  },
+  "TS-027": {
+    "path": "tests/test_document_loaders.py",
+    "declared_test_count_or_state": "10",
+    "assessment": "unchanged bytes; affected callers reassessed; strengthen \u2014 retain distinct protection; specific limits and strengthening evidence in independent report 04; current canonical/default-backend/storage influence reviewed, not unchanged-unaffected.",
+    "document": "test-inventory.md"
+  },
+  "TS-028": {
+    "path": "tests/test_document_memory.py",
+    "declared_test_count_or_state": "6",
+    "assessment": "modified actual source; retain/strengthen: containment adapted, >=1 weakens exact-once; default map now includes extra backends.",
+    "document": "test-inventory.md"
+  },
+  "TS-029": {
+    "path": "tests/test_document_product_lifecycle.py",
+    "declared_test_count_or_state": "15",
+    "assessment": "unchanged bytes; affected callers reassessed; retain \u2014 retain status/retry/scoped registry checks; do not imply empty-chat/global or HTTP coverage; current canonical/default-backend/storage influence reviewed, not unchanged-unaffected.",
+    "document": "test-inventory.md"
+  },
+  "TS-030": {
+    "path": "tests/test_document_qa_answer_generation.py",
+    "declared_test_count_or_state": "4",
+    "assessment": "unchanged bytes; affected callers reassessed; retain:unchanged pure metrics/mapping/diagnostic/export or injected-generator boundary; no production answer/retrieval quality proof.",
+    "document": "test-inventory.md"
+  },
+  "TS-031": {
+    "path": "tests/test_document_qa_compare.py",
+    "declared_test_count_or_state": "5",
+    "assessment": "unchanged bytes; affected callers reassessed; retain:unchanged pure metrics/mapping/diagnostic/export or injected-generator boundary; no production answer/retrieval quality proof.",
+    "document": "test-inventory.md"
+  },
+  "TS-032": {
+    "path": "tests/test_document_qa_diagnostics.py",
+    "declared_test_count_or_state": "1",
+    "assessment": "unchanged bytes; affected callers reassessed; retain:unchanged pure metrics/mapping/diagnostic/export or injected-generator boundary; no production answer/retrieval quality proof.",
+    "document": "test-inventory.md"
+  },
+  "TS-033": {
+    "path": "tests/test_document_qa_langchain_baseline.py",
+    "declared_test_count_or_state": "4",
+    "assessment": "unchanged bytes; affected callers reassessed; retain:unchanged pure metrics/mapping/diagnostic/export or injected-generator boundary; no production answer/retrieval quality proof.",
+    "document": "test-inventory.md"
+  },
+  "TS-034": {
+    "path": "tests/test_document_qa_metrics.py",
+    "declared_test_count_or_state": "3",
+    "assessment": "unchanged bytes; affected callers reassessed; retain:unchanged pure metrics/mapping/diagnostic/export or injected-generator boundary; no production answer/retrieval quality proof.",
+    "document": "test-inventory.md"
+  },
+  "TS-035": {
+    "path": "tests/test_document_qa_prepare.py",
+    "declared_test_count_or_state": "2",
+    "assessment": "unchanged bytes; affected callers reassessed; retain:unchanged pure metrics/mapping/diagnostic/export or injected-generator boundary; no production answer/retrieval quality proof.",
+    "document": "test-inventory.md"
+  },
+  "TS-036": {
+    "path": "tests/test_document_qa_prepare_nq.py",
+    "declared_test_count_or_state": "9",
+    "assessment": "unchanged bytes; affected callers reassessed; retain:unchanged pure metrics/mapping/diagnostic/export or injected-generator boundary; no production answer/retrieval quality proof.",
+    "document": "test-inventory.md"
+  },
+  "TS-037": {
+    "path": "tests/test_document_qa_ragas_export.py",
+    "declared_test_count_or_state": "3",
+    "assessment": "unchanged bytes; affected callers reassessed; retain:unchanged pure metrics/mapping/diagnostic/export or injected-generator boundary; no production answer/retrieval quality proof.",
+    "document": "test-inventory.md"
+  },
+  "TS-038": {
+    "path": "tests/test_document_qa_topk_curves.py",
+    "declared_test_count_or_state": "5",
+    "assessment": "unchanged bytes; affected callers reassessed; retain:unchanged pure metrics/mapping/diagnostic/export or injected-generator boundary; no production answer/retrieval quality proof.",
+    "document": "test-inventory.md"
+  },
+  "TS-039": {
+    "path": "tests/test_dynamic_memory_budget.py",
+    "declared_test_count_or_state": "11",
+    "assessment": "modified actual source; retain:cap49152 changed; injected WordCounter/explicit limit; no live capacity guarantee.",
+    "document": "test-inventory.md"
+  },
+  "TS-040": {
+    "path": "tests/test_e2e_scenarios.py",
+    "declared_test_count_or_state": "6",
+    "assessment": "unchanged bytes; affected callers reassessed; strengthen \u2014 retain real-coordinator fixture integration; fixed/mock answer and planned sources are not natural routing or evidence-use proof; current canonical/default-backend/storage influence reviewed, not unchanged-unaffected.",
+    "document": "test-inventory.md"
+  },
+  "TS-041": {
+    "path": "tests/test_evidence_constrained_selector.py",
+    "declared_test_count_or_state": "17",
+    "assessment": "unchanged bytes; affected callers reassessed; retain/strengthen:four q labels equivalent boundary; IDs/text first token differ; no reduction approved.",
+    "document": "test-inventory.md"
+  },
+  "TS-042": {
+    "path": "tests/test_final_eval_wrappers.py",
+    "declared_test_count_or_state": "16",
+    "assessment": "unchanged bytes; affected callers reassessed; strengthen \u2014 retain subprocess failure/resume tests; source-string subset and shared UV cache weaker; current canonical/default-backend/storage influence reviewed, not unchanged-unaffected.",
+    "document": "test-inventory.md"
+  },
+  "TS-043": {
+    "path": "tests/test_generated_answer_eval.py",
+    "declared_test_count_or_state": "6",
+    "assessment": "unchanged bytes; affected callers reassessed; retain \u2014 fixture-context scoring, forbidden-claim negative control, replay/model-injection/export; no production retrieval; current canonical/default-backend/storage influence reviewed, not unchanged-unaffected.",
+    "document": "test-inventory.md"
+  },
+  "TS-044": {
+    "path": "tests/test_gist_memory_infrastructure.py",
+    "declared_test_count_or_state": "11",
+    "assessment": "unchanged bytes; affected callers reassessed; retain \u2014 retain distinct protection; specific limits and strengthening evidence in independent report 04; current canonical/default-backend/storage influence reviewed, not unchanged-unaffected.",
+    "document": "test-inventory.md"
+  },
+  "TS-045": {
+    "path": "tests/test_gist_processing_state.py",
+    "declared_test_count_or_state": "1",
+    "assessment": "unchanged bytes; affected callers reassessed; retain \u2014 retain distinct protection; specific limits and strengthening evidence in independent report 04; current canonical/default-backend/storage influence reviewed, not unchanged-unaffected.",
+    "document": "test-inventory.md"
+  },
+  "TS-046": {
+    "path": "tests/test_gist_raw_span_expansion.py",
+    "declared_test_count_or_state": "11",
+    "assessment": "unchanged bytes; affected callers reassessed; retain/strengthen:first raw may be direct result without parent_gist_id after map merge; test child explicitly.",
+    "document": "test-inventory.md"
+  },
+  "TS-047": {
+    "path": "tests/test_langchain_chroma_retriever.py",
+    "declared_test_count_or_state": "3",
+    "assessment": "unchanged bytes; affected callers reassessed; strengthen \u2014 retain metadata/fallback/default; untagged score pass-through does not exercise backend score-origin semantics; current canonical/default-backend/storage influence reviewed, not unchanged-unaffected.",
+    "document": "test-inventory.md"
+  },
+  "TS-048": {
+    "path": "tests/test_langgraph_demo_regression.py",
+    "declared_test_count_or_state": "1",
+    "assessment": "unchanged bytes; affected callers reassessed; retain \u2014 real SQL retrievers/graph/packet across five intents with fake document/End memory; no answer-model send; current canonical/default-backend/storage influence reviewed, not unchanged-unaffected.",
+    "document": "test-inventory.md"
+  },
+  "TS-049": {
+    "path": "tests/test_langgraph_memory_pipeline.py",
+    "declared_test_count_or_state": "8",
+    "assessment": "modified actual source; retain/strengthen isolation: neighbor node and default backend initialization despite partial injection.",
+    "document": "test-inventory.md"
+  },
+  "TS-050": {
+    "path": "tests/test_langmem_structured_memory.py",
+    "declared_test_count_or_state": "8",
+    "assessment": "modified actual source; retain/strengthen; scheduled-empty intent unresolved: categories adapted, fake manager guard still active; no durable store in cache test.",
+    "document": "test-inventory.md"
+  },
+  "TS-051": {
+    "path": "tests/test_long_term_memory_vector_retrieval.py",
+    "declared_test_count_or_state": "5",
+    "assessment": "modified actual source; retain/adapt separately: sqlite-vec fake changed; old namespaces outside allowed extraction set; keep compact-text/dedup responsibilities.",
+    "document": "test-inventory.md"
+  },
+  "TS-052": {
+    "path": "tests/test_long_term_store.py",
+    "declared_test_count_or_state": "4",
+    "assessment": "modified actual source; retain/adapt separately: category namespace expectation stale; real guard/embedding seeding before fake recall.",
+    "document": "test-inventory.md"
+  },
+  "TS-053": {
+    "path": "tests/test_longmemeval_adapter.py",
+    "declared_test_count_or_state": "10",
+    "assessment": "unchanged bytes; affected callers reassessed; retain/adapt separately:three executed failures from removed AppConfig.reranker_cross_encoder_top_k consumer (RV-004).",
+    "document": "test-inventory.md"
+  },
+  "TS-054": {
+    "path": "tests/test_longmemeval_answer_eval.py",
+    "declared_test_count_or_state": "8",
+    "assessment": "unchanged bytes; affected callers reassessed; retain:manifest/metric/replay/resume/cache/privacy and fake harness contracts distinct; real composition inherits guards/defaults and may hit eager embeddings.",
+    "document": "test-inventory.md"
+  },
+  "TS-055": {
+    "path": "tests/test_mab_answer_eval.py",
+    "declared_test_count_or_state": "39",
+    "assessment": "unchanged bytes; affected callers reassessed; retain:manifest/metric/replay/resume/cache/privacy and fake harness contracts distinct; real composition inherits guards/defaults and may hit eager embeddings.",
+    "document": "test-inventory.md"
+  },
+  "TS-056": {
+    "path": "tests/test_memory_agent_bench_adapter.py",
+    "declared_test_count_or_state": "29",
+    "assessment": "unchanged bytes; affected callers reassessed; retain:manifest/metric/replay/resume/cache/privacy and fake harness contracts distinct; real composition inherits guards/defaults and may hit eager embeddings.",
+    "document": "test-inventory.md"
+  },
+  "TS-057": {
+    "path": "tests/test_memory_context_acceptance.py",
+    "declared_test_count_or_state": "5",
+    "assessment": "unchanged bytes; affected callers reassessed; strengthen \u2014 retain distinct protection; specific limits and strengthening evidence in independent report 05; current canonical/default-backend/storage influence reviewed, not unchanged-unaffected.",
+    "document": "test-inventory.md"
+  },
+  "TS-058": {
+    "path": "tests/test_memory_reranker.py",
+    "declared_test_count_or_state": "36",
+    "assessment": "modified actual source; retain/strengthen:36 definitions; skip/CE/raw/hybrid/preload assertions; real unpatched preload excluded from runtime cohort.",
+    "document": "test-inventory.md"
+  },
+  "TS-059": {
+    "path": "tests/test_memory_trace.py",
+    "declared_test_count_or_state": "6",
+    "assessment": "unchanged bytes; affected callers reassessed; strengthen \u2014 retain distinct protection; specific limits and strengthening evidence in independent report 05; current canonical/default-backend/storage influence reviewed, not unchanged-unaffected.",
+    "document": "test-inventory.md"
+  },
+  "TS-060": {
+    "path": "tests/test_model_token_accounting.py",
+    "declared_test_count_or_state": "21",
+    "assessment": "unchanged bytes; affected callers reassessed; retain/strengthen:fake-loader/cache protection; Pillow check installed version, not declaration.",
+    "document": "test-inventory.md"
+  },
+  "TS-061": {
+    "path": "tests/test_multi_source_retrieval_eval.py",
+    "declared_test_count_or_state": "5",
+    "assessment": "unchanged bytes; affected callers reassessed; retain \u2014 explicit fixture RoutePlan plus real dispatcher and forbidden-source negative control; not automatic routing; current canonical/default-backend/storage influence reviewed, not unchanged-unaffected.",
+    "document": "test-inventory.md"
+  },
+  "TS-062": {
+    "path": "tests/test_orchestration_demo_modes.py",
+    "declared_test_count_or_state": "5",
+    "assessment": "unchanged bytes; affected callers reassessed; retain:actual-request recording test present; currently blocked before answering by eager doc embedding load, not old validator bug.",
+    "document": "test-inventory.md"
+  },
+  "TS-063": {
+    "path": "tests/test_previous_chat_gist_generation.py",
+    "declared_test_count_or_state": "15",
+    "assessment": "modified actual source; retain:15 definitions incl LLM\u2192deterministic fallback/provenance; service loader/guard isolation changed.",
+    "document": "test-inventory.md"
+  },
+  "TS-064": {
+    "path": "tests/test_product_failure_atomicity.py",
+    "declared_test_count_or_state": "3",
+    "assessment": "modified actual source; retain/strengthen: timeout now persists failed assistant/inspection; contention not forced; live dependencies obstruct current checks.",
+    "document": "test-inventory.md"
+  },
+  "TS-065": {
+    "path": "tests/test_product_navigation_asset.py",
+    "declared_test_count_or_state": "2",
+    "assessment": "unchanged bytes; affected callers reassessed; replace \u2014 replace brittle behavior-by-source checks; preserve asset wiring and intentional boundary assertions; current canonical/default-backend/storage influence reviewed, not unchanged-unaffected.",
+    "document": "test-inventory.md"
+  },
+  "TS-066": {
+    "path": "tests/test_prompt_messages.py",
+    "declared_test_count_or_state": "6",
+    "assessment": "unchanged bytes; affected callers reassessed; retain \u2014 pure validator positive/negative contracts; unresolved integrated final-query representation; current canonical/default-backend/storage influence reviewed, not unchanged-unaffected.",
+    "document": "test-inventory.md"
+  },
+  "TS-067": {
+    "path": "tests/test_provider_settings.py",
+    "declared_test_count_or_state": "13",
+    "assessment": "modified actual source; retain:13 synthetic SDK/guard/provider/AST-helper contracts; not live compatibility.",
+    "document": "test-inventory.md"
+  },
+  "TS-068": {
+    "path": "tests/test_raw_span_anchor_truncation.py",
+    "declared_test_count_or_state": "8",
+    "assessment": "unchanged bytes; affected callers reassessed; retain7; replace constructor-only symbol or separately approve narrow removal; no mixed-source formatter invented.",
+    "document": "test-inventory.md"
+  },
+  "TS-069": {
+    "path": "tests/test_retrieval_query_simplification.py",
+    "declared_test_count_or_state": "6",
+    "assessment": "unchanged bytes; affected callers reassessed; retain \u2014 retain distinct protection; specific limits and strengthening evidence in independent report 05; current canonical/default-backend/storage influence reviewed, not unchanged-unaffected.",
+    "document": "test-inventory.md"
+  },
+  "TS-070": {
+    "path": "tests/test_routing_agent.py",
+    "declared_test_count_or_state": "14",
+    "assessment": "modified actual source; retain:new source schema/additive hybrid/fallback tests; selected model evidence not exercised.",
+    "document": "test-inventory.md"
+  },
+  "TS-071": {
+    "path": "tests/test_semantic_router.py",
+    "declared_test_count_or_state": "22",
+    "assessment": "unchanged bytes; affected callers reassessed; retain \u2014 retain distinct protection; specific limits and strengthening evidence in independent report 05; current canonical/default-backend/storage influence reviewed, not unchanged-unaffected.",
+    "document": "test-inventory.md"
+  },
+  "TS-072": {
+    "path": "tests/test_semantic_router_v2_validation.py",
+    "declared_test_count_or_state": "4",
+    "assessment": "unchanged bytes; affected callers reassessed; retain/strengthen:source/raw/graph contract; first raw can lack expected gist parent after added defaults.",
+    "document": "test-inventory.md"
+  },
+  "TS-073": {
+    "path": "tests/test_short_term_memory_scheduling.py",
+    "declared_test_count_or_state": "16",
+    "assessment": "modified actual source; retain/strengthen:16 policy/latest/no-op/turn tests; WordCounter replacement does not isolate independent service dependencies.",
+    "document": "test-inventory.md"
+  },
+  "TS-074": {
+    "path": "tests/test_structured_memory_eval.py",
+    "declared_test_count_or_state": "6",
+    "assessment": "unchanged bytes; affected callers reassessed; retain/strengthen:oracle answer and fake-manager guard exposure; current sample metric failures not live quality.",
+    "document": "test-inventory.md"
+  },
+  "TS-075": {
+    "path": "tests/test_structured_memory_vector_sync.py",
+    "declared_test_count_or_state": "8",
+    "assessment": "modified actual source; retain/reconcile: fake backend valuable; old raises assertion contradicts current nonfatal upsert; old categories/namespaces stale.",
+    "document": "test-inventory.md"
+  },
+  "TS-076": {
+    "path": "tests/test_targeted_eval_wrapper.py",
+    "declared_test_count_or_state": "2",
+    "assessment": "unchanged bytes; affected callers reassessed; retain \u2014 argument/check-mode contract; no proof of actual full model evaluation; current canonical/default-backend/storage influence reviewed, not unchanged-unaffected.",
+    "document": "test-inventory.md"
+  },
+  "TS-077": {
+    "path": "tests/test_typed_memory_e2e_benchmark.py",
+    "declared_test_count_or_state": "7",
+    "assessment": "unchanged bytes; affected callers reassessed; retain \u2014 benchmark negative controls and bounded output; mocks are appropriate for this layer; current canonical/default-backend/storage influence reviewed, not unchanged-unaffected.",
+    "document": "test-inventory.md"
+  },
+  "TS-078": {
+    "path": "test_upload.py",
+    "declared_test_count_or_state": "absent",
+    "assessment": "Already absent on supplied main; old live upload probe. Not removed by this task; no restoration/removal decision inferred.",
+    "document": "test-inventory.md"
+  },
+  "TS-079": {
+    "path": "test_upload_real.py",
+    "declared_test_count_or_state": "absent",
+    "assessment": "Already absent on supplied main; old live upload probe. Not removed by this task; no restoration/removal decision inferred.",
+    "document": "test-inventory.md"
+  },
+  "TS-080": {
+    "path": "evals/test_short_term_memory.py",
+    "declared_test_count_or_state": "0",
+    "assessment": "unchanged bytes; affected callers reassessed; strengthen \u2014 manual live extraction diagnostic with deterministic question answering from memory; temp SQL alone not full isolation; current canonical/default-backend/storage influence reviewed, not unchanged-unaffected.",
+    "document": "test-inventory.md"
+  },
+  "TS-081": {
+    "path": "tests/test_coordinator_agent.py",
+    "declared_test_count_or_state": "18",
+    "assessment": "added; retain/strengthen: new18 helper/predicate/route tests, no run_turn/graph selection; isolated core passed.",
+    "document": "test-inventory.md"
+  },
+  "TS-082": {
+    "path": "tests/test_memory_consolidation.py",
+    "declared_test_count_or_state": "4",
+    "assessment": "added; retain/strengthen: new4 explicit fake-vec SQL durability tests; names overstate log/error checks; core passed.",
+    "document": "test-inventory.md"
+  }
+}

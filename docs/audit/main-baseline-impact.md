@@ -1,5 +1,7 @@
 # Main baseline impact: independent static review
 
+**Historical migration-time triage.** Current conclusions and execution evidence are in [TASK11 revalidation](revalidation/static-assessment.md); that package supersedes this preliminary matrix where it differs.
+
 2026-10-27; reviewer `main_baseline_impact`; main `2f56d93`. Read-only source comparison, no application imports, test execution or private data inspection. This is bounded migration triage, not a new exhaustive audit. **Supported** means static evidence remains; **Changed** means old evidence materially changed or is superseded. Neither means runtime confirmation or resolution. Original detailed evidence remains in [historical backlog](history/tmp-audit/docs/audit/bug-backlog.md) and [test assessment](history/tmp-audit/docs/audit/test-suite-audit.md).
 
 ## AUD findings

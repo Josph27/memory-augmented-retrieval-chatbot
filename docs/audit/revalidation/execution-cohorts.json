@@ -1,0 +1,98 @@
+{
+  "deterministic-core": {
+    "configuration": "deterministic",
+    "files": [
+      "tests/test_provider_settings.py",
+      "tests/test_prompt_messages.py",
+      "tests/test_context_comparator.py",
+      "tests/test_context_builder.py",
+      "tests/test_dynamic_memory_budget.py",
+      "tests/test_context_manager_agent.py",
+      "tests/test_routing_agent.py",
+      "tests/test_semantic_router.py",
+      "tests/test_semantic_router_v2_validation.py",
+      "tests/test_retrieval_query_simplification.py",
+      "tests/test_evidence_constrained_selector.py",
+      "tests/test_direct_raw_retrieval.py",
+      "tests/test_current_chat_span_retriever.py",
+      "tests/test_raw_span_anchor_truncation.py",
+      "tests/test_gist_raw_span_expansion.py",
+      "tests/test_chat_lifecycle.py",
+      "tests/test_coordinator_agent.py",
+      "tests/test_memory_consolidation.py",
+      "tests/test_memory_trace.py"
+    ]
+  },
+  "deterministic-composition": {
+    "configuration": "deterministic",
+    "files": [
+      "tests/test_architecture_layers.py",
+      "tests/test_memory_context_acceptance.py",
+      "tests/test_document_product_lifecycle.py",
+      "tests/test_product_failure_atomicity.py",
+      "tests/test_chat_end_action.py",
+      "tests/test_chat_fork_action.py",
+      "tests/test_short_term_memory_scheduling.py",
+      "tests/test_previous_chat_gist_generation.py",
+      "tests/test_chat_gist_summarizer.py",
+      "tests/test_gist_processing_state.py",
+      "tests/test_long_term_memory_vector_retrieval.py",
+      "tests/test_structured_memory_vector_sync.py",
+      "tests/test_document_ingestion_agent.py",
+      "tests/test_document_loaders.py",
+      "tests/test_document_memory.py",
+      "tests/test_document_inspection.py",
+      "tests/test_chat_service_file_uploads.py",
+      "tests/test_langgraph_memory_pipeline.py",
+      "tests/test_langgraph_demo_regression.py",
+      "tests/test_e2e_scenarios.py",
+      "tests/test_orchestration_demo_modes.py",
+      "tests/test_langmem_structured_memory.py",
+      "tests/test_long_term_store.py",
+      "tests/test_model_token_accounting.py",
+      "tests/test_memory_reranker.py"
+    ],
+    "deselect": [
+      "tests/test_memory_reranker.py::test_cross_encoder_backend_preload_loads_model"
+    ]
+  },
+  "canonical-offline": {
+    "configuration": "canonical",
+    "files": [
+      "tests/test_orchestration_demo_modes.py",
+      "tests/test_memory_consolidation.py",
+      "tests/test_structured_memory_vector_sync.py"
+    ]
+  },
+  "deterministic-eval-storage": {
+    "configuration": "deterministic",
+    "files": [
+      "tests/test_answer_inspector.py",
+      "tests/test_answer_policy_prompts.py",
+      "tests/test_chainlit_data_layer.py",
+      "tests/test_gist_memory_infrastructure.py",
+      "tests/test_chroma_document_store.py",
+      "tests/test_langchain_chroma_retriever.py",
+      "tests/test_generated_answer_eval.py",
+      "tests/test_multi_source_retrieval_eval.py",
+      "tests/test_structured_memory_eval.py",
+      "tests/test_longmemeval_adapter.py",
+      "tests/test_longmemeval_answer_eval.py",
+      "tests/test_memory_agent_bench_adapter.py",
+      "tests/test_mab_answer_eval.py",
+      "tests/test_typed_memory_e2e_benchmark.py",
+      "tests/test_product_navigation_asset.py",
+      "tests/test_document_qa_answer_generation.py",
+      "tests/test_document_qa_compare.py",
+      "tests/test_document_qa_diagnostics.py",
+      "tests/test_document_qa_langchain_baseline.py",
+      "tests/test_document_qa_metrics.py",
+      "tests/test_document_qa_prepare.py",
+      "tests/test_document_qa_prepare_nq.py",
+      "tests/test_document_qa_ragas_export.py",
+      "tests/test_document_qa_topk_curves.py",
+      "tests/product_behavior/test_inventory.py"
+    ],
+    "review_note": "Independent static setup review; excludes product_behavior/test_runner.py because non-browser oracles dynamically import app. Native Chroma uses existing deterministic embeddings; evals use existing fakes/fixtures."
+  }
+}

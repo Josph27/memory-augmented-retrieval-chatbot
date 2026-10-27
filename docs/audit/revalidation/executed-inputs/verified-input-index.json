@@ -1,0 +1,50 @@
+[
+  {
+    "run": "/tmp/breamon-audit-deterministic-core-it8cg51q",
+    "recorded_input": "run_existing_checks.py",
+    "sha256": "0b97bffd9aa772526faeeb740f2541dbeae4873ee9d8c97d3ab8caedc94d1c33",
+    "exact_file": "runner-core.py.txt"
+  },
+  {
+    "run": "/tmp/breamon-audit-deterministic-core-it8cg51q",
+    "recorded_input": "execution-cohorts.json",
+    "sha256": "c7dfad50c20a8fe4e4876ac73d5c84ca6a4afccf77d9e688cc86c12739d4ebda",
+    "exact_file": "cohorts-initial.json"
+  },
+  {
+    "run": "/tmp/breamon-audit-deterministic-composition-bn1dnljs",
+    "recorded_input": "run_existing_checks.py",
+    "sha256": "63449f6c8b20c307707a525f931e592536bf784fbee1c583a6405e072d7e032c",
+    "exact_file": "runner-synthetic-home.py.txt"
+  },
+  {
+    "run": "/tmp/breamon-audit-deterministic-composition-bn1dnljs",
+    "recorded_input": "execution-cohorts.json",
+    "sha256": "c7dfad50c20a8fe4e4876ac73d5c84ca6a4afccf77d9e688cc86c12739d4ebda",
+    "exact_file": "cohorts-initial.json"
+  },
+  {
+    "run": "/tmp/breamon-audit-deterministic-eval-storage-sm9h4n76",
+    "recorded_input": "run_existing_checks.py",
+    "sha256": "63449f6c8b20c307707a525f931e592536bf784fbee1c583a6405e072d7e032c",
+    "exact_file": "runner-synthetic-home.py.txt"
+  },
+  {
+    "run": "/tmp/breamon-audit-deterministic-eval-storage-sm9h4n76",
+    "recorded_input": "execution-cohorts.json",
+    "sha256": "93e0332117a68562bdfb091d5682c4f5116527e574e7d0364d32be8290b5c8d7",
+    "exact_file": "cohorts-full.json"
+  },
+  {
+    "run": "/tmp/breamon-audit-canonical-offline-vh0tghj6",
+    "recorded_input": "run_existing_checks.py",
+    "sha256": "63449f6c8b20c307707a525f931e592536bf784fbee1c583a6405e072d7e032c",
+    "exact_file": "runner-synthetic-home.py.txt"
+  },
+  {
+    "run": "/tmp/breamon-audit-canonical-offline-vh0tghj6",
+    "recorded_input": "execution-cohorts.json",
+    "sha256": "c7dfad50c20a8fe4e4876ac73d5c84ca6a4afccf77d9e688cc86c12739d4ebda",
+    "exact_file": "cohorts-initial.json"
+  }
+]

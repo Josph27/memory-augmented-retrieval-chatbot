@@ -1,5 +1,5 @@
-# Test-suite inventory: baseline transition
+# Current test inventory
 
-The [complete historical document](history/tmp-audit/docs/audit/test-suite-inventory.md) is preserved unchanged. It describes tmp-audit/ui, not current main. Stable WF/AUD/TSA IDs and user approvals remain traceable; line references, counts and dispositions require revalidation where source changed.
+TASK11 revalidation is complete against source1cf4c55 on codex/audit-main. Use the [current revalidated document](revalidation/test-inventory.md), [exact coverage](revalidation/coverage-ledger.md), [execution evidence](revalidation/execution.md) and [task ledger](cleanup-plan.md).
 
-Read [main-baseline impact](main-baseline-impact.md) before relying on it, and [task ledger](cleanup-plan.md) for remaining work. No old finding is considered runtime verified by copying it. No test or workflow removal has been approved.
+The [original historical document](history/tmp-audit/docs/audit/test-suite-inventory.md) remains unchanged for provenance. Its ui/tmp-audit line references, counts, findings and completion statements are historical. Current findings are supported/revised/superseded/unresolved as recorded; no workflow/test removal or general fix is approved.

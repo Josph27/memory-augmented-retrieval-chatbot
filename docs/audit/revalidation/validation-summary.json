@@ -1,0 +1,14 @@
+{
+  "relevant_paths": 342,
+  "historical_test_IDs": 80,
+  "current_python_test_sources": 79,
+  "unique_deterministic_counts": {
+    "passed": 578,
+    "failed": 49,
+    "skipped": 1
+  },
+  "local_links_checked": 381,
+  "historical_snapshot_unchanged": true,
+  "assessed_product_hashes_unchanged": true,
+  "original_backup_status_stashes_checked": true
+}

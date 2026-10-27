@@ -21,3 +21,9 @@ Excluded: wholesale merge/rebase of ui history, stash application, destructive r
 ## DEC-010 — Private local-settings transfer
 
 After automatic approval review initially rejected the credential-bearing copy, the user explicitly answered “Copy the existing private settings file” to a question specifying one file, Git exclusion, mode 0600, no displayed contents and preservation of the original. Only that copy is approved and completed; no permission to expose secrets or copy broader runtime state.
+
+## DEC-011 — Complete audit revalidation points 1–4
+
+User instruction 2026-10-27: “Please go ahead and implement this. I expect finalized all the points 1 - 4.” Refers to the coordinator's proposed complete coverage ledger, rerun of existing audit agent, reconciliation of previous findings/test assessments, and static-first isolated execution of consequential existing checks. Authorizes documentation/verification implementation and coherent evidence commits. Does not authorize app/test fixes, removals, live inference or production data access. Intended, implemented and asserted behavior remain distinct; unsupported prior claims are corrected, not rubber-stamped.
+
+DEC011 completion: points1–4 delivered and accepted by coordinator at documented static/selected-execution depth. Existing main audit agent completed six owned assessment documents; coordinator reconciled342relevant paths and131WF/AUD/TSA/TS entries, executed selected confined checks and preserved explicit unverified paths. No app/test fixes, removals or new product policy were approved by accepting this evidence.
