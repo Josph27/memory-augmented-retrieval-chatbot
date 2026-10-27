@@ -21,13 +21,6 @@ export async function fetchChats({ cursor, search } = {}) {
 	return res.json();
 }
 
-export async function fetchChatMessages(chatId) {
-	const res = await fetch(`${BASE}/chats/${chatId}/messages`);
-	if (!res.ok)
-		throw new Error(await _apiError(res, "Failed to fetch messages"));
-	return res.json();
-}
-
 export async function createChat() {
 	const res = await fetch(`${BASE}/chats`, { method: "POST" });
 	if (!res.ok) throw new Error(await _apiError(res, "Failed to create chat"));
@@ -79,39 +72,6 @@ export async function fetchDocuments({ status } = {}) {
 	if (!res.ok)
 		throw new Error(await _apiError(res, "Failed to fetch documents"));
 	return res.json();
-}
-
-export async function uploadDocumentFile(file, onProgress) {
-	const formData = new FormData();
-	formData.append("file", file);
-
-	return new Promise((resolve, reject) => {
-		const xhr = new XMLHttpRequest();
-		xhr.open("POST", `${BASE}/documents/upload`);
-		xhr.withCredentials = true;
-
-		xhr.upload.onprogress = (e) => {
-			if (e.lengthComputable && onProgress) {
-				onProgress((e.loaded / e.total) * 100);
-			}
-		};
-
-		xhr.onload = () => {
-			if (xhr.status >= 200 && xhr.status < 300) {
-				try {
-					resolve(JSON.parse(xhr.responseText));
-				} catch (e) {
-					reject(new Error("Invalid response"));
-				}
-			} else {
-				reject(new Error(`Upload failed (HTTP ${xhr.status})`));
-			}
-		};
-
-		xhr.onerror = () =>
-			reject(new Error("Network error — is the backend running?"));
-		xhr.send(formData);
-	});
 }
 
 export async function deleteDocument(docId) {

@@ -94,16 +94,14 @@ current and intentional unless otherwise noted.
   implemented.
 - `fetchChats()` in the REST client ignores the `limit` parameter. Callers
   that pass `{ limit: 20 }` or `{ limit: 50 }` receive all chats regardless.
-- `uploadDocumentFile()` in `api.js` is exported but never imported by any
-  component — dead code. File upload goes through Chainlit SDK hooks instead.
 - The Diagnostics page shows hardcoded "v2.4.1" as the version fallback and
   "Daemon: Running" as a static string — neither reflects actual system state.
 - The auto-login flow (`POST /login` with `local`/`local`) shows
   "Authenticating..." forever on failure with no retry or error message.
 - The `text-code` typography token uses Inter (not a monospace font), so
   code blocks do not visually distinguish from body text.
-- `puppeteer` and `puppeteer-core` are in `dependencies` rather than
-  `devDependencies` in `braemon/package.json`.
+- Puppeteer tooling remains in `dependencies` rather than `devDependencies`
+  in `braemon/package.json`; Puppeteer Core is retained transitively.
 
 ## Evaluation
 

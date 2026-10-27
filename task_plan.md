@@ -36,3 +36,5 @@ DEC015 supersedes the earlier test-only authorization for these four blockers on
 No deletion quota; do not consolidate live responsibilities or restructure; MAINT-01/TASK13 deferred. Preserve data/credentials/stashes/recovery/historical evidence. Exactly one implementation writer; independent reviewers read-only. No source/docs/index mutations during isolated runs.
 
 PURGE1 static check note: first backend-focused Ruff found the preexisting unused urllib.parse.urljoin import in the now-touched guard; it has no consumers and is removed as an unused import within P1-C03. Initial whitespace check found trailing blank lines after declaration deletion; normalized EOF only. No behavior fix or assertion change.
+
+PURGE1 frontend auxiliary check: first logger smoke read an existing file before asynchronous append completed (empty content). Production logger unchanged. Corrected the temporary verification script to await the actual fs.promises.appendFile promise, preserving initial failed log evidence; no polling/retries or application fix.

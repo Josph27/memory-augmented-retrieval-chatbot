@@ -1,0 +1,41 @@
+{
+  "runs": [
+    {
+      "label": "frontend-initial",
+      "archive": "frontend-initial.tar.gz",
+      "sha256": "4b9c630eb437eb6d9e1d3db2a31e4163718587f6e78d7c11cf05f756fe19b7e9",
+      "results": [
+        {
+          "label": "checks",
+          "exit_code": 1
+        }
+      ],
+      "inference": "disabled by private mount/network namespace",
+      "installs": 0
+    },
+    {
+      "label": "frontend-verified",
+      "archive": "frontend-verified.tar.gz",
+      "sha256": "e0e7c1e7bde58bd1849d3905726faf6cc5e342747fc96b834fd31f4b9634fe92",
+      "results": [
+        {
+          "label": "checks",
+          "exit_code": 0
+        },
+        {
+          "label": "dependency-tree",
+          "exit_code": 0
+        },
+        {
+          "label": "build",
+          "exit_code": 0
+        }
+      ],
+      "inference": "disabled by private mount/network namespace",
+      "installs": 0
+    }
+  ],
+  "initial_failure": "Temporary hook check read before async append completed; corrected to await actual append promise. No application retry/fix.",
+  "css": "41139->40529 bytes: exactly4unused utilities and5unused custom-property registrations/initializers. Tailwind implicitly scanned removed artifacts; retained active selectors and disabled variants unchanged.",
+  "coverage_limit": "Build/tooling checks, not executed React/Node browser journeys."
+}

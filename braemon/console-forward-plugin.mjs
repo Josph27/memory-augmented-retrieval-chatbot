@@ -10,15 +10,11 @@ const VIRTUAL_ID = "virtual:console-forward";
 const RESOLVED_ID = "\0" + VIRTUAL_ID;
 
 function consoleForwardPlugin() {
-	let viteConfig;
-
 	return {
 		name: "braemon-console-forward",
 		apply: "serve",
-		configResolved(config) {
-			viteConfig = config;
+		configResolved() {
 			const logDir = path.resolve(process.cwd(), "../logs");
-			const logFile = path.join(logDir, "browser.log");
 			if (!fs.existsSync(logDir)) fs.mkdirSync(logDir, { recursive: true });
 		},
 
