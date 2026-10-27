@@ -22,7 +22,6 @@ from src.memory.memory_trace import (
 )
 from src.model_wrapper import ModelWrapper
 from src.orchestration.demo_orchestration import (
-    NATIVE,
     normalize_orchestration_mode,
 )
 from src.retrieval.langchain_chroma_retriever import LangChainChromaUnavailable

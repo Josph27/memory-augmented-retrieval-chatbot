@@ -6,7 +6,6 @@ from typing import Protocol
 from src.memory.long_term_store import LongTermMemoryRecord, LongTermMemoryStore
 from src.memory.long_term_vector_index import (
     LongTermMemorySyncReport,
-    LongTermMemoryVectorIndex,
 )
 
 
