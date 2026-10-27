@@ -31,3 +31,7 @@ DEC011 completion: points1–4 delivered and accepted by coordinator at document
 ## DEC012 — Stage5 protection execution
 
 User instruction2026-10-27 authorizes isolated offline baselines, test infrastructure/configuration, bounded test repairs/additions, audit records, workers and coherent commits. One implementation writer with explicit ownership; preserve dirty work/stashes. Existing audit guides work; no broad audit restart. Live/paid inference, application behavior changes, workflow removals and broad restructuring excluded. Run browser groups when isolated prerequisites exist. Record all outcome categories, initial/post separation, exclusions, external usage evidence and deferred-live proposal; spending needs separate approval. Consequential app defects/behavior choices escalate only affected work while independent protection continues.
+
+## DEC013 — Durable SQL with nonfatal vector synchronization failure
+
+User explicitly chose “Keep SQL success and log vector failure (recommended; matches current code)” on2026-10-27. Protection must assert the committed SQLite memory remains durable and the vector failure is logged. Replace conflicting exception expectations at the combined upsert boundary; retain direct vector-operation error coverage. This approves test contract alignment, not application changes or swallowing SQL failures.

@@ -1,0 +1,161 @@
+{
+  "schema_version": 1,
+  "default_groups": [
+    "offline-unit",
+    "offline-integration"
+  ],
+  "groups": {
+    "offline-unit": {
+      "category": "offline-unit",
+      "enabled": true,
+      "files": [
+        "tests/test_prompt_messages.py",
+        "tests/test_context_comparator.py",
+        "tests/test_context_builder.py",
+        "tests/test_dynamic_memory_budget.py",
+        "tests/test_routing_agent.py",
+        "tests/test_semantic_router.py",
+        "tests/test_retrieval_query_simplification.py",
+        "tests/test_memory_trace.py",
+        "tests/test_answer_policy_prompts.py",
+        "tests/test_product_navigation_asset.py",
+        "tests/test_document_qa_answer_generation.py",
+        "tests/test_document_qa_diagnostics.py",
+        "tests/test_document_qa_metrics.py",
+        "tests/test_document_qa_prepare.py",
+        "tests/test_document_qa_prepare_nq.py",
+        "tests/product_behavior/test_inventory.py"
+      ],
+      "reason": "Main audit agent behavior/setup review: pure transforms, serialization/prompts/metrics or controlled fake answer generation; no persistent service/model preload.",
+      "responsibilities": [
+        "provider configuration and serialization",
+        "routing/selection/context assembly"
+      ]
+    },
+    "offline-integration": {
+      "category": "offline-integration",
+      "enabled": true,
+      "files": [
+        "tests/test_provider_settings.py",
+        "tests/test_context_manager_agent.py",
+        "tests/test_semantic_router_v2_validation.py",
+        "tests/test_evidence_constrained_selector.py",
+        "tests/test_raw_span_anchor_truncation.py",
+        "tests/test_direct_raw_retrieval.py",
+        "tests/test_current_chat_span_retriever.py",
+        "tests/test_gist_raw_span_expansion.py",
+        "tests/test_chat_lifecycle.py",
+        "tests/test_coordinator_agent.py",
+        "tests/test_memory_consolidation.py",
+        "tests/test_architecture_layers.py",
+        "tests/test_memory_context_acceptance.py",
+        "tests/test_document_product_lifecycle.py",
+        "tests/test_product_failure_atomicity.py",
+        "tests/test_chat_end_action.py",
+        "tests/test_chat_fork_action.py",
+        "tests/test_short_term_memory_scheduling.py",
+        "tests/test_previous_chat_gist_generation.py",
+        "tests/test_chat_gist_summarizer.py",
+        "tests/test_gist_processing_state.py",
+        "tests/test_long_term_memory_vector_retrieval.py",
+        "tests/test_structured_memory_vector_sync.py",
+        "tests/test_document_ingestion_agent.py",
+        "tests/test_document_loaders.py",
+        "tests/test_document_memory.py",
+        "tests/test_document_inspection.py",
+        "tests/test_chat_service_file_uploads.py",
+        "tests/test_langgraph_memory_pipeline.py",
+        "tests/test_langgraph_demo_regression.py",
+        "tests/test_e2e_scenarios.py",
+        "tests/test_orchestration_demo_modes.py",
+        "tests/test_langmem_structured_memory.py",
+        "tests/test_long_term_store.py",
+        "tests/test_model_token_accounting.py",
+        "tests/test_memory_reranker.py",
+        "tests/test_answer_inspector.py",
+        "tests/test_chainlit_data_layer.py",
+        "tests/test_gist_memory_infrastructure.py",
+        "tests/test_chroma_document_store.py",
+        "tests/test_langchain_chroma_retriever.py",
+        "tests/test_generated_answer_eval.py",
+        "tests/test_multi_source_retrieval_eval.py",
+        "tests/test_structured_memory_eval.py",
+        "tests/test_longmemeval_adapter.py",
+        "tests/test_longmemeval_answer_eval.py",
+        "tests/test_memory_agent_bench_adapter.py",
+        "tests/test_mab_answer_eval.py",
+        "tests/test_typed_memory_e2e_benchmark.py",
+        "tests/test_document_qa_compare.py",
+        "tests/test_document_qa_langchain_baseline.py",
+        "tests/test_document_qa_ragas_export.py",
+        "tests/test_document_qa_topk_curves.py"
+      ],
+      "reason": "Main audit agent behavior/setup review: synthetic stores, existing fake models/embeddings, controlled SDK transports, repository/service composition, fake evaluation adapters. Real-model preload node excluded separately.",
+      "responsibilities": [
+        "SQLite and synthetic Chroma",
+        "memory/lifecycle/document composition",
+        "fake inference evaluation regressions"
+      ]
+    },
+    "app-composition": {
+      "category": "offline-integration",
+      "enabled": false,
+      "files": [
+        "tests/test_chainlit_chat_actions.py",
+        "tests/test_chainlit_memory_trace_helpers.py",
+        "tests/product_behavior/test_runner.py"
+      ],
+      "reason": "Pending app import/model/cache setup review; isolation does not supply prerequisites."
+    },
+    "subprocess-wrappers": {
+      "category": "offline-integration",
+      "enabled": false,
+      "files": [
+        "tests/test_final_eval_wrappers.py",
+        "tests/test_targeted_eval_wrapper.py"
+      ],
+      "reason": "Pending wrapper/transitive uv/script review; absent scripts and executable dependencies must be recorded rather than substituted."
+    },
+    "browser": {
+      "category": "browser",
+      "enabled": false,
+      "files": [
+        "tests/e2e/test_product_behavior_browser.py",
+        "braemon/e2e/chat-messages.test.mjs",
+        "braemon/e2e/smoke.test.mjs"
+      ],
+      "reason": "Pending tracked Chainlit configuration, fixture/runtime and private-loopback review; optional loopback support is implemented but not accepted/executed."
+    },
+    "live-provider": {
+      "category": "live-provider",
+      "enabled": false,
+      "files": [],
+      "reason": "Live inference not authorized; full entry-point/cost registry being prepared from existing audit."
+    },
+    "expensive-evaluations": {
+      "category": "expensive-evaluations",
+      "enabled": false,
+      "files": [],
+      "reason": "Repeated dataset/model/judge evaluation not authorized; fake evaluation unit regressions remain in offline-integration."
+    },
+    "manual": {
+      "category": "manual",
+      "enabled": false,
+      "files": [
+        "tests/test_backend.py",
+        "tests/test_socket.js",
+        "tests/test_socket.cjs",
+        "tests/test_socket_2.js"
+      ],
+      "reason": "HTTP/socket diagnostics use existing services; not isolated pytest protection."
+    }
+  },
+  "excluded_nodes": {
+    "tests/test_memory_reranker.py::test_cross_encoder_backend_preload_loads_model": {
+      "category": "expensive-evaluations",
+      "reason": "Constructs/preloads an actual cross-encoder; no downloads/live model execution in offline suite.",
+      "command": "Deferred: separate model/cache execution authorization and isolated runner required."
+    }
+  },
+  "policy": "Unregistered files fail closed before module import. Disabled groups cannot execute through this launcher. Deterministic/canonical configuration explicit; report overlapping variants separately."
+}

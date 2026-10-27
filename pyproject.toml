@@ -32,6 +32,15 @@ package = false
 
 [tool.pytest.ini_options]
 pythonpath = ["."]
+testpaths = ["tests"]
+markers = [
+  "offline_unit: reviewed offline unit protection",
+  "offline_integration: reviewed synthetic-store/service/evaluation protection",
+  "browser: isolated local browser service checks",
+  "live_provider: separately authorized external inference",
+  "expensive_evaluations: separately budgeted repeated/model/dataset evaluations",
+  "manual: diagnostic consumers requiring operator setup",
+]
 
 [tool.ruff]
 line-length = 100
