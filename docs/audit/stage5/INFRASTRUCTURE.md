@@ -9,8 +9,8 @@ python3 scripts/run_isolated_tests.py --group offline-unit --label check --timeo
 python3 scripts/run_isolated_tests.py --group offline-integration --label check --timeout 600
 python3 scripts/run_isolated_tests.py --group app-composition --label check --timeout 300
 python3 scripts/run_isolated_tests.py --group subprocess-wrappers --label check --timeout 300
-# Browser is admitted, but currently blocked by an application login defect.
-python3 scripts/run_isolated_tests.py --group browser --label after-authorized-app-fix --timeout 600
+# Browser is admitted; TASK14 final existing journeys passed.
+python3 scripts/run_isolated_tests.py --group browser --label check --timeout 600
 ```
 
 Omitting --group runs the two core groups once in a single process. App composition and wrappers are explicit opt-ins: their pre-import embedding bootstrap / synthetic Git and uv setup have distinct responsibilities and should run in separate processes. Browser is explicit and slow. [groups.json](groups.json) is the pre-import allowlist; [exclusions](exclusions.md) lists commands/reasons for every deferred entry. Fake evaluation regressions remain offline. Node browser, real model preload, live/paid/expensive evaluations and manual diagnostics remain excluded, without capability removal.
@@ -39,4 +39,4 @@ Per-case counts include parameter expansion, setup/teardown errors, skips/xfails
 
 Independent review accepted core isolation before initial collection; subsequent batches and admission were accepted before their runs. The wrapper cache gap was corrected and retested before admission. All accepted runs were source-stable. Three existing app assertions were repaired after preserving their initial17/3 evidence; post-repair20/20passed. The existing blank PDF fixture became a nonblank text fixture with the same one-case count; actual PyMuPDF path passed, optional pypdf fixture branch remains unexecuted.
 
-Native browser prerequisites passed, but application login overlay blocked12scenario bodies; the sole passing case checks headless configuration. No bypass or application fix was made. See [readiness](readiness.md), [execution history](execution.md), [review](review-notes.md) and machine [latest results](runs/latest-summary.json).
+Historically native prerequisites passed but the application overlay blocked12scenario bodies. TASK14/DEC015 then authorized the minimal fix and faithful test setup; final13passed (12journeys+1configuration), with no bypass and empty page-error logs. See [readiness](readiness.md), [execution history](execution.md), [review](review-notes.md) and machine [latest results](runs/latest-summary.json).

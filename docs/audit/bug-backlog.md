@@ -6,9 +6,11 @@ The [original historical document](history/tmp-audit/docs/audit/bug-backlog.md) 
 
 ## Stage5 executed updates
 
-See [readiness/blockers](stage5/readiness.md), [execution](stage5/execution.md) and [latest machine results](stage5/runs/latest-summary.json). Native vec update primary-key failure (S5-APP-01) and UI login overlay (S5-APP-02) are executed findings. JS const reassignments remain static, not reached. RV004 LongMem removed config caller and synthetic mock-evaluator guard failures reproduced. RV001rebuild syntax remains. Timeout product-oracle expectation conflicts with current failed-assistant persistence; no desiredpolicy inferred. No appfix authorized/performed.
+See [current readiness](stage5/readiness.md), [bounded blocker evidence](stage5/blocker-resolution.md) and [latest results](stage5/runs/latest-summary.json). TASK14/DEC015 resolved S5-APP-01 native vec0 update, RV004 LongMem stale config, synthetic evaluator connectivity/schema prerequisites, and S5-APP-02 native login/state handling. All final selected cases pass; full forgetting and real-provider behavior remain unverified.
 
-AUD17's exercised graph request now has recorded selected evidence/no fallback and omission/leak assertion negatives with realChroma/localembeddings; this does not certify all providers/modes. Native structured-vector store/namespace and deletion paths passed with real384dim vec0; update fails and fullforgetting remains unverified. TSA11constructor-only and TSA13installed-only tests strengthened; their old weakness is no deletionreason. Browser/React/live gaps remain explicit rather than counted as passes.
+RV001 rebuild syntax/API remains parked. PB-FAIL-003 timeout oracle conflicts with implemented failed-assistant persistence; no desired policy inferred. Multi-user ownership/idempotency oracle limitations also remain. LongMem default document-neighbor initialization requires embedding assets even in memory-only adapter runs; tests now make this prerequisite explicit, without changing that production behavior. AUD17 exercised graph actual-request protection, TSA11/TSA13 strengthened assertions and other prior limits remain as recorded.
+
+S5-UI-03 — native trace-comment presentation: an affected-run screenshot shows serialized breamon-trace comment text visible in the native transcript. app.py appends that metadata; React explicitly strips it in ChainlitChat.jsx. This is observed presentation evidence, not a new blocker fix or a claim that native message formatting is fully verified. Screenshot retained in blockers-affected-browser.tar.gz. Park for a separate UI task; it does not affect the proposed unreferenced diagram deletion.
 
 ## MAINT-01 — Simplify the test suite and its supporting infrastructure
 
@@ -24,4 +26,4 @@ Backlog entry only: no test deletion, runner rewrite or evidence removal authori
 
 ## User-reported functionality check — 2026-10-27
 
-The user reports: “I have already done a full functionality check.” Record this as user-reported manual verification of the current application. Detailed scenarios, exact source revision and results were not supplied. It does not overwrite the recorded six automated failures, twelve browser setup errors, or deferred coverage. Reconcile those observations in the next bounded blocker batch; manual verification and automated evidence remain separate.
+The user reports: “I have already done a full functionality check.” Record this as user-reported manual verification of the current application. Detailed scenarios, exact source revision and results were not supplied. It does not overwrite historical automated failures or deferred coverage. TASK14 reconciles these observations and records subsequent passing automation separately; exact manual surface/revision remains unknown.

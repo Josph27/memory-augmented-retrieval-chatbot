@@ -41,3 +41,7 @@ User explicitly chose “Keep SQL success and log vector failure (recommended; m
 Source: user in “Braem. audit co-work”, 2026-10-27: “add the simplification of the test-suite into the backlog. I have already done a full functionality check.”
 
 Authorized now: record deferred MAINT-01/TASK13 and the user-reported manual check; prepare the next coordinator prompt. The check has no supplied scenario matrix or exact source revision and does not supersede automated failure evidence. This request does not itself approve test removals, paid evaluations, application fixes or purging. Any coordinator prompt supplied with this response becomes execution authorization when the user issues it to the coordinator.
+
+## DEC015 — Bounded Stage5 blocker resolution
+
+User instruction authorizes diagnosis and minimal application/evaluation/test-setup fixes for the four recorded blockers; existing regression tests first, narrow protection only, independent review, affected isolated groups and final offline core, coherent commits and a first cleanup **proposal**. Preserve DEC013 SQL success/logged vector failure. Reconcile the reported manual check with native Chainlit versus React and fresh-session automation. No paid/live inference, unrelated fixes, broad test expansion, MAINT-01/TASK13 implementation or purge. The preexisting React type/lock fix and DEC014 audit updates are separately preserved in c487db3 and 785ccd9.

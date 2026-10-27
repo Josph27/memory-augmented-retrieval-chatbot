@@ -71,3 +71,7 @@ ActualChrome launches and server/authpage load. All12browser scenario fixtures r
 Separately static, not reached dynamically: constproductState/answerInspections are reassigned later and predict TypeErrors after product-state events. No patch authorized/performed. Twelve setuperrors represent one sharedblocker, not12independentfeaturedefects.
 
 Final app testrepair run:20collected/20passed0failed0errors0skips, duration5.32s. No newcases. Home now protects realSQL absence of persistence while allowing warmup; uploadvalidates visibleanswer/JSONtrace/update-call contract; traceprivacy/currentstructuredfields use actual contracts. Same42productoracles39pass3fail remain separate evidence. Baseline17/3 retained in archive. No browser rerun: applicationstartupblocked and applicationcodeunchanged. Final table and limitation summary: readiness.md; machine latest-summary.json.
+
+## TASK14 / DEC015 — bounded blocker batch
+
+See [batch record](blocker-resolution.md) and [separate machine initial/affected/final outcomes](runs/blockers-summary.json). Initial integration502/6 and intentionally partial native-browser1pass6errors6unfinished were preserved; affected505/3 and browser9/4 exposed explicit offline/model and graph-fixture prerequisites. Reviewed minimal fixes/test setup then yielded final127unit+508integration+20app+21wrapper+13browser passes,1real-model exclusion,0new cases. Every final group shared identical source snapshots and passed native controls. Product-oracle42rows remain39/3 separately. No live inference, purge or MAINT-01 implementation.

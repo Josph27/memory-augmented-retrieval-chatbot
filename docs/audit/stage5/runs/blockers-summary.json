@@ -1,0 +1,374 @@
+{
+  "basis": "Initial reconfirmation, first affected run, final frozen-source disjoint groups. Reruns not summed; partial initial browser honestly incomplete. No new cases.",
+  "initial_reconfirmation": [
+    {
+      "complete": true,
+      "collected_case_count": 509,
+      "selected_case_count": 508,
+      "collection_error_count": 0,
+      "counts": {
+        "errored": 0,
+        "failed": 6,
+        "passed": 502,
+        "skipped": 0,
+        "xfailed": 0,
+        "xpassed": 0
+      },
+      "duration_seconds": 36.09799759899033,
+      "deselected": [
+        "tests/test_memory_reranker.py::test_cross_encoder_backend_preload_loads_model"
+      ],
+      "not_completed_nodeids": [],
+      "external_inference_requests": 0,
+      "external_tokens": 0,
+      "external_cost": 0,
+      "fake_model_calls": null,
+      "label": "blockers-initial-integration",
+      "group": "offline-integration",
+      "archive": "blockers-initial-integration.tar.gz",
+      "sha256": "cf46b42aba36247f7b958cfb46c4f5d60e8b26f5e4175007581eee51763a1f5a",
+      "launch": {
+        "duration_seconds": 39.01530869900307,
+        "exit_code": 1,
+        "output_dir": "/tmp/breamon-stage5-ty1ursk4",
+        "progress_exists": true,
+        "result_exists": true,
+        "source_unchanged_during_run": true,
+        "timed_out": false
+      },
+      "source_head": "3593719ddfb9ecc3a7a1f5ebf312d6766ca14ec3",
+      "source_stable": true,
+      "evidence_archive": "blockers-initial-integration.tar.gz"
+    },
+    {
+      "complete": false,
+      "collected_case_count": 13,
+      "selected_case_count": 13,
+      "collection_error_count": 0,
+      "counts": {
+        "errored": 6,
+        "failed": 0,
+        "passed": 1,
+        "skipped": 0,
+        "xfailed": 0,
+        "xpassed": 0
+      },
+      "duration_seconds": 216.0703032599995,
+      "deselected": [],
+      "not_completed_nodeids": [
+        "tests/e2e/test_product_behavior_browser.py::test_pb_life_009_fork_creates_and_opens_independent_chat",
+        "tests/e2e/test_product_behavior_browser.py::test_product_shell_visual_cleanup_and_toolbar_state",
+        "tests/e2e/test_product_behavior_browser.py::test_pb_doc_002_indexing_finishes_before_answer",
+        "tests/e2e/test_product_behavior_browser.py::test_answer_inspector_is_read_only_message_local_and_survives_reload",
+        "tests/e2e/test_product_behavior_browser.py::test_answer_inspector_reports_forced_native_fallback",
+        "tests/e2e/test_product_behavior_browser.py::test_answer_inspector_shows_cross_chat_provenance"
+      ],
+      "external_inference_requests": 0,
+      "external_tokens": 0,
+      "external_cost": 0,
+      "fake_model_calls": null,
+      "label": "blockers-initial-browser-partial",
+      "group": "browser",
+      "archive": "blockers-initial-browser-partial.tar.gz",
+      "sha256": "126770e5b84b22ed1fa2373a790e7a3c44c1383060f2d419e027e801204ec2b5",
+      "launch": {
+        "duration_seconds": 265.019413927992,
+        "exit_code": 143,
+        "output_dir": "/tmp/breamon-stage5-tv8j2jv5",
+        "progress_exists": true,
+        "result_exists": false,
+        "source_unchanged_during_run": true,
+        "timed_out": false
+      },
+      "source_head": "3593719ddfb9ecc3a7a1f5ebf312d6766ca14ec3",
+      "source_stable": true,
+      "evidence_archive": "blockers-initial-browser-partial.tar.gz"
+    }
+  ],
+  "first_affected": [
+    {
+      "complete": true,
+      "collected_case_count": 509,
+      "selected_case_count": 508,
+      "collection_error_count": 0,
+      "counts": {
+        "errored": 0,
+        "failed": 3,
+        "passed": 505,
+        "skipped": 0,
+        "xfailed": 0,
+        "xpassed": 0
+      },
+      "duration_seconds": 34.93292017299973,
+      "deselected": [
+        "tests/test_memory_reranker.py::test_cross_encoder_backend_preload_loads_model"
+      ],
+      "not_completed_nodeids": [],
+      "external_inference_requests": 0,
+      "external_tokens": 0,
+      "external_cost": 0,
+      "fake_model_calls": null,
+      "label": "blockers-affected-integration",
+      "group": "offline-integration",
+      "archive": "blockers-affected-integration.tar.gz",
+      "sha256": "46ae9d35b424040780d2e57d9e865f0a2338ccae46f69f326d37952ba9453dee",
+      "launch": {
+        "duration_seconds": 37.45149138499983,
+        "exit_code": 1,
+        "output_dir": "/tmp/breamon-stage5-ddlb3elo",
+        "progress_exists": true,
+        "result_exists": true,
+        "source_unchanged_during_run": true,
+        "timed_out": false
+      },
+      "source_head": "785ccd9875420efb533befabfff547a8ae84a421",
+      "source_stable": true,
+      "evidence_archive": "blockers-affected-integration.tar.gz"
+    },
+    {
+      "complete": true,
+      "collected_case_count": 13,
+      "selected_case_count": 13,
+      "collection_error_count": 0,
+      "counts": {
+        "errored": 0,
+        "failed": 4,
+        "passed": 9,
+        "skipped": 0,
+        "xfailed": 0,
+        "xpassed": 0
+      },
+      "duration_seconds": 82.65607076900778,
+      "deselected": [],
+      "not_completed_nodeids": [],
+      "external_inference_requests": 0,
+      "external_tokens": 0,
+      "external_cost": 0,
+      "fake_model_calls": null,
+      "label": "blockers-affected-browser",
+      "group": "browser",
+      "archive": "blockers-affected-browser.tar.gz",
+      "sha256": "9c4cc944dd3f51ea2edc33415b3ffec37bd55f3973621c8a8b56da20abd1c9d3",
+      "launch": {
+        "duration_seconds": 85.60042843699921,
+        "exit_code": 1,
+        "output_dir": "/tmp/breamon-stage5-0bz2cvz4",
+        "progress_exists": true,
+        "result_exists": true,
+        "source_unchanged_during_run": true,
+        "timed_out": false
+      },
+      "source_head": "785ccd9875420efb533befabfff547a8ae84a421",
+      "source_stable": true,
+      "evidence_archive": "blockers-affected-browser.tar.gz"
+    }
+  ],
+  "final": [
+    {
+      "complete": true,
+      "collected_case_count": 127,
+      "selected_case_count": 127,
+      "collection_error_count": 0,
+      "counts": {
+        "errored": 0,
+        "failed": 0,
+        "passed": 127,
+        "skipped": 0,
+        "xfailed": 0,
+        "xpassed": 0
+      },
+      "duration_seconds": 16.389141662002658,
+      "deselected": [],
+      "not_completed_nodeids": [],
+      "external_inference_requests": 0,
+      "external_tokens": 0,
+      "external_cost": 0,
+      "fake_model_calls": null,
+      "label": "blockers-final-unit",
+      "group": "offline-unit",
+      "archive": "blockers-final-unit.tar.gz",
+      "sha256": "77eaf5fbd27baf1eda70a17781bd029450d05cef0f7ee55692b077f40ceb2608",
+      "launch": {
+        "duration_seconds": 19.231715824003913,
+        "exit_code": 0,
+        "output_dir": "/tmp/breamon-stage5-qv7wchvn",
+        "progress_exists": true,
+        "result_exists": true,
+        "source_unchanged_during_run": true,
+        "timed_out": false
+      },
+      "source_head": "785ccd9875420efb533befabfff547a8ae84a421",
+      "source_stable": true,
+      "evidence_archive": "blockers-final-unit.tar.gz"
+    },
+    {
+      "complete": true,
+      "collected_case_count": 509,
+      "selected_case_count": 508,
+      "collection_error_count": 0,
+      "counts": {
+        "errored": 0,
+        "failed": 0,
+        "passed": 508,
+        "skipped": 0,
+        "xfailed": 0,
+        "xpassed": 0
+      },
+      "duration_seconds": 36.19809876898944,
+      "deselected": [
+        "tests/test_memory_reranker.py::test_cross_encoder_backend_preload_loads_model"
+      ],
+      "not_completed_nodeids": [],
+      "external_inference_requests": 0,
+      "external_tokens": 0,
+      "external_cost": 0,
+      "fake_model_calls": null,
+      "label": "blockers-final-integration",
+      "group": "offline-integration",
+      "archive": "blockers-final-integration.tar.gz",
+      "sha256": "3780a9fc82bcbd675dc2f6927fdaac7b4c208e27e83169eec731bacdcdfec0b0",
+      "launch": {
+        "duration_seconds": 38.835197084001265,
+        "exit_code": 0,
+        "output_dir": "/tmp/breamon-stage5-qq97ih6l",
+        "progress_exists": true,
+        "result_exists": true,
+        "source_unchanged_during_run": true,
+        "timed_out": false
+      },
+      "source_head": "785ccd9875420efb533befabfff547a8ae84a421",
+      "source_stable": true,
+      "evidence_archive": "blockers-final-integration.tar.gz"
+    },
+    {
+      "complete": true,
+      "collected_case_count": 20,
+      "selected_case_count": 20,
+      "collection_error_count": 0,
+      "counts": {
+        "errored": 0,
+        "failed": 0,
+        "passed": 20,
+        "skipped": 0,
+        "xfailed": 0,
+        "xpassed": 0
+      },
+      "duration_seconds": 6.699632546995417,
+      "deselected": [],
+      "not_completed_nodeids": [],
+      "external_inference_requests": 0,
+      "external_tokens": 0,
+      "external_cost": 0,
+      "fake_model_calls": null,
+      "label": "blockers-final-app",
+      "group": "app-composition",
+      "archive": "blockers-final-app.tar.gz",
+      "sha256": "d9e83e5aef4bb25f49814831faf91ac767bae567a455dc96e9f57c8166f26d0f",
+      "launch": {
+        "duration_seconds": 8.071385994000593,
+        "exit_code": 0,
+        "output_dir": "/tmp/breamon-stage5-5_tuhref",
+        "progress_exists": true,
+        "result_exists": true,
+        "source_unchanged_during_run": true,
+        "timed_out": false
+      },
+      "source_head": "785ccd9875420efb533befabfff547a8ae84a421",
+      "source_stable": true,
+      "evidence_archive": "blockers-final-app.tar.gz"
+    },
+    {
+      "complete": true,
+      "collected_case_count": 21,
+      "selected_case_count": 21,
+      "collection_error_count": 0,
+      "counts": {
+        "errored": 0,
+        "failed": 0,
+        "passed": 21,
+        "skipped": 0,
+        "xfailed": 0,
+        "xpassed": 0
+      },
+      "duration_seconds": 2.0418791660049465,
+      "deselected": [],
+      "not_completed_nodeids": [],
+      "external_inference_requests": 0,
+      "external_tokens": 0,
+      "external_cost": 0,
+      "fake_model_calls": null,
+      "label": "blockers-final-wrappers",
+      "group": "subprocess-wrappers",
+      "archive": "blockers-final-wrappers.tar.gz",
+      "sha256": "267f48e09492718f2f372e8e95224bf9ff9ba4b020498e76a4ad4d48105ea789",
+      "launch": {
+        "duration_seconds": 3.0045782740053255,
+        "exit_code": 0,
+        "output_dir": "/tmp/breamon-stage5-4vrwty20",
+        "progress_exists": true,
+        "result_exists": true,
+        "source_unchanged_during_run": true,
+        "timed_out": false
+      },
+      "source_head": "785ccd9875420efb533befabfff547a8ae84a421",
+      "source_stable": true,
+      "evidence_archive": "blockers-final-wrappers.tar.gz"
+    },
+    {
+      "complete": true,
+      "collected_case_count": 13,
+      "selected_case_count": 13,
+      "collection_error_count": 0,
+      "counts": {
+        "errored": 0,
+        "failed": 0,
+        "passed": 13,
+        "skipped": 0,
+        "xfailed": 0,
+        "xpassed": 0
+      },
+      "duration_seconds": 86.16053881400148,
+      "deselected": [],
+      "not_completed_nodeids": [],
+      "external_inference_requests": 0,
+      "external_tokens": 0,
+      "external_cost": 0,
+      "fake_model_calls": null,
+      "label": "blockers-final-browser",
+      "group": "browser",
+      "archive": "blockers-final-browser.tar.gz",
+      "sha256": "0eec3b551e9cf71870c2d54c71a8d74221fdc88f7eda13f93b137591bcfb01eb",
+      "launch": {
+        "duration_seconds": 89.88195946499764,
+        "exit_code": 0,
+        "output_dir": "/tmp/breamon-stage5-r7w6bdbg",
+        "progress_exists": true,
+        "result_exists": true,
+        "source_unchanged_during_run": true,
+        "timed_out": false
+      },
+      "source_head": "785ccd9875420efb533befabfff547a8ae84a421",
+      "source_stable": true,
+      "evidence_archive": "blockers-final-browser.tar.gz"
+    }
+  ],
+  "product_oracles": {
+    "unique_nonbrowser_rows": 42,
+    "passed": 39,
+    "failed": 3,
+    "remaining_ids": [
+      "PB-PERSIST-005",
+      "PB-FAIL-010",
+      "PB-FAIL-003"
+    ],
+    "note": "3 pytest report/harness passes are not 42 product passes. Synthetic report-browser rows not native journeys."
+  },
+  "excluded": "One actual cross-encoder preload case; Node/React browser, live/expensive/manual groups remain in exclusions register; expanded deferred counts unknown.",
+  "react_build": {
+    "archive": "blockers-react-build.tar.gz",
+    "sha256": "53aa8c973274a23adcf0d1bef40129dde1d543cae1db9bad6a5a9dcfb2548719",
+    "exit_code": 0,
+    "count_as_test_cases": false,
+    "note": "Copied tracked frontend and read-only installed dependencies; private mount/network namespace; no dependency install. Build is not React browser verification."
+  }
+}
