@@ -80,3 +80,25 @@ def test_existing_database_migrates_active_column_idempotently(tmp_path: Path) -
     assert row is not None
     assert row["active"] == 1
     assert [chat["id"] for chat in database.list_active_chats()] == ["legacy-chat"]
+
+
+def test_message_processing_flags_remain_independent_and_exclude_recent_window(tmp_path: Path) -> None:
+    database = Database(tmp_path / "chatbot.db")
+    database.create_chat("chat")
+    ids = [database.save_message("chat", "user", str(i)) for i in range(5)]
+    database.mark_messages_summarized([ids[0]])
+    database.mark_messages_gist_processed([ids[1]])
+    database.mark_messages_summarized([])
+    database.mark_messages_gist_processed([])
+
+    summary = database.old_unsummarized_messages("chat", raw_message_limit=2, batch_size=10)
+    gist = database.old_ungisted_messages("chat", raw_message_limit=2, batch_size=10)
+    assert [row.id for row in summary] == [ids[1], ids[2]]
+    assert [row.id for row in gist] == [ids[0], ids[2]]
+    assert [row.id for row in database.old_unsummarized_messages("chat", 2, 1)] == [ids[1]]
+    assert [row.id for row in database.old_ungisted_messages("chat", 2, 1)] == [ids[0]]
+    assert not database.is_chat_active("missing")
+    database.mark_chat_active("missing")
+    database.mark_chat_inactive("missing")
+    assert [row["id"] for row in database.list_active_chats()] == ["chat"]
+    assert database.list_inactive_chats() == []

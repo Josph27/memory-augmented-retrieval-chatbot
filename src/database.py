@@ -7,7 +7,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Any, Iterator, Literal
 
 
 def utc_now() -> str:
@@ -494,19 +494,15 @@ class Database:
 
     def mark_chat_active(self, chat_id: str) -> None:
         """Mark a stored chat as active."""
-        with self.connect() as connection:
-            connection.execute(
-                "UPDATE chats SET active = 1 WHERE id = ?",
-                (chat_id,),
-            )
+        self._set_chat_active(chat_id, active=1)
 
     def mark_chat_inactive(self, chat_id: str) -> None:
         """Mark a stored chat as inactive."""
+        self._set_chat_active(chat_id, active=0)
+
+    def _set_chat_active(self, chat_id: str, *, active: Literal[0, 1]) -> None:
         with self.connect() as connection:
-            connection.execute(
-                "UPDATE chats SET active = 0 WHERE id = ?",
-                (chat_id,),
-            )
+            connection.execute("UPDATE chats SET active = ? WHERE id = ?", (active, chat_id))
 
     def is_chat_active(self, chat_id: str) -> bool:
         """Return whether an existing chat currently accepts new turns."""
@@ -519,27 +515,22 @@ class Database:
 
     def list_active_chats(self) -> list[dict]:
         """Return active chats ordered by most recent update."""
-        with self.connect() as connection:
-            rows = connection.execute(
-                """
-                SELECT id, title, created_at, updated_at, model_name, active
-                FROM chats
-                WHERE active = 1
-                ORDER BY updated_at DESC, created_at DESC
-                """
-            ).fetchall()
-        return [dict(row) for row in rows]
+        return self._list_chats_by_activity(active=1)
 
     def list_inactive_chats(self) -> list[dict]:
         """Return inactive chats ordered by most recent update."""
+        return self._list_chats_by_activity(active=0)
+
+    def _list_chats_by_activity(self, *, active: Literal[0, 1]) -> list[dict]:
         with self.connect() as connection:
             rows = connection.execute(
                 """
                 SELECT id, title, created_at, updated_at, model_name, active
                 FROM chats
-                WHERE active = 0
+                WHERE active = ?
                 ORDER BY updated_at DESC, created_at DESC
-                """
+                """,
+                (active,),
             ).fetchall()
         return [dict(row) for row in rows]
 
@@ -1208,50 +1199,31 @@ class Database:
         return [self._message_from_row(row) for row in reversed(rows)]
 
     def old_unsummarized_messages(
-        self,
-        chat_id: str,
-        raw_message_limit: int,
-        batch_size: int,
+        self, chat_id: str, raw_message_limit: int, batch_size: int,
     ) -> list[StoredMessage]:
         """Load unsummarized messages older than the raw recent-message window."""
-        with self.connect() as connection:
-            rows = connection.execute(
-                """
-                SELECT
-                    id, chat_id, role, content, created_at, summarized, gist_processed
-                FROM messages
-                WHERE chat_id = ?
-                  AND summarized = 0
-                  AND id NOT IN (
-                      SELECT id
-                      FROM messages
-                      WHERE chat_id = ?
-                      ORDER BY created_at DESC, id DESC
-                      LIMIT ?
-                  )
-                ORDER BY created_at ASC, id ASC
-                LIMIT ?
-                """,
-                (chat_id, chat_id, raw_message_limit, batch_size),
-            ).fetchall()
-
-        return [self._message_from_row(row) for row in rows]
+        return self._old_unprocessed_messages(chat_id, raw_message_limit, batch_size, "summary")
 
     def old_ungisted_messages(
-        self,
-        chat_id: str,
-        raw_message_limit: int,
-        batch_size: int,
+        self, chat_id: str, raw_message_limit: int, batch_size: int,
     ) -> list[StoredMessage]:
         """Load gist-unprocessed messages outside the recent raw window."""
+        return self._old_unprocessed_messages(chat_id, raw_message_limit, batch_size, "gist")
+
+    def _old_unprocessed_messages(
+        self, chat_id: str, raw_message_limit: int, batch_size: int,
+        kind: Literal["summary", "gist"],
+    ) -> list[StoredMessage]:
+        # Only these fixed SQL identifiers are permitted; all values stay bound.
+        column = {"summary": "summarized", "gist": "gist_processed"}[kind]
         with self.connect() as connection:
             rows = connection.execute(
-                """
+                f"""
                 SELECT
                     id, chat_id, role, content, created_at, summarized, gist_processed
                 FROM messages
                 WHERE chat_id = ?
-                  AND gist_processed = 0
+                  AND {column} = 0
                   AND id NOT IN (
                       SELECT id
                       FROM messages
@@ -1264,7 +1236,6 @@ class Database:
                 """,
                 (chat_id, chat_id, raw_message_limit, batch_size),
             ).fetchall()
-
         return [self._message_from_row(row) for row in rows]
 
     def old_messages(
@@ -1323,25 +1294,22 @@ class Database:
 
     def mark_messages_summarized(self, message_ids: list[int]) -> None:
         """Mark messages as processed into the derived memory cache."""
-        if not message_ids:
-            return
-
-        placeholders = ",".join("?" for _ in message_ids)
-        with self.connect() as connection:
-            connection.execute(
-                f"UPDATE messages SET summarized = 1 WHERE id IN ({placeholders})",
-                message_ids,
-            )
+        self._mark_messages_processed(message_ids, "summary")
 
     def mark_messages_gist_processed(self, message_ids: list[int]) -> None:
         """Mark messages as included in an episodic gist."""
+        self._mark_messages_processed(message_ids, "gist")
+
+    def _mark_messages_processed(
+        self, message_ids: list[int], kind: Literal["summary", "gist"],
+    ) -> None:
         if not message_ids:
             return
-
+        column = {"summary": "summarized", "gist": "gist_processed"}[kind]
         placeholders = ",".join("?" for _ in message_ids)
         with self.connect() as connection:
             connection.execute(
-                f"UPDATE messages SET gist_processed = 1 WHERE id IN ({placeholders})",
+                f"UPDATE messages SET {column} = 1 WHERE id IN ({placeholders})",
                 message_ids,
             )
 
