@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from src import settings
+from src.provider_settings import load_provider_settings
 from src.context.model_profile import (
     application_context_cap_from_env,
     endpoint_context_limit_from_env,
@@ -104,6 +105,7 @@ class AppConfig:
 
     # ── debug ──
     retrieval_log_enabled: bool
+    provider: str = "custom"
 
     @classmethod
     def load(cls) -> "AppConfig":
@@ -113,12 +115,14 @@ class AppConfig:
         operational knobs (MODEL_NAME, DATABASE_PATH).  Everything else
         reads from src/settings.py — edit that file to change defaults.
         """
+        provider = load_provider_settings()
         endpoint_context_window, endpoint_limit_source = endpoint_context_limit_from_env()
         return cls(
             # ── secrets ──
-            openai_api_key=settings.OPENAI_API_KEY,
-            openai_base_url=settings.OPENAI_BASE_URL,
-            model_name=settings.MODEL_NAME,
+            openai_api_key=provider.api_key,
+            openai_base_url=provider.base_url,
+            model_name=provider.model_name,
+            provider=provider.provider,
             # ── context limits ──
             endpoint_context_window=endpoint_context_window,
             endpoint_context_limit_source=endpoint_limit_source,

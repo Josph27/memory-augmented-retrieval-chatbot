@@ -10,8 +10,8 @@ from pydantic import BaseModel, Field
 from src.connection_guard import (
     ConnectionGuard,
     InferenceServerUnreachable,
-    connection_guard_from_env,
 )
+from src.provider_settings import load_provider_settings, provider_client_options
 from src.database import StoredMessage
 from src.memory.long_term_store import (
     LongTermMemoryRecord,
@@ -260,14 +260,17 @@ class LangMemBackendConfig:
     openai_api_key: str
     openai_base_url: str
     model_name: str
+    provider: str = "custom"
 
     @classmethod
     def from_env(cls, model_name: str | None = None) -> "LangMemBackendConfig":
-        """Load OpenAI-compatible model settings from the existing environment."""
+        """Resolve the same inference provider used for chat."""
+        provider = load_provider_settings()
         return cls(
-            openai_api_key=os.getenv("OPENAI_API_KEY", "dummy"),
-            openai_base_url=os.getenv("OPENAI_BASE_URL", "http://localhost:11434/v1"),
-            model_name=model_name or os.getenv("MODEL_NAME", "google/gemma-4-31B-it"),
+            openai_api_key=provider.api_key,
+            openai_base_url=provider.base_url,
+            model_name=model_name or provider.model_name,
+            provider=provider.provider,
         )
 
 
@@ -285,7 +288,7 @@ class LangMemStructuredMemoryState:
         self._manager = manager
         self._config = config or LangMemBackendConfig.from_env()
         self._long_term_store = long_term_store
-        self._guard = connection_guard or connection_guard_from_env()
+        self._guard = connection_guard or ConnectionGuard(self._config.openai_base_url)
         self.last_saved_records: list[LongTermMemoryWrite] = []
         self.last_drops: list[dict[str, Any]] = []
 
@@ -435,6 +438,7 @@ def create_real_langmem_manager(config: LangMemBackendConfig) -> LangMemManager:
             "LangMem structured memory requires langmem and langchain-openai."
         ) from exc
 
+    options = provider_client_options(config.provider, config.openai_api_key)
     _langmem_timeout = float(os.environ.get("MODEL_REQUEST_TIMEOUT", "35"))
     model = ChatOpenAI(
         api_key=config.openai_api_key,
@@ -444,6 +448,7 @@ def create_real_langmem_manager(config: LangMemBackendConfig) -> LangMemManager:
         request_timeout=_langmem_timeout,
         max_retries=0,
         stream_chunk_timeout=_langmem_timeout,
+        **options,
     )
     return create_memory_manager(
         model,

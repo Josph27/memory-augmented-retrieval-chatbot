@@ -9,8 +9,9 @@ from src.config import AppConfig
 from src.connection_guard import (
     ConnectionGuard,
     InferenceServerUnreachable,
-    connection_guard_from_env,
 )
+
+from src.provider_settings import provider_client_options
 
 _M_REQUEST_TIMEOUT = float(os.environ.get("MODEL_REQUEST_TIMEOUT", "35"))
 
@@ -29,6 +30,7 @@ class ModelWrapper:
         *,
         connection_guard: ConnectionGuard | None = None,
     ) -> None:
+        self._request_options = provider_client_options(config.provider, config.openai_api_key)
         self.model_name = model_name or config.model_name
         self._timeout = _M_REQUEST_TIMEOUT
         self._guard = connection_guard or ConnectionGuard(
@@ -71,6 +73,7 @@ class ModelWrapper:
                     write=self._timeout,
                     pool=self._timeout,
                 ),
+                **self._request_options,
                 **kwargs,
             )
         except (httpx.ConnectError, httpx.TimeoutException) as exc:

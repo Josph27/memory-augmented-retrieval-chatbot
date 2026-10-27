@@ -811,6 +811,8 @@ def selected_model_name() -> str:
 
 def model_name_from_thread(thread: dict) -> str:
     """Resolve the persisted model for a resumed thread."""
+    if config.provider != "custom":
+        return config.model_name
     metadata = thread.get("metadata") or {}
     if isinstance(metadata, dict):
         value = metadata.get("model_name")
@@ -822,6 +824,8 @@ def model_name_from_thread(thread: dict) -> str:
 
 def model_name_for_chat(chat_id: str) -> str:
     """Load a chat's model from SQLite, with a default for older chats."""
+    if config.provider != "custom":
+        return config.model_name
     chat = database.get_chat(chat_id)
     if chat and chat.model_name:
         return chat.model_name
