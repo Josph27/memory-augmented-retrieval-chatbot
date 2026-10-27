@@ -5,6 +5,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+import pytest
+
+from src.connection_guard import InferenceServerUnreachable
+
 from src.database import Database
 from src.memory.langmem_structured import (
     LangMemStructuredMemoryState,
@@ -39,6 +43,44 @@ class FakeLangMemManager:
     def invoke(self, input: dict[str, Any]) -> list[Any]:
         self.calls.append(input)
         return self.output
+
+
+class RecordingGuard:
+    """Per-updater synthetic connectivity dependency; never patches the production class."""
+
+    def __init__(self, *, reject: bool = False) -> None:
+        self.reject = reject
+        self.calls = 0
+
+    def check(self) -> None:
+        self.calls += 1
+        if self.reject:
+            raise InferenceServerUnreachable(
+                "http://offline.invalid/v1", "synthetic guard rejection"
+            )
+
+
+class RecordingMemoryState(LangMemStructuredMemoryState):
+    def __init__(self, *, manager, connection_guard: RecordingGuard | None = None) -> None:
+        self.guard = connection_guard or RecordingGuard()
+        super().__init__(manager=manager, connection_guard=self.guard)
+        self.results: list[MemoryUpdateResult] = []
+
+    def update(self, existing_memory, messages):
+        result = super().update(existing_memory, messages)
+        self.results.append(result)
+        return result
+
+
+def assert_manager_extraction(memory: ShortTermMemory, *, accepted: bool) -> RecordingMemoryState:
+    updater = memory.structured_memory
+    assert isinstance(updater, RecordingMemoryState)
+    assert updater.guard.calls == 1
+    assert len(updater.manager.calls) == 1
+    assert updater.manager.calls[0]["messages"]
+    assert len(updater.results) == 1
+    assert updater.results[0].accepted is accepted
+    return updater
 
 
 def test_langmem_outputs_map_to_current_memory_record_shape() -> None:
@@ -155,12 +197,14 @@ def test_short_term_memory_uses_langmem_backend_and_stores_memory(
         raw_message_limit=1,
         memory_update_batch_size=3,
         memory_update_max_messages=4,
-        structured_memory_updater=LangMemStructuredMemoryState(manager=manager),
+        structured_memory_updater=RecordingMemoryState(manager=manager),
     )
 
     updated = memory.update_memory_if_needed("chat")
 
     assert updated is True
+    updater = assert_manager_extraction(memory, accepted=True)
+    assert updater.results[0].rejection_reason is None
     stored = json.loads(db.chat_memory_state("chat") or "{}")
     records = stored["memories"]
     assert {record["category"] for record in records} == {"user_preferences", "past_events"}
@@ -179,7 +223,9 @@ def test_short_term_memory_uses_langmem_backend_and_stores_memory(
     }
 
 
-def test_empty_langmem_output_does_not_mark_messages_summarized(tmp_path: Path) -> None:
+def test_empty_langmem_output_does_not_mark_messages_summarized(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
     db = Database(tmp_path / "chatbot.db")
     db.create_chat("chat")
     db.save_message("chat", "user", "My name is Alex.")
@@ -191,7 +237,7 @@ def test_empty_langmem_output_does_not_mark_messages_summarized(tmp_path: Path) 
         model=FakeModel(),
         raw_message_limit=1,
         memory_update_batch_size=2,
-        structured_memory_updater=LangMemStructuredMemoryState(
+        structured_memory_updater=RecordingMemoryState(
             manager=FakeLangMemManager([]),
         ),
     )
@@ -199,6 +245,10 @@ def test_empty_langmem_output_does_not_mark_messages_summarized(tmp_path: Path) 
     updated = memory.update_memory_if_needed("chat")
 
     assert updated is False
+    updater = assert_manager_extraction(memory, accepted=False)
+    assert updater.results[0].rejection_reason == "langmem_no_valid_memories"
+    assert "reason=langmem_no_valid_memories" in caplog.text
+    assert memory.last_processed_message_ids == []
     assert db.chat_memory_state("chat") is not None
     assert all(not message.summarized for message in db.messages_for_chat("chat"))
 
@@ -233,7 +283,7 @@ def test_langmem_update_preserves_existing_memory_records(tmp_path: Path) -> Non
         model=FakeModel(),
         raw_message_limit=1,
         memory_update_batch_size=2,
-        structured_memory_updater=LangMemStructuredMemoryState(
+        structured_memory_updater=RecordingMemoryState(
             manager=FakeLangMemManager(
                 [
                     {
@@ -247,14 +297,17 @@ def test_langmem_update_preserves_existing_memory_records(tmp_path: Path) -> Non
     )
 
     assert memory.update_memory_if_needed("chat") is True
+    assert_manager_extraction(memory, accepted=True)
     records = json.loads(db.chat_memory_state("chat") or "{}")["memories"]
     assert {record["id"] for record in records} == {
         "user_facts:name",
-        "preferences:response_style",
+        "user_preferences:response_style",
     }
 
 
-def test_processed_messages_marked_only_after_successful_storage(tmp_path: Path) -> None:
+def test_processed_messages_marked_only_after_successful_storage(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     db = Database(tmp_path / "chatbot.db")
     db.create_chat("chat")
     first_id = db.save_message("chat", "user", "The project uses Chainlit.")
@@ -266,7 +319,7 @@ def test_processed_messages_marked_only_after_successful_storage(tmp_path: Path)
         model=FakeModel(),
         raw_message_limit=1,
         memory_update_batch_size=2,
-        structured_memory_updater=LangMemStructuredMemoryState(
+        structured_memory_updater=RecordingMemoryState(
             manager=FakeLangMemManager(
                 [
                     {
@@ -280,9 +333,22 @@ def test_processed_messages_marked_only_after_successful_storage(tmp_path: Path)
         ),
     )
 
+    mark_messages = db.mark_messages_summarized
+    observed_storage_before_mark: list[bool] = []
+
+    def verify_storage_then_mark(message_ids):
+        stored = json.loads(db.chat_memory_state("chat") or "{}")
+        assert {record["id"] for record in stored["memories"]} == {"user_facts:framework"}
+        assert all(not message.summarized for message in db.messages_for_chat("chat"))
+        observed_storage_before_mark.append(True)
+        return mark_messages(message_ids)
+
+    monkeypatch.setattr(db, "mark_messages_summarized", verify_storage_then_mark)
     assert memory.update_memory_if_needed("chat") is True
+    assert_manager_extraction(memory, accepted=True)
     messages = db.messages_for_chat("chat")
     assert [message.summarized for message in messages] == [True, True, False]
+    assert observed_storage_before_mark == [True]
 
 
 def test_failed_langmem_update_does_not_mark_messages(tmp_path: Path) -> None:
@@ -311,3 +377,33 @@ def test_failed_langmem_update_does_not_mark_messages(tmp_path: Path) -> None:
 
     assert memory.update_memory_if_needed("chat") is False
     assert all(not message.summarized for message in db.messages_for_chat("chat"))
+
+
+def test_guard_rejection_does_not_invoke_manager_or_consume_pending_messages(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    db = Database(tmp_path / "chatbot.db")
+    db.create_chat("chat")
+    db.save_message("chat", "user", "My name is Alex.")
+    db.save_message("chat", "assistant", "Noted.")
+    db.save_message("chat", "user", "latest")
+    manager = FakeLangMemManager([])
+    updater = RecordingMemoryState(manager=manager, connection_guard=RecordingGuard(reject=True))
+    memory = ShortTermMemory(
+        database=db,
+        model=FakeModel(),
+        raw_message_limit=1,
+        memory_update_batch_size=2,
+        structured_memory_updater=updater,
+    )
+
+    assert memory.update_memory_if_needed("chat") is False
+    assert updater.guard.calls == 1
+    assert manager.calls == []
+    assert len(updater.results) == 1
+    assert updater.results[0].accepted is False
+    assert updater.results[0].rejection_reason.startswith("langmem_update_failed:")
+    assert "synthetic guard rejection" in updater.results[0].rejection_reason
+    assert "synthetic guard rejection" in caplog.text
+    assert all(not message.summarized for message in db.messages_for_chat("chat"))
+    assert memory.last_processed_message_ids == []

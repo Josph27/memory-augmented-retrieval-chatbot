@@ -18,6 +18,7 @@ import tempfile
 import time
 
 DEFAULT_VENV = "/home/josph/UNI/TUM/PRAK-AGENTS/repo/.venv"
+SAFE_TRACKED_ASSETS = {".chainlit/config.toml"}
 PRIVATE_NAMES = {".git", ".env", "local_settings.py"}
 RUNTIME_ROOTS = {
     "data",
@@ -55,9 +56,10 @@ def source_snapshot(repo):
     files, excluded = {}, []
     for name in paths:
         path = Path(name)
-        if any(
-            part in PRIVATE_NAMES or part in RUNTIME_ROOTS for part in path.parts
-        ) or path.suffix in {".db", ".sqlite", ".sqlite3"}:
+        if name not in SAFE_TRACKED_ASSETS and (
+            any(part in PRIVATE_NAMES or part in RUNTIME_ROOTS for part in path.parts)
+            or path.suffix in {".db", ".sqlite", ".sqlite3"}
+        ):
             excluded.append(name)
             continue
         absolute = repo / path
@@ -134,6 +136,20 @@ def launch(args):
     (output / "group").write_text(f"stage5:x:{os.getgid()}:\n")
     snapshot = source_snapshot(repo)
     write_json(output / "source-before.json", snapshot)
+    tracked_assets = {}
+    for name in sorted(SAFE_TRACKED_ASSETS):
+        git(repo, "ls-files", "--error-unmatch", "--", name)
+        source = repo / name
+        if source.is_symlink() or not source.is_file():
+            raise SystemExit(f"Reviewed tracked configuration must be a regular file: {name}")
+        destination = output / "tracked-inputs" / name
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_bytes(source.read_bytes())
+        digest = hashlib.sha256(destination.read_bytes()).hexdigest()
+        if digest != snapshot["working_files"][name]["sha256"]:
+            raise SystemExit("Tracked configuration changed while snapshotting")
+        tracked_assets[name] = {"sha256": digest}
+    write_json(output / "tracked-inputs.json", tracked_assets)
     host_ns = {name: os.readlink(f"/proc/self/ns/{name}") for name in ("net", "mnt")}
     write_json(
         output / "request.json",
@@ -194,6 +210,8 @@ def launch(args):
             command += ["--tmpfs", f"/repo/{name}"]
         elif path.exists():
             command += ["--ro-bind", "/dev/null", f"/repo/{name}"]
+    for name in sorted(tracked_assets):
+        command += ["--ro-bind", str(output / "tracked-inputs" / name), "/repo/" + name]
     if browser:
         chrome = args.chrome_runtime.resolve()
         if not (chrome / "chrome").is_file():
@@ -293,6 +311,11 @@ def inner(args):
             assert stat.S_ISCHR(path.stat().st_mode) and path.stat().st_rdev == os.makedev(1, 3)
     assert not any((repo / "data").glob("**/*"))
     canaries["private_settings_and_runtime_masked"] = True
+    tracked_assets = json.loads(Path("/work/tracked-inputs.json").read_text())
+    assert sorted(p.name for p in Path("/repo/.chainlit").iterdir()) == ["config.toml"]
+    for name, identity in tracked_assets.items():
+        assert hashlib.sha256((repo / name).read_bytes()).hexdigest() == identity["sha256"]
+    canaries["only_reviewed_tracked_chainlit_configuration_exposed"] = True
     try:
         (repo / "STAGE5_READONLY_CANARY").write_text("must fail")
     except OSError as exc:
@@ -513,6 +536,7 @@ def inner(args):
             "executable": sys.executable,
             "dependencies": dependencies,
             "configuration": request["configuration"],
+            "tracked_configuration_inputs": tracked_assets,
             "storage": {
                 "sqlite": "/work/default.db",
                 "document_chroma": "/work/chroma",

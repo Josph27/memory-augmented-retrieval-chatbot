@@ -2,7 +2,7 @@
 
 Updated2026-10-27. TASK-11 / approved revalidation points1–4 completed. Assessed source: `1cf4c553b12281fefb7daea5141e9cddfce6ca48`, branch `codex/audit-main`, based on main2f56d93. Later audit-only commits do not imply a changed product baseline; source hashes are in the coverage manifest.
 
-Objective: make the retained typed-memory chatbot understandable and reliably testable before further features. Stage4 existing-test assessment has now been revalidated against the corrected main-based implementation. The next stage is choosing a bounded protection batch using this evidence. No app/test repair, workflow/test removal, consolidation or restructuring batch is approved by the assessment.
+Objective: make the retained typed-memory chatbot understandable and reliably testable before further features. Stage4 existing-test assessment has now been revalidated against the corrected main-based implementation. Stage5 protection is now authorized by DEC012: reviewed isolation, initial offline baseline and bounded test repairs. Read [Stage5 evidence](stage5/execution.md) and [groups](stage5/groups.json) for current execution; the assessment itself did not authorize application changes, removals, consolidation or restructuring.
 
 ## Reading order
 

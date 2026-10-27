@@ -7,6 +7,8 @@ import pytest
 
 import src.agents.coordinator_agent as coordinator_module
 from src.agents.context_manager_agent import ContextManagerAgent
+from support.deterministic_services import local_document_retriever
+
 from src.chat_service import ChatService
 from src.database import Database
 from src.orchestration.demo_orchestration import (
@@ -40,8 +42,15 @@ def build_service(tmp_path: Path) -> tuple[Database, RecordingModel, ChatService
         model=model,  # type: ignore[arg-type]
         raw_message_limit=4,
         memory_update_batch_size=50,
+        document_indexer=local_document_retriever(database),
     )
     return database, model, service
+
+
+def assert_selected_request_evidence(messages: list[dict[str, str]]) -> None:
+    content = "\n".join(message["content"] for message in messages)
+    assert "SELECTED_ROUTER_a93d17" in content, "selected retrieval evidence missing from request"
+    assert "UNSELECTED_ROUTER_b81f04" not in content, "unselected evidence leaked into request"
 
 
 def database_snapshot(path: Path) -> dict[str, list[tuple]]:
@@ -86,9 +95,15 @@ def test_langgraph_demo_context_packet_is_used_for_model_answer(tmp_path: Path) 
     target_id = database.save_message(
         chat_id,
         "user",
-        "My exact router phrase is span proves exact content.",
+        "My exact router phrase is SELECTED_ROUTER_a93d17.",
     )
     database.save_message(chat_id, "assistant", "Recorded.")
+    # Keep selected evidence out of the legacy recent-message window.
+    for number in range(3):
+        database.save_message(chat_id, "user", f"Unrelated recent note {number}.")
+        database.save_message(chat_id, "assistant", "Acknowledged.")
+    other_chat = service.start_chat("unselected-chat")
+    distractor_id = database.save_message(other_chat, "user", "UNSELECTED_ROUTER_b81f04")
 
     result = service.handle_user_turn(
         chat_id,
@@ -107,6 +122,29 @@ def test_langgraph_demo_context_packet_is_used_for_model_answer(tmp_path: Path) 
         if candidate.source == "current_chat_span"
     )
     assert target_id in span.source_message_ids
+    assert distractor_id not in {
+        message_id
+        for candidate in result.trace.context_packet.candidates
+        for message_id in candidate.source_message_ids
+    }
+    assert result.trace.metadata["prompt_source"] == "context_packet"
+    assert result.trace.metadata["fallback_reason"] is None
+    assert "SELECTED_ROUTER_a93d17" in span.content
+    assert (
+        "UNSELECTED_ROUTER_b81f04" not in result.trace.context_packet.model_messages[-1]["content"]
+    )
+    assert_selected_request_evidence(model.calls[-1])
+    # The same assertions must reject missing evidence or leaked unselected content.
+    without_selected = [
+        {**message, "content": message["content"].replace("SELECTED_ROUTER_a93d17", "")}
+        for message in model.calls[-1]
+    ]
+    with pytest.raises(AssertionError, match="selected retrieval evidence"):
+        assert_selected_request_evidence(without_selected)
+    with pytest.raises(AssertionError, match="unselected evidence"):
+        assert_selected_request_evidence(
+            [*model.calls[-1], {"role": "system", "content": "UNSELECTED_ROUTER_b81f04"}]
+        )
     inspections = database.answer_inspections_for_chat(chat_id)
     assert len(inspections) == 1
     assert inspections[0].assistant_message_id == result.assistant_message_id
