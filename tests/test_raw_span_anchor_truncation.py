@@ -153,9 +153,7 @@ def test_context_packet_keeps_anchor_with_tight_budget(tmp_path: Path) -> None:
     ).context_packet
 
     raw = next(
-        candidate
-        for candidate in packet.candidates
-        if candidate.source == "current_chat_span"
+        candidate for candidate in packet.candidates if candidate.source == "current_chat_span"
     )
     assert "The exact budget phrase is KEEP_ANCHOR_EVIDENCE." in raw.content
     assert target_id in raw.source_message_ids
@@ -224,10 +222,7 @@ def test_overlong_anchor_prefers_dense_relation_and_preserves_answer_phrase(
         query="Which university was Ada Lovelace educated at?",
     )
 
-    assert (
-        "The univeristy where Ada Lovelace was educated is "
-        "Analytical Academy."
-    ) in content
+    assert ("The univeristy where Ada Lovelace was educated is Analytical Academy.") in content
     assert len(content) <= 420
 
 
@@ -261,10 +256,34 @@ def test_non_raw_candidate_content_is_unchanged() -> None:
     candidate = MemoryCandidate(
         source="structured_memory",
         content="Keep structured memory formatting unchanged.",
+        score=1.0,
         record_id="memory-1",
+        source_message_ids=[17],
+        metadata={"category": "user_preferences", "key": "style"},
     )
 
-    assert candidate.content == "Keep structured memory formatting unchanged."
+    original = candidate.content
+    query = "What response style should you use?"
+    result = ContextManagerAgent().build_context_packet(
+        system_prompt="Use memory without rewriting its evidence.",
+        latest_user_message={"role": "user", "content": query},
+        ranked_candidates=[candidate],
+        route_plan=RoutePlan(
+            query=query, sources=[SourcePlan(source="structured_memory", enabled=True)]
+        ),
+    )
+
+    assert len(result.context_packet.candidates) == 1
+    processed = result.context_packet.candidates[0]
+    assert processed.source == "structured_memory"
+    assert processed.record_id == "memory-1"
+    assert processed.content == original
+    assert processed.source_message_ids == [17]
+    assert processed.metadata["category"] == "user_preferences"
+    assert original in result.context_packet.structured_memory
+    assert original in result.context_packet.model_messages[0]["content"]
+    assert EARLIER_OMISSION_MARKER not in processed.content
+    assert LATER_OMISSION_MARKER not in processed.content
 
 
 def test_gist_expansion_preserves_multiple_tied_anchor_messages(

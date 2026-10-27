@@ -407,3 +407,54 @@ def test_guard_rejection_does_not_invoke_manager_or_consume_pending_messages(
     assert "synthetic guard rejection" in caplog.text
     assert all(not message.summarized for message in db.messages_for_chat("chat"))
     assert memory.last_processed_message_ids == []
+
+
+def test_failed_sql_snapshot_storage_leaves_extracted_messages_pending(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The real snapshot write seam fails after extraction but before message flags commit."""
+    db = Database(tmp_path / "chatbot.db")
+    db.create_chat("chat")
+    first_id = db.save_message("chat", "user", "I prefer concise answers.")
+    db.save_message("chat", "assistant", "Noted.")
+    db.save_message("chat", "user", "latest")
+    manager = FakeLangMemManager(
+        [
+            {
+                "category": "user_preferences",
+                "key": "style",
+                "value": "User prefers concise answers.",
+                "source_message_ids": [first_id],
+            }
+        ]
+    )
+    updater = RecordingMemoryState(manager=manager)
+    memory = ShortTermMemory(
+        database=db,
+        model=FakeModel(),
+        raw_message_limit=1,
+        memory_update_batch_size=2,
+        structured_memory_updater=updater,
+    )
+    real_write = db.upsert_chat_memory_state
+    writes = []
+
+    def fail_write(chat_id, state):
+        writes.append((chat_id, state))
+        raise RuntimeError("synthetic SQL snapshot write failure")
+
+    monkeypatch.setattr(db, "upsert_chat_memory_state", fail_write)
+    with pytest.raises(RuntimeError, match="synthetic SQL snapshot write failure"):
+        memory.update_memory_if_needed("chat")
+
+    assert_manager_extraction(memory, accepted=True)
+    assert len(writes) == 1
+    assert json.loads(writes[0][1])["memories"][0]["id"] == "user_preferences:style"
+    assert db.chat_memory_state("chat") is None
+    assert all(not message.summarized for message in db.messages_for_chat("chat"))
+    assert memory.last_processed_message_ids == []
+    # Removing the failed seam exposes the successful path, preserving the same pending batch.
+    monkeypatch.setattr(db, "upsert_chat_memory_state", real_write)
+    assert memory.update_memory_if_needed("chat") is True
+    assert len(manager.calls) == 2
+    assert [message.summarized for message in db.messages_for_chat("chat")] == [True, True, False]

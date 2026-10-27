@@ -133,6 +133,32 @@ def test_chroma_is_persistent_global_document_store_without_sqlite_side_effects(
     assert candidate.metadata["file_name"] == "papaya.txt"
     assert candidate.metadata["retrieval_backend"] == "langchain_chroma"
 
+    # Same document IDs in other roots/collections must never overwrite this store.
+    isolated_root = LocalChromaRetriever(
+        persist_dir=tmp_path / "other-chroma", collection_name="document_memory"
+    )
+    isolated_collection = LocalChromaRetriever(
+        persist_dir=chroma_path, collection_name="other_documents"
+    )
+    for other, marker in (
+        (isolated_root, "ROOT_ISOLATED_SENTINEL"),
+        (isolated_collection, "COLLECTION_ISOLATED_SENTINEL"),
+    ):
+        other.index_text_document("Other", marker, metadata={"document_id": result.document_id})
+        assert other._vectorstore()._collection.count() == 1
+        found = other.retrieve(
+            "different-chat", SourcePlan(source="document_memory", query=marker, limit=1)
+        )
+        assert len(found) == 1
+        assert found[0].content == marker
+    unchanged = recreated.retrieve(
+        "different-chat", SourcePlan(source="document_memory", query="papaya-64217", limit=5)
+    )
+    assert len(unchanged) == 1
+    assert unchanged[0].metadata["document_id"] == result.document_id
+    assert "papaya-64217-chroma-only-document" in unchanged[0].content
+    assert "ISOLATED_SENTINEL" not in unchanged[0].content
+
     monkeypatch.undo()
     count_before_graph = recreated._vectorstore()._collection.count()
     graph_result = run_read_only_langgraph_orchestration(
@@ -147,10 +173,7 @@ def test_chroma_is_persistent_global_document_store_without_sqlite_side_effects(
         system_prompt="Use document evidence.",
     )
 
-    assert any(
-        item.source == "document_memory"
-        for item in graph_result.context_packet.candidates
-    )
+    assert any(item.source == "document_memory" for item in graph_result.context_packet.candidates)
     assert recreated._vectorstore()._collection.count() == count_before_graph
 
 

@@ -35,3 +35,13 @@ def local_document_retriever(database) -> LocalChromaRetriever:
         collection_name="stage5-documents",
         summary_getter=database,
     )
+
+
+class RecordingGuard:
+    """Explicit per-test guard substitute for an injected fake inference manager."""
+
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def check(self) -> None:
+        self.calls += 1

@@ -25,3 +25,17 @@ Explicit local dependencies retain real Chroma, dispatcher, coordinator, context
 Post-repair outcomes and independent acceptance are recorded after execution; initial archives remain immutable.
 
 Independent read-only review accepted batch1 before execution. Post-batch1: unit127collected,125passed2failed,pytest duration recorded in machine summary; integration503collected including1deselected,463passed38failed1skipped. All modified cases passed, including the new explicit guard rejection case. Both runs source stable and external requests/tokens/cost0; fake calls unknown. Exact durations and expanded outcomes are in runs/post-batch1-summary.json; full evidence in matching archives. These overlap the initial baseline and are not additional unique coverage.
+
+## Repair batch2 — storage and meaningful assertions
+
+Independent review accepted9test/supportfiles; coordinator corrected two setup issues before execution (fake delete lookup; extension-loaded native inspection connection). Run post-batch2:509collected/508selected,475passed32failed1skipped/1deselected;30.5s approximate, exact duration in machine summary. All strengthened SQL/logging/manager and Chroma separation cases passed. New native sqlite-vec separate and delete parameters passed; update failed with UNIQUE constraint on vec_memories primary key from actual INSERT OR REPLACE. No native-path substitution or skip was added. Failed snapshot-write test passed with pending flags and deliberate seam restoration inside the test.
+
+A second new failure was a test setup defect: the nonraw formatting fixture supplied an unranked score=None and was legitimately excluded below minimum utility. It is corrected to ranked score1.0 with every content/provenance assertion retained; rerun remains required. Initial and post-batch2 failed evidence stays preserved.
+
+### S5-APP-01 — native vector update
+
+Actual native384-dimensional test first indexes a record, updates the same SQL identity, then calls LongTermMemoryVectorIndex.upsert_record. sqlite-vec raises sqlite3.OperationalError: UNIQUE constraint failed on vec_memories primary key at src/memory/long_term_vector_index.py:159. Separate-store/namespace and delete cases pass. This is an observed application defect, not a new desired vector-error policy; DEC013 still requires SQL durability/logging at the combined store boundary. Recommend a separately approved native replacement/update repair with this regression retained. No application fix authorized/performed.
+
+Ranked-input correction independently accepted and rerun:509collected/508selected,476passed31failed1skipped,1excluded. Nonraw processing passed; native update failure remains. Full corrected run and previous failed fixture run both archived separately; external requests/tokens/cost0, fake counts unknown, stable source. This overlaps prior runs.
+
+Withdrawn prerequisite claim: a worker inferred scripts/lib/load_eval_env.sh was absent from a search omission; coordinator verified tracked2218-byte file via git ls-files/git show/direct read. Helper exists; no missing-helper blocker. User and reviewers were explicitly corrected. Wrapper admission still needs real uv, synthetic Git metadata and ephemeral artifacts.

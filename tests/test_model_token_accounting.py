@@ -1,6 +1,10 @@
 from __future__ import annotations
 
 import importlib.metadata
+from pathlib import Path
+
+from packaging.requirements import Requirement
+from packaging.utils import canonicalize_name
 
 from src.agents.context_manager_agent import ContextManagerAgent
 from src.context.context_budget_allocator import ContextBudgetAllocator
@@ -120,6 +124,19 @@ def test_gemma_profile_has_official_context_metadata() -> None:
 
 
 def test_pillow_is_an_explicit_runtime_dependency() -> None:
+    try:
+        import tomllib
+    except ImportError:  # Python 3.10 pytest dependency.
+        import tomli as tomllib
+
+    project = tomllib.loads(
+        (Path(__file__).resolve().parents[1] / "pyproject.toml").read_text()
+    )
+    declared = {
+        canonicalize_name(Requirement(item).name)
+        for item in project["project"]["dependencies"]
+    }
+    assert "pillow" in declared, "Pillow must be declared directly, not merely installed transitively"
     assert importlib.metadata.version("pillow")
 
 

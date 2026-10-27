@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from support.deterministic_services import RecordingGuard
+
 from src.core.contracts import SourcePlan
 from src.database import Database
 from src.memory.langmem_structured import LangMemStructuredMemoryState
@@ -30,9 +32,10 @@ class FakeModel:
 class FakeLangMemManager:
     def __init__(self, output: list[dict[str, object]]) -> None:
         self.output = output
+        self.calls: list[dict[str, object]] = []
 
     def invoke(self, input: dict[str, object]) -> list[dict[str, object]]:
-        del input
+        self.calls.append(input)
         return self.output
 
 
@@ -113,6 +116,7 @@ def test_cross_chat_structured_memory_is_visible_across_chats(tmp_path: Path) ->
     db.save_message("chat-a", "assistant", "Noted.")
     db.save_message("chat-a", "user", "latest")
 
+    guard = RecordingGuard()
     memory = ShortTermMemory(
         database=db,
         model=FakeModel(),
@@ -130,9 +134,13 @@ def test_cross_chat_structured_memory_is_visible_across_chats(tmp_path: Path) ->
                 ]
             ),
             long_term_store=store,
+            connection_guard=guard,
         ),
     )
     assert memory.update_memory_if_needed("chat-a") is True
+    assert guard.calls == 1
+    assert len(memory.structured_memory.manager.calls) == 1
+    assert memory.structured_memory.manager.calls[0]["messages"]
 
     candidates = StructuredMemoryRetriever(db).retrieve(
         chat_id="chat-b",
@@ -141,7 +149,7 @@ def test_cross_chat_structured_memory_is_visible_across_chats(tmp_path: Path) ->
 
     assert candidates
     assert candidates[0].source == "structured_memory"
-    assert candidates[0].metadata["namespace"] == list(DEFAULT_USER_NAMESPACE)
+    assert candidates[0].metadata["namespace"] == list(category_namespace("user_preferences"))
     assert candidates[0].metadata["source_chat_id"] == "chat-a"
     assert candidates[0].content == "User prefers concise answers."
     assert candidates[0].source_message_ids == [first_id]

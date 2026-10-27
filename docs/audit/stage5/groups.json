@@ -114,7 +114,7 @@
         "tests/test_final_eval_wrappers.py",
         "tests/test_targeted_eval_wrapper.py"
       ],
-      "reason": "Pending wrapper/transitive uv/script review; absent scripts and executable dependencies must be recorded rather than substituted."
+      "reason": "Pending actual uv/no-sync, synthetic Git and ephemeral output prerequisites review; tracked sourced helper verified present."
     },
     "browser": {
       "category": "browser",

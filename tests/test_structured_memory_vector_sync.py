@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 from pathlib import Path
+from dataclasses import replace
+
+from support.deterministic_services import RecordingGuard
 
 import pytest
 
@@ -13,10 +16,10 @@ from src.memory.long_term_store import (
     LongTermMemoryWrite,
     SQLiteLongTermMemoryStore,
     namespace_path,
+    category_namespace,
 )
 from src.memory.long_term_vector_index import (
     LongTermMemoryVectorIndex,
-    VectorIndexBackend,
     VectorIndexUnavailable,
     memory_record_to_index_text,
 )
@@ -95,9 +98,10 @@ class FailingVectorBackend:
 class FakeLangMemManager:
     def __init__(self, output: list[dict[str, object]]) -> None:
         self.output = output
+        self.calls: list[dict[str, object]] = []
 
     def invoke(self, input: dict[str, object]) -> list[dict[str, object]]:
-        del input
+        self.calls.append(input)
         return self.output
 
 
@@ -162,11 +166,12 @@ def test_langmem_production_write_syncs_insert_with_typed_metadata(
         "user",
         "I prefer mature open-source libraries.",
     )
+    guard = RecordingGuard()
     state = LangMemStructuredMemoryState(
         manager=FakeLangMemManager(
             [
                 {
-                    "category": "preferences",
+                    "category": "user_preferences",
                     "key": "libraries",
                     "value": "User prefers mature open-source libraries.",
                     "source_message_ids": [message_id],
@@ -174,6 +179,7 @@ def test_langmem_production_write_syncs_insert_with_typed_metadata(
             ]
         ),
         long_term_store=store,
+        connection_guard=guard,
     )
 
     result = state.update(
@@ -182,12 +188,16 @@ def test_langmem_production_write_syncs_insert_with_typed_metadata(
     )
 
     assert result.accepted is True
+    assert guard.calls == 1
+    assert len(state.manager.calls) == 1
+    assert state.manager.calls[0]["messages"]
     assert len(backend.vectors) == 1
     # Verify the vector was stored with correct rowid
-    records = store.list(DEFAULT_USER_NAMESPACE)
+    records = store.list(category_namespace("user_preferences"))
     assert len(records) == 1
     assert records[0].rowid in backend.vectors
-    assert records[0].memory_id == "preferences:libraries"
+    assert records[0].memory_id == "user_preferences:libraries"
+    assert records[0].source_message_ids == [message_id]
 
 
 def test_update_replaces_stable_vector_entry_without_stale_text(
@@ -253,6 +263,7 @@ def test_repeated_sync_is_idempotent_by_stable_vector_id(tmp_path: Path) -> None
 
 def test_vector_failure_is_explicit_but_sqlite_mode_requires_no_backend(
     tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
     database = Database(tmp_path / "chatbot.db")
     failing_store = SQLiteLongTermMemoryStore(
@@ -262,11 +273,16 @@ def test_vector_failure_is_explicit_but_sqlite_mode_requires_no_backend(
         ),
     )
 
-    with pytest.raises(
-        StructuredMemoryVectorSyncError,
-        match="SQLite write committed, but vector sync failed",
-    ):
-        failing_store.upsert(memory_write())
+    failing_store.upsert(memory_write())
+    failures = [record for record in caplog.records if record.name == "src.memory.long_term_store"]
+    assert len(failures) == 1
+    assert failures[0].levelname == "ERROR"
+    assert "vec0 sync failed" in failures[0].getMessage()
+    error = failures[0].exc_info[1]
+    assert isinstance(error, StructuredMemoryVectorSyncError)
+    assert "SQLite write committed, but vector sync failed" in str(error)
+    assert isinstance(error.__cause__, RuntimeError)
+    assert str(error.__cause__) == "vector backend unavailable"
 
     committed = failing_store.get(
         DEFAULT_USER_NAMESPACE,
@@ -323,9 +339,17 @@ def test_synced_vector_memory_reaches_context_with_sqlite_provenance(
     tmp_path: Path,
 ) -> None:
     database, store, backend, vector_index = synced_store(tmp_path)
-    store.upsert(memory_write())
-    _populate_backend(store, backend)
-    records = store.list(DEFAULT_USER_NAMESPACE)
+    namespace = category_namespace("user_preferences")
+    store.upsert(
+        replace(
+            memory_write(),
+            namespace=namespace,
+            category="user_preferences",
+            memory_id="user_preferences:libraries",
+        )
+    )
+    _populate_backend(store, backend, namespace)
+    records = store.list(namespace)
     for r in records:
         backend.add_vectors(
             [(r.rowid, b"")]  # type: ignore[arg-type]
@@ -354,12 +378,12 @@ def test_synced_vector_memory_reaches_context_with_sqlite_provenance(
     )
 
     assert len(candidates) == 1
-    assert candidates[0].record_id == "preferences:libraries"
+    assert candidates[0].record_id == "user_preferences:libraries"
     assert candidates[0].chat_id == "chat-1"
     assert candidates[0].source_message_ids == [1]
     assert candidates[0].metadata["retrieval_mode"] == "vector"
     assert any(
-        candidate.record_id == "preferences:libraries"
+        candidate.record_id == "user_preferences:libraries"
         for candidate in result.context_packet.candidates
     )
     assert sum(result.context_budget.source_token_budgets.values()) <= int(
@@ -372,7 +396,15 @@ def test_sqlite_recall_remains_independent_of_vector_backend(
 ) -> None:
     database = Database(tmp_path / "chatbot.db")
     store = SQLiteLongTermMemoryStore(database, retrieval_mode="sqlite")
-    store.upsert(memory_write())
+    namespace = category_namespace("user_preferences")
+    store.upsert(
+        replace(
+            memory_write(),
+            namespace=namespace,
+            category="user_preferences",
+            memory_id="user_preferences:libraries",
+        )
+    )
 
     candidates = StructuredMemoryRetriever(
         database,
@@ -386,6 +418,30 @@ def test_sqlite_recall_remains_independent_of_vector_backend(
     )
 
     assert len(candidates) == 1
-    assert candidates[0].record_id == "preferences:libraries"
+    assert candidates[0].record_id == "user_preferences:libraries"
     assert candidates[0].source == "structured_memory"
-    assert candidates[0].metadata["namespace"] == list(DEFAULT_USER_NAMESPACE)
+    assert candidates[0].metadata["namespace"] == list(namespace)
+
+
+@pytest.mark.parametrize("operation", ["upsert", "delete"])
+def test_direct_vector_sync_retains_wrapped_failure_and_original_cause(
+    tmp_path: Path, operation: str
+) -> None:
+    database = Database(tmp_path / "direct-sync.db")
+    store = SQLiteLongTermMemoryStore(database, retrieval_mode="sqlite")
+    store.upsert(memory_write())
+    record = store.get(DEFAULT_USER_NAMESPACE, "preferences:libraries")
+    assert record is not None
+    backend = FailingVectorBackend()
+    backend.reverse_record_lookup = {(namespace_path(record.namespace), record.memory_id): record.rowid}
+    sync = StructuredMemoryVectorSync(FakeLongTermMemoryVectorIndex(backend))
+
+    with pytest.raises(StructuredMemoryVectorSyncError, match="vector sync failed") as failure:
+        if operation == "upsert":
+            sync.sync_record(record)
+        else:
+            sync.delete_memory(DEFAULT_USER_NAMESPACE, "preferences:libraries")
+
+    assert isinstance(failure.value.__cause__, RuntimeError)
+    assert str(failure.value.__cause__) == "vector backend unavailable"
+    assert store.get(DEFAULT_USER_NAMESPACE, "preferences:libraries") == record
