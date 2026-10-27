@@ -1,0 +1,20 @@
+[
+  {
+    "group": "app-composition",
+    "exit_code": 1,
+    "message": "Canonical configuration is supported only for the core offline groups; admitted app/wrapper/browser groups require explicit deterministic setup.\n",
+    "before_collection": true
+  },
+  {
+    "group": "subprocess-wrappers",
+    "exit_code": 1,
+    "message": "Canonical configuration is supported only for the core offline groups; admitted app/wrapper/browser groups require explicit deterministic setup.\n",
+    "before_collection": true
+  },
+  {
+    "group": "browser",
+    "exit_code": 1,
+    "message": "Canonical configuration is supported only for the core offline groups; admitted app/wrapper/browser groups require explicit deterministic setup.\n",
+    "before_collection": true
+  }
+]

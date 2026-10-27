@@ -12,10 +12,11 @@ heavy model weight and constrained development hardware.
 
 ## Cleanup and audit status
 
-Current work is the main-baseline recovery and targeted revalidation of the
-existing-test audit. Read [docs/audit/README.md](docs/audit/README.md), then its
-decisions and task ledger. Historical ui-based conclusions are archived and
-must not be treated as verification of this checkout.
+Stage5 test-only baseline and protection work is delivered; application/evaluation
+blockers still prevent purge readiness. Read [current results and limits](docs/audit/stage5/readiness.md),
+then the [decisions and task ledger](docs/audit/README.md). Historical ui-based
+conclusions remain archived. Native Chainlit login currently fails the isolated
+browser checks because the loading overlay blocks Sign In.
 
 ## Implemented features
 
@@ -210,33 +211,37 @@ See [docs/DEMO_RUNBOOK.md](docs/DEMO_RUNBOOK.md) for a fuller runbook.
 
 ## Testing
 
-Core local checks:
+Use the isolated runner: it confines stores, credentials, caches and network
+before collection. Plain pytest is intentionally blocked before test imports.
+Linux bubblewrap and a preinstalled dependency environment are required; see
+[runner setup and controls](docs/audit/stage5/INFRASTRUCTURE.md).
 
 ```bash
-uv run pytest -q
-uv run ruff check .
-uv run python -m compileall app.py src evals tests scripts
-node --check public/product-navigation.js
-git diff --check
+python3 scripts/run_isolated_tests.py --group offline-unit --label local --timeout 300
+python3 scripts/run_isolated_tests.py --group offline-integration --label local --timeout 600
+python3 scripts/run_isolated_tests.py --group app-composition --label local --timeout 300
+python3 scripts/run_isolated_tests.py --group subprocess-wrappers --label local --timeout 300
 ```
 
-Browser/Product Behavior checks:
+Omitting --group runs the two core groups. App/wrapper groups remain explicit
+because they install different controlled test prerequisites in separate processes.
+Native browser is a separate group with existing synthetic model/document fixtures;
+its runtime works, but the current application login defect blocks all12scenarios.
+React probes, live/paid evaluations and manual diagnostics have separate
+[commands and exclusion reasons](docs/audit/stage5/exclusions.md).
 
-```bash
-PRODUCT_E2E_HEADED=0 \
-uv run pytest -q tests/e2e
-
-uv run python -m evals.product_behavior.runner
-```
-
-The browser checks require permission to bind a local port and launch the local
-browser. Some restricted sandboxes block that setup before the app starts.
+Static checks remain `uv run ruff check .`, Python compilation and
+`git diff --check`. Current global checks retain31pre-existing Ruff diagnostics
+and the rebuild CLI syntax error; changed-file checks pass. See the
+[per-group results and remaining gaps](docs/audit/stage5/readiness.md).
 
 ## Evaluation summary
 
 - Product Behavior Benchmark: 50 product-level cases covering navigation,
   lifecycle, persistence, document behavior, failure handling, races, and
-  idempotency. The intended current result is 48 passed, 2 documented failures.
+  idempotency. Stage5 measured39/42nonbrowser oracle rows passing; these are
+  separate from pytest cases. Native browser scenario bodies were blocked during
+  login setup. The historical48/50target is not current verification.
 - MAB answer-level evaluation: fixed held-out manifests exercise answer quality
   through the production-shaped memory pipeline.
 - LongMemEval answer-level pilot: evaluates long-memory behavior with the

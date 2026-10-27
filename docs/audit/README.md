@@ -2,7 +2,7 @@
 
 Updated2026-10-27. TASK-11 / approved revalidation points1–4 completed. Assessed source: `1cf4c553b12281fefb7daea5141e9cddfce6ca48`, branch `codex/audit-main`, based on main2f56d93. Later audit-only commits do not imply a changed product baseline; source hashes are in the coverage manifest.
 
-Objective: make the retained typed-memory chatbot understandable and reliably testable before further features. Stage4 existing-test assessment has now been revalidated against the corrected main-based implementation. Stage5 protection is now authorized by DEC012: reviewed isolation, initial offline baseline and bounded test repairs. Read [Stage5 evidence](stage5/execution.md) and [groups](stage5/groups.json) for current execution; the assessment itself did not authorize application changes, removals, consolidation or restructuring.
+Objective: make the retained typed-memory chatbot understandable and reliably testable before further features. Stage4 existing-test assessment has now been revalidated against the corrected main-based implementation. Stage5 test-only deliverables are now complete under DEC012/013; [current readiness/statistics](stage5/readiness.md) reports remaining application/evaluation and native-UI blockers. Read [Stage5 execution](stage5/execution.md) and [groups](stage5/groups.json) for current evidence. No purge, application fix, removal, consolidation or restructuring batch is approved.
 
 ## Reading order
 
@@ -16,8 +16,8 @@ Objective: make the retained typed-memory chatbot understandable and reliably te
 
 ## Evidence limits
 
-628distinct deterministic checks:578passed,49failed,1skipped;1real-model case deselected. A separate17overlapping canonical-offline checks yielded9pass8fail. These are bounded OS-confined configurations, not a clean whole-suite/default-app result. Existing fake backends remain; genuine temporary Chroma persistence passed4checks. Failed prerequisites and stale/contradictory assertions are recorded without app/test changes.
+Historical Stage4 execution:628distinct deterministic checks:578passed,49failed,1skipped;1real-model case deselected. A separate17overlapping canonical-offline checks yielded9pass8fail. These are bounded OS-confined configurations, not a clean whole-suite/default-app result. Existing fake backends remain; genuine temporary Chroma persistence passed4checks. Failed prerequisites and stale/contradictory assertions are recorded without app/test changes.
 
-AUD17's exact-equality prompt argument and AUD20's separate structured-vector directory mechanism are superseded. Request parity, live providers/extraction, native sqlite-vec embedding behavior, browser/API lifecycle and listed optional/runtime scenarios remain unverified. The audit's file/responsibility coverage is complete at its documented depth; every branch/helper/flag is not certified.
+AUD17's exact-equality prompt argument and AUD20's separate structured-vector directory mechanism are superseded. Stage5 now verifies the exercised graph actual-request path and native sqlite-vec separation/deletion with synthetic embeddings, while discovering native update and browser login failures. Live providers/extraction, actual model assets, full browser/API lifecycle and listed optional/runtime scenarios remain unverified. The audit's file/responsibility coverage is complete at its documented depth; every branch/helper/flag is not certified.
 
 Preserve MemoryCandidate → ranking/budgeting → ContextPacket → answer → memory update, SQLite history, recent memory, LangMem cross-chat memory, document RAG, traces, lifecycle and useful evaluations. Product policy remains the user's; documentation is evidence to check, not inferred requirements. No secret/private/runtime contents inspected. Original tmp-audit checkout and stashes remain intact.

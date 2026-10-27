@@ -192,15 +192,46 @@ def test_loaded_file_indexes_and_retrieves_document_memory_candidate() -> None:
     assert candidate.metadata["retrieval_backend"] == "langchain_chroma"
 
 
-def test_pdf_loader_skips_when_pdf_dependency_unavailable(tmp_path: Path) -> None:
-    pypdf = pytest.importorskip("pypdf")
-    path = tmp_path / "empty.pdf"
-    writer = pypdf.PdfWriter()
-    writer.add_blank_page(width=72, height=72)
-    with path.open("wb") as handle:
-        writer.write(handle)
+def test_pdf_loader_extracts_text_and_page_metadata(tmp_path: Path) -> None:
+    path = tmp_path / "text-report.pdf"
+    text = "PDF_PROTECTION_7249: the retained loader extracts this fact."
+    try:
+        import fitz
+    except ImportError:
+        pypdf = pytest.importorskip(
+            "pypdf", reason="Neither PyMuPDF nor pypdf text-PDF fixture backend is available"
+        )
+        from pypdf.generic import DecodedStreamObject, DictionaryObject, NameObject
+
+        writer = pypdf.PdfWriter()
+        page = writer.add_blank_page(width=612, height=792)
+        font = DictionaryObject(
+            {
+                NameObject("/Type"): NameObject("/Font"),
+                NameObject("/Subtype"): NameObject("/Type1"),
+                NameObject("/BaseFont"): NameObject("/Helvetica"),
+            }
+        )
+        page[NameObject("/Resources")] = DictionaryObject(
+            {NameObject("/Font"): DictionaryObject({NameObject("/F1"): writer._add_object(font)})}
+        )
+        content = DecodedStreamObject()
+        content.set_data(f"BT /F1 12 Tf 72 720 Td ({text}) Tj ET".encode("ascii"))
+        page[NameObject("/Contents")] = writer._add_object(content)
+        writer.write(str(path))
+    else:
+        with fitz.open() as document:
+            page = document.new_page()
+            page.insert_text((72, 72), text)
+            document.save(str(path))
 
     loaded = load_document_file(path)
 
+    assert text in loaded.text
+    assert loaded.title == "text-report"
+    assert loaded.source == "file"
     assert loaded.metadata["file_extension"] == ".pdf"
     assert loaded.metadata["page_count"] == 1
+    assert loaded.metadata["file_name"] == "text-report.pdf"
+    assert loaded.metadata["file_path"] == str(path)
+    assert loaded.metadata["loader_name"] in {"pypdf", "pymupdf"}

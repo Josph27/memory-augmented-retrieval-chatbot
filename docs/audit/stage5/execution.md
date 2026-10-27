@@ -49,3 +49,25 @@ Prompt tests accept current policy wording via regex; no prompt mutation tests w
 Tracked-source syntax scan:232Pythonfiles, one existing unexpected-indent at rebuild CLIline23 (RV001). Full Ruff31diagnostics across8files; those8files are byte-for-byte unchanged since initial e7ad3b7. Changed-test focusedRuff passes. Machine reports static-summary.json/static-ruff.json; no application imports or compilation writes.
 
 Source-specific fixture correction rerun: integration509collected/508selected,501passed6failed1skipped/1excluded. All batch3 repaired cases passed; six source/evaluation-harness failures remain visible. Stable source/externalusage0, fakecallsunknown. This overlaps earlier integrationruns; unit's last run127passed is a separate snapshot, to be refreshed with final admitted groups.
+
+## Existing-group admission baseline (batch4)
+
+Independent review accepted explicit app/realuv/syntheticGit/nativeChrome input/runtime controls before collection. Wrapper cacheoverride prerequisite was corrected and rechecked using actual UV_CACHE_DIR=/repo/.cache/uv. Assets are exactly3gittracked files copied+hashed into synthetic writableAPP_ROOT; browserchildcanonicalsettings initialized before appimport. No app/evalruntimecode changed. Thirteen existing nativePythoncases are separate from Node and42nonbrowser product rows. ExistingPDF case renamed to test_pdf_loader_extracts_text_and_page_metadata with nonblanktext; samecasecount, realPyMuPDF path passed; optionalpypdf fixtureconstruction unexecuted.
+
+| Group | Collected | Passed | Failed | Errored | Skipped | Xfailed / Xpassed | Excluded | Test duration |
+|---|---:|---:|---:|---:|---:|---|---:|---:|
+| Unit refreshed |127|127|0|0|0|0 /0|0|16.07s|
+| Core integration refreshed |509|502|6|0|0|0 /0|1|36.45s|
+| App handlers/report initial |20|17|3|0|0|0 /0|0|5.35s|
+| Shell wrappers initial |21|21|0|0|0|0 /0|0|1.67s|
+| Native browser initial |13|1|0|12|0|0 /0|0|Exact machine duration in admitted-summary.json|
+
+All stable; zero externalrequests/tokens/cost supported by native controls; fakecallsunknown. Full results/logs/serverlogs and source/proof/prerequisite records archived pergroup. These existing admissioncases are not newly authored tests. App's42unique productrows:39passed3failed, not added to pytestcounts. PBFAIL010 and PBPERSIST005 are already documented limitations; PBFAIL003's oracle expects onlyuser role while actualtypedfailure saves an assistant failure placeholder. Record this stale evaluation-oracle assertion separately from appdefects; currenttest-onlybatch does not rewrite that shared evaluator. Three apppytest failures are stale warmup/tracecomment/oldmarkdown assertions and will receive bounded testrepairs.
+
+### S5-APP-02 — native UI login blocked
+
+ActualChrome launches and server/authpage load. All12browser scenario fixtures resolve a visible/enabled SignIn button, but production #memory-lifecycle-overlay[aria-label=Loading models…] intercepts clicks until timeout. One passedcase only checks headlessconfiguration; no browser scenario body passed. JSshows overlay before authentication and only hides it on authenticated product-state. Independent reviewer confirms applicationstartupblocker, not missingbrowser/inference prerequisites. Do not removeoverlay/forceclick/skipcases in tests. Recommend separately authorized public/product-navigation.js repair preserving login and authenticated/lifecycle loading feedback.
+
+Separately static, not reached dynamically: constproductState/answerInspections are reassigned later and predict TypeErrors after product-state events. No patch authorized/performed. Twelve setuperrors represent one sharedblocker, not12independentfeaturedefects.
+
+Final app testrepair run:20collected/20passed0failed0errors0skips, duration5.32s. No newcases. Home now protects realSQL absence of persistence while allowing warmup; uploadvalidates visibleanswer/JSONtrace/update-call contract; traceprivacy/currentstructuredfields use actual contracts. Same42productoracles39pass3fail remain separate evidence. Baseline17/3 retained in archive. No browser rerun: applicationstartupblocked and applicationcodeunchanged. Final table and limitation summary: readiness.md; machine latest-summary.json.

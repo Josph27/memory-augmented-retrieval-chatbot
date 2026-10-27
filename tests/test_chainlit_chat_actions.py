@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import asyncio
+import json
+import re
 from types import SimpleNamespace
 
 import app
@@ -211,16 +213,29 @@ def test_chat_start_is_home_and_does_not_create_message_or_chat(monkeypatch) -> 
     session = FakeUserSession()
     install_chainlit_fakes(monkeypatch, session)
 
-    monkeypatch.setattr(
-        app,
-        "chat_service_for_model",
-        lambda model_name: (_ for _ in ()).throw(
-            AssertionError("Home must not create a backend chat")
-        ),
-    )
+    warmups: list[str] = []
 
+    class WarmedService:
+        def start_chat(self, *args, **kwargs):
+            raise AssertionError("Home must not create a backend chat")
+
+    def warm_service(model_name):
+        warmups.append(model_name)
+        return WarmedService()
+
+    def persisted_counts():
+        with app.database.connect() as connection:
+            return tuple(
+                connection.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+                for table in ("chats", "messages")
+            )
+
+    before = persisted_counts()
+    monkeypatch.setattr(app, "chat_service_for_model", warm_service)
     asyncio.run(app.on_chat_start())
 
+    assert warmups == [session.get("model_name")]
+    assert persisted_counts() == before
     assert session.get("chat_id") is None
     assert session.get("product_view") == "home"
     assert FakeMessage.sent == []
@@ -380,6 +395,14 @@ def test_same_turn_upload_persists_user_before_index_and_answers_once(
     install_chainlit_fakes(monkeypatch, session)
     monkeypatch.setattr(app.database, "is_chat_active", lambda chat_id: True)
     events: list[object] = []
+    persisted_answers: list[tuple[int, str]] = []
+    update_content = app.database.update_message_content
+
+    def record_answer_update(message_id: int, content: str):
+        persisted_answers.append((message_id, content))
+        return update_content(message_id, content)
+
+    monkeypatch.setattr(app.database, "update_message_content", record_answer_update)
     upload = tmp_path / "report.md"
     upload.write_text("Key finding: scoped retrieval works.", encoding="utf-8")
 
@@ -434,8 +457,12 @@ def test_same_turn_upload_persists_user_before_index_and_answers_once(
     answer_kwargs = events[2][1]
     assert answer_kwargs["persisted_user_message_id"] == 17
     assert answer_kwargs["task_context"] == "document_qa"
-    assert [item.content for item in FakeMessage.sent] == [
-        "Indexed report.md into document memory (7 chunks).",
-        "The key finding is scoped retrieval.",
-    ]
-    assert FakeMessage.sent[-1].id == "message:18"
+    assert len(FakeMessage.sent) == 2
+    assert FakeMessage.sent[0].content == "Indexed report.md into document memory (7 chunks)."
+    answer = FakeMessage.sent[-1]
+    annotated = re.fullmatch(r"(.*?)\n\n<!--breamon-trace:(\{.*\})-->", answer.content, re.DOTALL)
+    assert annotated is not None, "answer must contain one well-formed persisted trace comment"
+    assert annotated.group(1) == "The key finding is scoped retrieval."
+    assert json.loads(annotated.group(2)) == {"orchestration": "native"}
+    assert answer.id == "message:18"
+    assert persisted_answers == [(18, answer.content)]

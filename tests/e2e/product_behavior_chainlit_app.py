@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import app as production_app
+import importlib
 import json
 import os
 from pathlib import Path
@@ -11,6 +11,10 @@ import src.agents.coordinator_agent as coordinator_module
 from src.chat_service import ChatService
 from src.core.contracts import MemoryCandidate
 from src.memory.structured_state import MemoryUpdateResult
+from support.chainlit_bootstrap import prepare_chainlit_dependencies
+
+prepare_chainlit_dependencies()
+production_app = importlib.import_module("app")
 
 
 class DeterministicBrowserModel:
@@ -42,8 +46,7 @@ class DeterministicBrowserModel:
                         {
                             "document_statuses": statuses,
                             "prompt": "\n".join(
-                                str(message.get("content", ""))
-                                for message in messages
+                                str(message.get("content", "")) for message in messages
                             ),
                         }
                     )
@@ -138,9 +141,7 @@ def deterministic_langgraph_orchestration(**kwargs):  # type: ignore[no-untyped-
     return _real_langgraph_orchestration(**kwargs)
 
 
-coordinator_module.run_read_only_langgraph_orchestration = (
-    deterministic_langgraph_orchestration
-)
+coordinator_module.run_read_only_langgraph_orchestration = deterministic_langgraph_orchestration
 
 
 def deterministic_chat_service(model_name: str) -> ChatService:
@@ -158,10 +159,8 @@ def deterministic_chat_service(model_name: str) -> ChatService:
             DeterministicBrowserDocumentRetriever(indexer)
         )
         dispatcher = service.coordinator.retriever_dispatcher
-        dispatcher.retrievers["raw_message_span"] = (
-            DeterministicBrowserCrossChatRetriever(
-                dispatcher.retrievers["raw_message_span"]
-            )
+        dispatcher.retrievers["raw_message_span"] = DeterministicBrowserCrossChatRetriever(
+            dispatcher.retrievers["raw_message_span"]
         )
         _services[model_name] = service
     return _services[model_name]

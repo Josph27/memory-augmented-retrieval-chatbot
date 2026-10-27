@@ -32,12 +32,23 @@ def results_with_executed_browser_rows() -> tuple[list[dict], float]:
     return results, runtime_ms
 
 
-def test_non_browser_product_oracles_execute_without_harness_errors() -> None:
+def test_non_browser_product_oracles_execute_without_harness_errors(
+    tmp_path: Path, record_property
+) -> None:
     results, runtime_ms = run_cases(
         case_dir=DEFAULT_CASE_DIR,
         layers={"repository/service", "Chainlit handler/data-layer"},
     )
 
+    evidence = tmp_path / "product-oracle-rows.json"
+    evidence.write_text(json.dumps({"results": results, "runtime_ms": runtime_ms}, indent=2) + "\n")
+    counts = {
+        status: sum(row["status"] == status for row in results)
+        for status in {row["status"] for row in results}
+    }
+    record_property("product_oracle_rows", str(evidence))
+    record_property("product_oracle_outcomes", json.dumps(counts, sort_keys=True))
+    # This checks harness completion; failed/unsupported product rows remain separate evidence.
     assert len(results) == 42
     assert not [row for row in results if row["status"] == "error"]
     assert runtime_ms >= 0
@@ -58,10 +69,7 @@ def test_report_contains_all_reliability_metrics(tmp_path: Path) -> None:
     assert "idempotency_pass_rate" in summary
     assert "no_collateral_damage_rate" in summary
     assert (tmp_path / "report.md").exists()
-    failures = [
-        json.loads(line)
-        for line in (tmp_path / "failures.jsonl").read_text().splitlines()
-    ]
+    failures = [json.loads(line) for line in (tmp_path / "failures.jsonl").read_text().splitlines()]
     assert all("expected_invariant" in row for row in failures)
 
 

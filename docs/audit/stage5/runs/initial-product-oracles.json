@@ -1,0 +1,1594 @@
+{
+  "results": [
+    {
+      "case_id": "PB-DOC-001",
+      "category": "documents",
+      "description": "Upload persists, indexes, reports truthful status, and produces retrievable chunks.",
+      "expected_invariant": {
+        "expected_state": {
+          "status": "Ready",
+          "chunks_min": 1
+        },
+        "required_events": [
+          "document_persisted",
+          "document_indexed"
+        ],
+        "forbidden_events": [
+          "false_ready"
+        ]
+      },
+      "execution_layer": "repository/service",
+      "deterministic": true,
+      "repetitions": 1,
+      "tags": [
+        "documents"
+      ],
+      "status": "passed",
+      "actual_result": {
+        "indexed": true,
+        "chunk_count": 1,
+        "persisted_status": "Ready",
+        "associated_document_ids": [
+          "f37098b5-852e-4cc4-b852-2756174d113e"
+        ]
+      },
+      "root_cause": null,
+      "database_state_diff": {},
+      "required_call_or_event_mismatch": [],
+      "forbidden_side_effect": null,
+      "trace_or_screenshot_path": null,
+      "error": null,
+      "duration_ms": 6.316
+    },
+    {
+      "case_id": "PB-DOC-003",
+      "category": "documents",
+      "description": "Answer generation cannot start while an attachment is Uploading or Indexing.",
+      "expected_invariant": {
+        "expected_state": {
+          "answer_calls_before_ready": 0
+        },
+        "required_events": [
+          "readiness_barrier"
+        ],
+        "forbidden_events": [
+          "answer_model_call_while_indexing"
+        ]
+      },
+      "execution_layer": "Chainlit handler/data-layer",
+      "deterministic": true,
+      "repetitions": 1,
+      "tags": [
+        "documents",
+        "race"
+      ],
+      "status": "passed",
+      "actual_result": {
+        "index_before_answer": true,
+        "readiness_status_model": false
+      },
+      "root_cause": null,
+      "database_state_diff": {},
+      "required_call_or_event_mismatch": [],
+      "forbidden_side_effect": null,
+      "trace_or_screenshot_path": null,
+      "error": null,
+      "duration_ms": 0.866
+    },
+    {
+      "case_id": "PB-DOC-004",
+      "category": "documents",
+      "description": "Uploaded documents are associated with the correct current chat.",
+      "expected_invariant": {
+        "expected_state": {
+          "associated_chat": "A"
+        },
+        "required_events": [
+          "document_chat_association"
+        ],
+        "forbidden_events": [
+          "association_to_other_chat"
+        ]
+      },
+      "execution_layer": "repository/service",
+      "deterministic": true,
+      "repetitions": 1,
+      "tags": [
+        "documents",
+        "scope_isolation"
+      ],
+      "status": "passed",
+      "actual_result": {
+        "associated_chat": "A",
+        "chat_A": [
+          "doc-A"
+        ],
+        "chat_B": []
+      },
+      "root_cause": null,
+      "database_state_diff": {},
+      "required_call_or_event_mismatch": [],
+      "forbidden_side_effect": null,
+      "trace_or_screenshot_path": null,
+      "error": null,
+      "duration_ms": 5.285
+    },
+    {
+      "case_id": "PB-DOC-005",
+      "category": "documents",
+      "description": "Explicit filename references scope retrieval to the named document.",
+      "expected_invariant": {
+        "expected_state": {
+          "selected_documents": [
+            "alpha.txt"
+          ]
+        },
+        "required_events": [
+          "filename_resolution"
+        ],
+        "forbidden_events": [
+          "beta_chunk"
+        ]
+      },
+      "execution_layer": "repository/service",
+      "deterministic": true,
+      "repetitions": 1,
+      "tags": [
+        "documents",
+        "scope_isolation"
+      ],
+      "status": "passed",
+      "actual_result": {
+        "selected_documents": [
+          "alpha.txt"
+        ],
+        "document_ids": [
+          "doc-alpha"
+        ]
+      },
+      "root_cause": null,
+      "database_state_diff": {},
+      "required_call_or_event_mismatch": [],
+      "forbidden_side_effect": null,
+      "trace_or_screenshot_path": null,
+      "error": null,
+      "duration_ms": 6.043
+    },
+    {
+      "case_id": "PB-DOC-006",
+      "category": "documents",
+      "description": "English 'this report' activates the one active document.",
+      "expected_invariant": {
+        "expected_state": {
+          "document_route": true,
+          "selected_documents": 1
+        },
+        "required_events": [
+          "implicit_reference_resolution"
+        ],
+        "forbidden_events": [
+          "document_missing_claim"
+        ]
+      },
+      "execution_layer": "repository/service",
+      "deterministic": true,
+      "repetitions": 1,
+      "tags": [
+        "documents"
+      ],
+      "status": "passed",
+      "actual_result": {
+        "document_route": true,
+        "enabled_sources": [
+          "recent_messages",
+          "structured_memory",
+          "document_memory"
+        ],
+        "assumed_single_document": 1
+      },
+      "root_cause": null,
+      "database_state_diff": {},
+      "required_call_or_event_mismatch": [],
+      "forbidden_side_effect": null,
+      "trace_or_screenshot_path": null,
+      "error": null,
+      "duration_ms": 0.233
+    },
+    {
+      "case_id": "PB-DOC-007",
+      "category": "documents",
+      "description": "English 'Summarize it' resolves to the one active document.",
+      "expected_invariant": {
+        "expected_state": {
+          "document_route": true,
+          "selected_documents": 1
+        },
+        "required_events": [
+          "pronoun_resolution"
+        ],
+        "forbidden_events": [
+          "casual_only_route"
+        ]
+      },
+      "execution_layer": "repository/service",
+      "deterministic": true,
+      "repetitions": 1,
+      "tags": [
+        "documents"
+      ],
+      "status": "passed",
+      "actual_result": {
+        "document_route": true,
+        "enabled_sources": [
+          "recent_messages",
+          "structured_memory",
+          "document_memory"
+        ]
+      },
+      "root_cause": null,
+      "database_state_diff": {},
+      "required_call_or_event_mismatch": [],
+      "forbidden_side_effect": null,
+      "trace_or_screenshot_path": null,
+      "error": null,
+      "duration_ms": 0.069
+    },
+    {
+      "case_id": "PB-DOC-008",
+      "category": "documents",
+      "description": "Uploaded-file references resolve to the active or latest document.",
+      "expected_invariant": {
+        "expected_state": {
+          "resolved_queries": 3
+        },
+        "required_events": [
+          "uploaded_file_reference_resolution"
+        ],
+        "forbidden_events": [
+          "document_missing_claim"
+        ]
+      },
+      "execution_layer": "repository/service",
+      "deterministic": true,
+      "repetitions": 1,
+      "tags": [
+        "documents"
+      ],
+      "status": "passed",
+      "actual_result": {
+        "document_routes": {
+          "the file I uploaded": true,
+          "the uploaded document": true,
+          "look at that report": true
+        },
+        "resolved_document_ids": {
+          "the file I uploaded": [
+            "doc"
+          ],
+          "the uploaded document": [
+            "doc"
+          ],
+          "look at that report": [
+            "doc"
+          ]
+        }
+      },
+      "root_cause": null,
+      "database_state_diff": {},
+      "required_call_or_event_mismatch": [],
+      "forbidden_side_effect": null,
+      "trace_or_screenshot_path": null,
+      "error": null,
+      "duration_ms": 5.34
+    },
+    {
+      "case_id": "PB-DOC-009",
+      "category": "documents",
+      "description": "Implicit English document references resolve to the one active document.",
+      "expected_invariant": {
+        "expected_state": {
+          "resolved_queries": 6
+        },
+        "required_events": [
+          "implicit_document_reference_resolution"
+        ],
+        "forbidden_events": [
+          "unscoped_document_search"
+        ]
+      },
+      "execution_layer": "repository/service",
+      "deterministic": true,
+      "repetitions": 1,
+      "tags": [
+        "documents"
+      ],
+      "status": "passed",
+      "actual_result": {
+        "resolved_queries": 6,
+        "document_id": "doc"
+      },
+      "root_cause": null,
+      "database_state_diff": {},
+      "required_call_or_event_mismatch": [],
+      "forbidden_side_effect": null,
+      "trace_or_screenshot_path": null,
+      "error": null,
+      "duration_ms": 6.708
+    },
+    {
+      "case_id": "PB-DOC-010",
+      "category": "documents",
+      "description": "Filename selection among multiple documents excludes unrelated documents.",
+      "expected_invariant": {
+        "expected_state": {
+          "selected_documents": [
+            "beta.txt"
+          ]
+        },
+        "required_events": [
+          "filename_scope"
+        ],
+        "forbidden_events": [
+          "alpha_chunk"
+        ]
+      },
+      "execution_layer": "repository/service",
+      "deterministic": true,
+      "repetitions": 1,
+      "tags": [
+        "documents",
+        "scope_isolation"
+      ],
+      "status": "passed",
+      "actual_result": {
+        "selected_documents": [
+          "beta.txt"
+        ],
+        "document_ids": [
+          "doc-beta"
+        ]
+      },
+      "root_cause": null,
+      "database_state_diff": {},
+      "required_call_or_event_mismatch": [],
+      "forbidden_side_effect": null,
+      "trace_or_screenshot_path": null,
+      "error": null,
+      "duration_ms": 6.287
+    },
+    {
+      "case_id": "PB-DOC-011",
+      "category": "documents",
+      "description": "Ambiguous multi-document queries request disambiguation.",
+      "expected_invariant": {
+        "expected_state": {
+          "disambiguation_requested": true
+        },
+        "required_events": [
+          "ambiguity_detection"
+        ],
+        "forbidden_events": [
+          "arbitrary_document_selection",
+          "missing_document_claim"
+        ]
+      },
+      "execution_layer": "repository/service",
+      "deterministic": true,
+      "repetitions": 1,
+      "tags": [
+        "documents",
+        "scope_isolation"
+      ],
+      "status": "passed",
+      "actual_result": {
+        "disambiguation_requested": true,
+        "message": "Multiple documents match this request; select one: beta.txt, alpha.txt"
+      },
+      "root_cause": null,
+      "database_state_diff": {},
+      "required_call_or_event_mismatch": [],
+      "forbidden_side_effect": null,
+      "trace_or_screenshot_path": null,
+      "error": null,
+      "duration_ms": 5.535
+    },
+    {
+      "case_id": "PB-DOC-012",
+      "category": "documents",
+      "description": "Document retrieval enforces explicit allowed document IDs.",
+      "expected_invariant": {
+        "expected_state": {
+          "returned_document_ids": [
+            "doc-A"
+          ]
+        },
+        "required_events": [
+          "document_scope_filter"
+        ],
+        "forbidden_events": [
+          "doc-B"
+        ]
+      },
+      "execution_layer": "repository/service",
+      "deterministic": true,
+      "repetitions": 1,
+      "tags": [
+        "documents",
+        "scope_isolation"
+      ],
+      "status": "passed",
+      "actual_result": {
+        "returned_document_ids": [
+          "doc-A"
+        ]
+      },
+      "root_cause": null,
+      "database_state_diff": {},
+      "required_call_or_event_mismatch": [],
+      "forbidden_side_effect": null,
+      "trace_or_screenshot_path": null,
+      "error": null,
+      "duration_ms": 2.259
+    },
+    {
+      "case_id": "PB-DOC-013",
+      "category": "documents",
+      "description": "Zero-result document retrieval performs exactly one controlled fallback.",
+      "expected_invariant": {
+        "expected_state": {
+          "retrieval_calls": 2,
+          "fallback_calls": 1
+        },
+        "required_events": [
+          "controlled_document_fallback"
+        ],
+        "forbidden_events": [
+          "infinite_retry",
+          "immediate_missing_claim"
+        ]
+      },
+      "execution_layer": "repository/service",
+      "deterministic": true,
+      "repetitions": 1,
+      "tags": [
+        "documents",
+        "idempotency"
+      ],
+      "status": "passed",
+      "actual_result": {
+        "retrieval_calls": 2,
+        "fallback_calls": 1
+      },
+      "root_cause": null,
+      "database_state_diff": {},
+      "required_call_or_event_mismatch": [],
+      "forbidden_side_effect": null,
+      "trace_or_screenshot_path": null,
+      "error": null,
+      "duration_ms": 5.126
+    },
+    {
+      "case_id": "PB-DOC-014",
+      "category": "documents",
+      "description": "Large documents are chunked and late facts can be retrieved without full prompt insertion.",
+      "expected_invariant": {
+        "expected_state": {
+          "full_document_in_prompt": false,
+          "late_fact_selected": true,
+          "provenance_valid": true
+        },
+        "required_events": [
+          "chunking",
+          "bounded_retrieval"
+        ],
+        "forbidden_events": [
+          "full_document_prompt"
+        ]
+      },
+      "execution_layer": "repository/service",
+      "deterministic": true,
+      "repetitions": 1,
+      "tags": [
+        "documents",
+        "scope_isolation"
+      ],
+      "status": "passed",
+      "actual_result": {
+        "chunk_count": 17,
+        "selected_chunks": 1,
+        "full_document_in_prompt": false,
+        "late_fact_selected": true,
+        "provenance_valid": true
+      },
+      "root_cause": null,
+      "database_state_diff": {},
+      "required_call_or_event_mismatch": [],
+      "forbidden_side_effect": null,
+      "trace_or_screenshot_path": null,
+      "error": null,
+      "duration_ms": 0.217
+    },
+    {
+      "case_id": "PB-DOC-015",
+      "category": "documents",
+      "description": "A Ready associated document cannot be reported missing.",
+      "expected_invariant": {
+        "expected_state": {
+          "missing_document_guard": true
+        },
+        "required_events": [
+          "pre_generation_document_invariant"
+        ],
+        "forbidden_events": [
+          "no_document_uploaded",
+          "upload_again"
+        ]
+      },
+      "execution_layer": "repository/service",
+      "deterministic": true,
+      "repetitions": 1,
+      "tags": [
+        "documents",
+        "no_collateral_damage"
+      ],
+      "status": "passed",
+      "actual_result": {
+        "missing_document_guard": true,
+        "status": "Ready"
+      },
+      "root_cause": null,
+      "database_state_diff": {},
+      "required_call_or_event_mismatch": [],
+      "forbidden_side_effect": null,
+      "trace_or_screenshot_path": null,
+      "error": null,
+      "duration_ms": 4.188
+    },
+    {
+      "case_id": "PB-FAIL-001",
+      "category": "failures",
+      "description": "Indexing failure produces Failed status and a truthful UI error.",
+      "expected_invariant": {
+        "expected_state": {
+          "document_status": "Failed",
+          "answer_calls": 0
+        },
+        "required_events": [
+          "truthful_index_error"
+        ],
+        "forbidden_events": [
+          "Ready",
+          "answer_from_failed_document"
+        ]
+      },
+      "execution_layer": "Chainlit handler/data-layer",
+      "deterministic": true,
+      "repetitions": 1,
+      "tags": [
+        "documents",
+        "no_collateral_damage"
+      ],
+      "status": "passed",
+      "actual_result": {
+        "document_status": "Failed",
+        "answer_calls": 0,
+        "truthful_ui_error": true
+      },
+      "root_cause": null,
+      "database_state_diff": {},
+      "required_call_or_event_mismatch": [],
+      "forbidden_side_effect": null,
+      "trace_or_screenshot_path": null,
+      "error": null,
+      "duration_ms": 5.148
+    },
+    {
+      "case_id": "PB-FAIL-002",
+      "category": "failures",
+      "description": "Retrieval exceptions preserve chat state and create no false evidence.",
+      "expected_invariant": {
+        "expected_state": {
+          "chat_corruption": false,
+          "false_evidence": 0
+        },
+        "required_events": [
+          "recoverable_error"
+        ],
+        "forbidden_events": [
+          "fabricated_candidate"
+        ]
+      },
+      "execution_layer": "repository/service",
+      "deterministic": true,
+      "repetitions": 1,
+      "tags": [
+        "no_collateral_damage"
+      ],
+      "status": "passed",
+      "actual_result": {
+        "message_delta": 0,
+        "false_evidence": 0
+      },
+      "root_cause": null,
+      "database_state_diff": {},
+      "required_call_or_event_mismatch": [],
+      "forbidden_side_effect": null,
+      "trace_or_screenshot_path": null,
+      "error": null,
+      "duration_ms": 4.652
+    },
+    {
+      "case_id": "PB-FAIL-003",
+      "category": "failures",
+      "description": "Answer timeout preserves user input and permits subsequent use.",
+      "expected_invariant": {
+        "expected_state": {
+          "user_message_preserved": true,
+          "false_success": false,
+          "chat_usable": true
+        },
+        "required_events": [
+          "timeout_error"
+        ],
+        "forbidden_events": [
+          "failed_answer_success"
+        ]
+      },
+      "execution_layer": "repository/service",
+      "deterministic": true,
+      "repetitions": 1,
+      "tags": [
+        "no_collateral_damage"
+      ],
+      "status": "failed",
+      "actual_result": {
+        "termination": "answer_generation_failed",
+        "roles": [
+          "user",
+          "assistant"
+        ],
+        "active": true
+      },
+      "root_cause": "Answer timeout did not preserve a retryable typed failure.",
+      "database_state_diff": {},
+      "required_call_or_event_mismatch": [],
+      "forbidden_side_effect": null,
+      "trace_or_screenshot_path": null,
+      "error": null,
+      "duration_ms": 402.633
+    },
+    {
+      "case_id": "PB-FAIL-004",
+      "category": "failures",
+      "description": "End failure leaves chat active, emits no success, and remains retryable.",
+      "expected_invariant": {
+        "expected_state": {
+          "active": true,
+          "success_event": false,
+          "retryable": true
+        },
+        "required_events": [
+          "bounded_end_error"
+        ],
+        "forbidden_events": [
+          "ended_success"
+        ]
+      },
+      "execution_layer": "Chainlit handler/data-layer",
+      "deterministic": true,
+      "repetitions": 1,
+      "tags": [
+        "lifecycle",
+        "no_collateral_damage"
+      ],
+      "status": "passed",
+      "actual_result": {
+        "active_on_failure": true,
+        "success_event": false,
+        "retryable": true
+      },
+      "root_cause": null,
+      "database_state_diff": {},
+      "required_call_or_event_mismatch": [],
+      "forbidden_side_effect": null,
+      "trace_or_screenshot_path": null,
+      "error": null,
+      "duration_ms": 0.408
+    },
+    {
+      "case_id": "PB-FAIL-005",
+      "category": "failures",
+      "description": "Fork failure opens no nonexistent chat and leaves no partial duplicate.",
+      "expected_invariant": {
+        "expected_state": {
+          "selected": "original",
+          "partial_forks": 0,
+          "success_event": false
+        },
+        "required_events": [
+          "fork_rollback"
+        ],
+        "forbidden_events": [
+          "partial_fork",
+          "fork_success"
+        ]
+      },
+      "execution_layer": "Chainlit handler/data-layer",
+      "deterministic": true,
+      "repetitions": 1,
+      "tags": [
+        "lifecycle",
+        "no_collateral_damage"
+      ],
+      "status": "passed",
+      "actual_result": {
+        "rollback": true,
+        "success_event": false
+      },
+      "root_cause": null,
+      "database_state_diff": {},
+      "required_call_or_event_mismatch": [],
+      "forbidden_side_effect": null,
+      "trace_or_screenshot_path": null,
+      "error": null,
+      "duration_ms": 0.279
+    },
+    {
+      "case_id": "PB-FAIL-006",
+      "category": "failures",
+      "description": "Rapid duplicate New Chat actions have defined single-action behavior.",
+      "expected_invariant": {
+        "expected_state": {
+          "unexpected_extra_chats": 0
+        },
+        "required_events": [
+          "lifecycle_action_guard"
+        ],
+        "forbidden_events": [
+          "duplicate_unintended_chat"
+        ]
+      },
+      "execution_layer": "Chainlit handler/data-layer",
+      "deterministic": true,
+      "repetitions": 1,
+      "tags": [
+        "race",
+        "idempotency"
+      ],
+      "status": "passed",
+      "actual_result": {
+        "guard": true,
+        "duplicate_action_rejected": true
+      },
+      "root_cause": null,
+      "database_state_diff": {},
+      "required_call_or_event_mismatch": [],
+      "forbidden_side_effect": null,
+      "trace_or_screenshot_path": null,
+      "error": null,
+      "duration_ms": 0.126
+    },
+    {
+      "case_id": "PB-FAIL-007",
+      "category": "failures",
+      "description": "Rapid duplicate Fork actions do not corrupt or partially initialize forks.",
+      "expected_invariant": {
+        "expected_state": {
+          "partial_forks": 0,
+          "corruption": false
+        },
+        "required_events": [
+          "lifecycle_action_guard"
+        ],
+        "forbidden_events": [
+          "partial_fork",
+          "corrupt_history"
+        ]
+      },
+      "execution_layer": "Chainlit handler/data-layer",
+      "deterministic": true,
+      "repetitions": 1,
+      "tags": [
+        "race",
+        "idempotency"
+      ],
+      "status": "passed",
+      "actual_result": {
+        "guard": true,
+        "duplicate_action_rejected": true
+      },
+      "root_cause": null,
+      "database_state_diff": {},
+      "required_call_or_event_mismatch": [],
+      "forbidden_side_effect": null,
+      "trace_or_screenshot_path": null,
+      "error": null,
+      "duration_ms": 0.091
+    },
+    {
+      "case_id": "PB-FAIL-008",
+      "category": "failures",
+      "description": "Send racing with End Chat is fully accepted before end or rejected before persistence.",
+      "expected_invariant": {
+        "expected_state": {
+          "half_written_turns": 0,
+          "post_end_generation": 0
+        },
+        "required_events": [
+          "atomic_send_end_outcome"
+        ],
+        "forbidden_events": [
+          "half_written_message",
+          "post_end_answer"
+        ]
+      },
+      "execution_layer": "repository/service",
+      "deterministic": true,
+      "repetitions": 1,
+      "tags": [
+        "race",
+        "lifecycle",
+        "no_collateral_damage"
+      ],
+      "status": "passed",
+      "actual_result": {
+        "half_written_turns": 0,
+        "post_end_generation": 0
+      },
+      "root_cause": null,
+      "database_state_diff": {},
+      "required_call_or_event_mismatch": [],
+      "forbidden_side_effect": null,
+      "trace_or_screenshot_path": null,
+      "error": null,
+      "duration_ms": 25.594
+    },
+    {
+      "case_id": "PB-FAIL-009",
+      "category": "failures",
+      "description": "Upload racing with send waits for indexing and avoids stale scope.",
+      "expected_invariant": {
+        "expected_state": {
+          "answer_before_ready": false,
+          "stale_scope": false
+        },
+        "required_events": [
+          "document_readiness_barrier"
+        ],
+        "forbidden_events": [
+          "missing_document_claim",
+          "stale_document_scope"
+        ]
+      },
+      "execution_layer": "repository/service",
+      "deterministic": true,
+      "repetitions": 1,
+      "tags": [
+        "race",
+        "documents"
+      ],
+      "status": "passed",
+      "actual_result": {
+        "answer_before_ready": false,
+        "stale_scope": false
+      },
+      "root_cause": null,
+      "database_state_diff": {},
+      "required_call_or_event_mismatch": [],
+      "forbidden_side_effect": null,
+      "trace_or_screenshot_path": null,
+      "error": null,
+      "duration_ms": 75.494
+    },
+    {
+      "case_id": "PB-FAIL-010",
+      "category": "failures",
+      "description": "Retries do not duplicate messages, memories, gists, documents, or chunks.",
+      "expected_invariant": {
+        "expected_state": {
+          "duplicate_records": 0
+        },
+        "required_events": [
+          "idempotency_key_or_state_guard"
+        ],
+        "forbidden_events": [
+          "duplicate_write"
+        ]
+      },
+      "execution_layer": "repository/service",
+      "deterministic": true,
+      "repetitions": 1,
+      "tags": [
+        "idempotency",
+        "no_collateral_damage"
+      ],
+      "status": "failed",
+      "actual_result": {
+        "document_upload_idempotency": true,
+        "message_idempotency_key": false,
+        "memory_idempotency_key": false,
+        "gist_idempotency_key": false
+      },
+      "root_cause": "Upload retries are idempotent, but no single operation key covers messages, memories, and gists.",
+      "database_state_diff": {},
+      "required_call_or_event_mismatch": [
+        "cross-operation idempotency contract"
+      ],
+      "forbidden_side_effect": null,
+      "trace_or_screenshot_path": null,
+      "error": null,
+      "duration_ms": 0.01
+    },
+    {
+      "case_id": "PB-LIFE-002",
+      "category": "lifecycle",
+      "description": "An empty newly persisted chat is visible before its first message.",
+      "expected_invariant": {
+        "expected_state": {
+          "thread_visible": true
+        },
+        "required_events": [
+          "chat_insert",
+          "thread_list_read"
+        ],
+        "forbidden_events": [
+          "message_write"
+        ]
+      },
+      "execution_layer": "Chainlit handler/data-layer",
+      "deterministic": true,
+      "repetitions": 1,
+      "tags": [
+        "persistence"
+      ],
+      "status": "passed",
+      "actual_result": {
+        "thread_visible": true,
+        "message_count": 0
+      },
+      "root_cause": null,
+      "database_state_diff": {},
+      "required_call_or_event_mismatch": [],
+      "forbidden_side_effect": null,
+      "trace_or_screenshot_path": null,
+      "error": null,
+      "duration_ms": 3.571
+    },
+    {
+      "case_id": "PB-LIFE-003",
+      "category": "lifecycle",
+      "description": "End Chat delegates to the authoritative ChatEndAction.",
+      "expected_invariant": {
+        "expected_state": {
+          "ChatEndAction_calls": 1
+        },
+        "required_events": [
+          "ChatEndAction.execute"
+        ],
+        "forbidden_events": [
+          "ui_memory_flush_implementation"
+        ]
+      },
+      "execution_layer": "Chainlit handler/data-layer",
+      "deterministic": true,
+      "repetitions": 1,
+      "tags": [
+        "lifecycle"
+      ],
+      "status": "passed",
+      "actual_result": {
+        "authoritative_action": true,
+        "duplicated_flush_logic": false
+      },
+      "root_cause": null,
+      "database_state_diff": {},
+      "required_call_or_event_mismatch": [],
+      "forbidden_side_effect": null,
+      "trace_or_screenshot_path": null,
+      "error": null,
+      "duration_ms": 0.393
+    },
+    {
+      "case_id": "PB-LIFE-004",
+      "category": "lifecycle",
+      "description": "Successful End Chat finalizes work, marks inactive, and preserves history.",
+      "expected_invariant": {
+        "expected_state": {
+          "active": false,
+          "messages": 2,
+          "flush_calls": 1
+        },
+        "required_events": [
+          "memory_flush",
+          "gist_finalize",
+          "mark_inactive"
+        ],
+        "forbidden_events": [
+          "message_delete"
+        ]
+      },
+      "execution_layer": "repository/service",
+      "deterministic": true,
+      "repetitions": 1,
+      "tags": [
+        "lifecycle",
+        "no_collateral_damage"
+      ],
+      "status": "passed",
+      "actual_result": {
+        "active": false,
+        "preserved_messages": 2,
+        "flush_calls": 1,
+        "gist_calls": 1,
+        "result_inactive": true
+      },
+      "root_cause": null,
+      "database_state_diff": {},
+      "required_call_or_event_mismatch": [],
+      "forbidden_side_effect": null,
+      "trace_or_screenshot_path": null,
+      "error": null,
+      "duration_ms": 5.143
+    },
+    {
+      "case_id": "PB-LIFE-007",
+      "category": "lifecycle",
+      "description": "Ended chats reject new turns before persistence and model execution.",
+      "expected_invariant": {
+        "expected_state": {
+          "message_delta": 0,
+          "model_calls": 0
+        },
+        "required_events": [
+          "inactive_guard"
+        ],
+        "forbidden_events": [
+          "message_write",
+          "answer_model_call"
+        ]
+      },
+      "execution_layer": "Chainlit handler/data-layer",
+      "deterministic": true,
+      "repetitions": 1,
+      "tags": [
+        "lifecycle",
+        "no_collateral_damage"
+      ],
+      "status": "passed",
+      "actual_result": {
+        "guard_before_service": true,
+        "message_delta": 0,
+        "model_calls": 0
+      },
+      "root_cause": null,
+      "database_state_diff": {},
+      "required_call_or_event_mismatch": [],
+      "forbidden_side_effect": null,
+      "trace_or_screenshot_path": null,
+      "error": null,
+      "duration_ms": 0.835
+    },
+    {
+      "case_id": "PB-LIFE-008",
+      "category": "lifecycle",
+      "description": "Repeated End Chat is idempotent.",
+      "expected_invariant": {
+        "expected_state": {
+          "active": false,
+          "duplicate_gists": 0,
+          "duplicate_messages": 0
+        },
+        "required_events": [
+          "single_effective_finalization"
+        ],
+        "forbidden_events": [
+          "duplicate_memory",
+          "duplicate_gist"
+        ]
+      },
+      "execution_layer": "repository/service",
+      "deterministic": true,
+      "repetitions": 1,
+      "tags": [
+        "idempotency",
+        "lifecycle"
+      ],
+      "status": "passed",
+      "actual_result": {
+        "active": false,
+        "gist_count": 1,
+        "message_count": 2,
+        "memory_processor_calls": 2
+      },
+      "root_cause": null,
+      "database_state_diff": {},
+      "required_call_or_event_mismatch": [],
+      "forbidden_side_effect": null,
+      "trace_or_screenshot_path": null,
+      "error": null,
+      "duration_ms": 9.545
+    },
+    {
+      "case_id": "PB-LIFE-010",
+      "category": "lifecycle",
+      "description": "Fork copies initial history and subsequent messages remain independent.",
+      "expected_invariant": {
+        "expected_state": {
+          "shared_prefix": 2,
+          "independent_suffixes": true
+        },
+        "required_events": [
+          "transactional_fork"
+        ],
+        "forbidden_events": [
+          "cross_chat_suffix"
+        ]
+      },
+      "execution_layer": "repository/service",
+      "deterministic": true,
+      "repetitions": 1,
+      "tags": [
+        "scope_isolation",
+        "lifecycle"
+      ],
+      "status": "passed",
+      "actual_result": {
+        "shared_prefix": 2,
+        "independent_suffixes": true
+      },
+      "root_cause": null,
+      "database_state_diff": {},
+      "required_call_or_event_mismatch": [],
+      "forbidden_side_effect": null,
+      "trace_or_screenshot_path": null,
+      "error": null,
+      "duration_ms": 6.361
+    },
+    {
+      "case_id": "PB-NAV-002",
+      "category": "navigation",
+      "description": "All persisted active chats appear in sidebar navigation.",
+      "expected_invariant": {
+        "expected_state": {
+          "visible_active_chats": 3
+        },
+        "required_events": [
+          "thread_list_read"
+        ],
+        "forbidden_events": [
+          "model_call",
+          "message_write"
+        ]
+      },
+      "execution_layer": "Chainlit handler/data-layer",
+      "deterministic": true,
+      "repetitions": 1,
+      "tags": [
+        "persistence",
+        "no_collateral_damage"
+      ],
+      "status": "passed",
+      "actual_result": {
+        "visible_active_chats": 3,
+        "chat_ids": [
+          "active-0",
+          "active-1",
+          "active-2"
+        ]
+      },
+      "root_cause": null,
+      "database_state_diff": {},
+      "required_call_or_event_mismatch": [],
+      "forbidden_side_effect": null,
+      "trace_or_screenshot_path": null,
+      "error": null,
+      "duration_ms": 4.698
+    },
+    {
+      "case_id": "PB-NAV-004",
+      "category": "navigation",
+      "description": "Sidebar ordering and pagination use updated_at descending with a stable tie-breaker.",
+      "expected_invariant": {
+        "expected_state": {
+          "duplicates": 0,
+          "missing": 0,
+          "stable": true
+        },
+        "required_events": [
+          "ordered_thread_query"
+        ],
+        "forbidden_events": [
+          "duplicate_thread"
+        ]
+      },
+      "execution_layer": "repository/service",
+      "deterministic": true,
+      "repetitions": 1,
+      "tags": [
+        "persistence"
+      ],
+      "status": "passed",
+      "actual_result": {
+        "ids": [
+          "chat-e",
+          "chat-d",
+          "chat-c",
+          "chat-b",
+          "chat-a"
+        ],
+        "duplicates": 0,
+        "missing": 0
+      },
+      "root_cause": null,
+      "database_state_diff": {},
+      "required_call_or_event_mismatch": [],
+      "forbidden_side_effect": null,
+      "trace_or_screenshot_path": null,
+      "error": null,
+      "duration_ms": 5.716
+    },
+    {
+      "case_id": "PB-NAV-005",
+      "category": "navigation",
+      "description": "Opening chat A renders only chat A history.",
+      "expected_invariant": {
+        "expected_state": {
+          "visible_chat": "A",
+          "foreign_messages": 0
+        },
+        "required_events": [
+          "thread_read:A"
+        ],
+        "forbidden_events": [
+          "message_from:B"
+        ]
+      },
+      "execution_layer": "Chainlit handler/data-layer",
+      "deterministic": true,
+      "repetitions": 1,
+      "tags": [
+        "scope_isolation"
+      ],
+      "status": "passed",
+      "actual_result": {
+        "outputs": [
+          "A-question",
+          "A-answer"
+        ],
+        "foreign_messages": 0
+      },
+      "root_cause": null,
+      "database_state_diff": {},
+      "required_call_or_event_mismatch": [],
+      "forbidden_side_effect": null,
+      "trace_or_screenshot_path": null,
+      "error": null,
+      "duration_ms": 6.762
+    },
+    {
+      "case_id": "PB-NAV-006",
+      "category": "navigation",
+      "description": "Home and chat switching call no model, router, retriever, or memory extractor.",
+      "expected_invariant": {
+        "expected_state": {
+          "model_calls": 0,
+          "message_delta": 0
+        },
+        "required_events": [
+          "repository_read"
+        ],
+        "forbidden_events": [
+          "model_call",
+          "router_call",
+          "retriever_call",
+          "memory_update"
+        ]
+      },
+      "execution_layer": "Chainlit handler/data-layer",
+      "deterministic": true,
+      "repetitions": 1,
+      "tags": [
+        "no_collateral_damage"
+      ],
+      "status": "passed",
+      "actual_result": {
+        "model_calls": 0,
+        "router_calls": 0,
+        "retriever_calls": 0,
+        "memory_updates": 0,
+        "message_delta": 0
+      },
+      "root_cause": null,
+      "database_state_diff": {},
+      "required_call_or_event_mismatch": [],
+      "forbidden_side_effect": null,
+      "trace_or_screenshot_path": null,
+      "error": null,
+      "duration_ms": 5.359
+    },
+    {
+      "case_id": "PB-NAV-007",
+      "category": "navigation",
+      "description": "Selected chat state changes per UI session without changing persisted messages.",
+      "expected_invariant": {
+        "expected_state": {
+          "selected_chat": "B",
+          "message_delta": 0
+        },
+        "required_events": [
+          "session_selection_update"
+        ],
+        "forbidden_events": [
+          "message_write"
+        ]
+      },
+      "execution_layer": "Chainlit handler/data-layer",
+      "deterministic": true,
+      "repetitions": 1,
+      "tags": [
+        "scope_isolation",
+        "no_collateral_damage"
+      ],
+      "status": "passed",
+      "actual_result": {
+        "session_scoped_selection": true,
+        "persisted_message_delta": 0
+      },
+      "root_cause": null,
+      "database_state_diff": {},
+      "required_call_or_event_mismatch": [],
+      "forbidden_side_effect": null,
+      "trace_or_screenshot_path": null,
+      "error": null,
+      "duration_ms": 0.156
+    },
+    {
+      "case_id": "PB-PERSIST-001",
+      "category": "persistence",
+      "description": "Messages remain owned by their correct chat.",
+      "expected_invariant": {
+        "expected_state": {
+          "cross_chat_messages": 0
+        },
+        "required_events": [
+          "scoped_message_reads"
+        ],
+        "forbidden_events": [
+          "cross_chat_message"
+        ]
+      },
+      "execution_layer": "repository/service",
+      "deterministic": true,
+      "repetitions": 1,
+      "tags": [
+        "scope_isolation"
+      ],
+      "status": "passed",
+      "actual_result": {
+        "outputs": [
+          "A-question",
+          "A-answer"
+        ],
+        "foreign_messages": 0
+      },
+      "root_cause": null,
+      "database_state_diff": {},
+      "required_call_or_event_mismatch": [],
+      "forbidden_side_effect": null,
+      "trace_or_screenshot_path": null,
+      "error": null,
+      "duration_ms": 6.059
+    },
+    {
+      "case_id": "PB-PERSIST-002",
+      "category": "persistence",
+      "description": "Inactive status survives repository reconstruction.",
+      "expected_invariant": {
+        "expected_state": {
+          "active": false
+        },
+        "required_events": [
+          "persisted_status_read"
+        ],
+        "forbidden_events": [
+          "implicit_reactivation"
+        ]
+      },
+      "execution_layer": "repository/service",
+      "deterministic": true,
+      "repetitions": 1,
+      "tags": [
+        "persistence"
+      ],
+      "status": "passed",
+      "actual_result": {
+        "active": false
+      },
+      "root_cause": null,
+      "database_state_diff": {},
+      "required_call_or_event_mismatch": [],
+      "forbidden_side_effect": null,
+      "trace_or_screenshot_path": null,
+      "error": null,
+      "duration_ms": 5.068
+    },
+    {
+      "case_id": "PB-PERSIST-003",
+      "category": "persistence",
+      "description": "Chat list survives repository reconstruction.",
+      "expected_invariant": {
+        "expected_state": {
+          "chats": 3
+        },
+        "required_events": [
+          "persisted_chat_read"
+        ],
+        "forbidden_events": [
+          "chat_loss"
+        ]
+      },
+      "execution_layer": "repository/service",
+      "deterministic": true,
+      "repetitions": 1,
+      "tags": [
+        "persistence"
+      ],
+      "status": "passed",
+      "actual_result": {
+        "chat_count": 3
+      },
+      "root_cause": null,
+      "database_state_diff": {},
+      "required_call_or_event_mismatch": [],
+      "forbidden_side_effect": null,
+      "trace_or_screenshot_path": null,
+      "error": null,
+      "duration_ms": 4.141
+    },
+    {
+      "case_id": "PB-PERSIST-004",
+      "category": "persistence",
+      "description": "Selected-chat state does not leak between UI sessions.",
+      "expected_invariant": {
+        "expected_state": {
+          "session_B": "chat-B"
+        },
+        "required_events": [
+          "session_local_state"
+        ],
+        "forbidden_events": [
+          "cross_session_selection"
+        ]
+      },
+      "execution_layer": "Chainlit handler/data-layer",
+      "deterministic": true,
+      "repetitions": 1,
+      "tags": [
+        "scope_isolation"
+      ],
+      "status": "passed",
+      "actual_result": {
+        "session_A": "A2",
+        "session_B": "B"
+      },
+      "root_cause": null,
+      "database_state_diff": {},
+      "required_call_or_event_mismatch": [],
+      "forbidden_side_effect": null,
+      "trace_or_screenshot_path": null,
+      "error": null,
+      "duration_ms": 0.007
+    },
+    {
+      "case_id": "PB-PERSIST-005",
+      "category": "persistence",
+      "description": "User A cannot list, open, or retrieve user B chats.",
+      "expected_invariant": {
+        "expected_state": {
+          "foreign_chats": 0
+        },
+        "required_events": [
+          "user_scope_filter"
+        ],
+        "forbidden_events": [
+          "foreign_chat_read"
+        ]
+      },
+      "execution_layer": "repository/service",
+      "deterministic": true,
+      "repetitions": 1,
+      "tags": [
+        "scope_isolation",
+        "security"
+      ],
+      "status": "failed",
+      "actual_result": {
+        "supported": false
+      },
+      "root_cause": "The current product has one fixed local-user identity and no per-user chat ownership.",
+      "database_state_diff": {},
+      "required_call_or_event_mismatch": [
+        "user_scope_filter"
+      ],
+      "forbidden_side_effect": null,
+      "trace_or_screenshot_path": null,
+      "error": null,
+      "duration_ms": 0.007
+    },
+    {
+      "case_id": "PB-PERSIST-006",
+      "category": "persistence",
+      "description": "A chat-associated document is unavailable to unrelated chats unless explicitly global.",
+      "expected_invariant": {
+        "expected_state": {
+          "foreign_document_chunks": 0
+        },
+        "required_events": [
+          "document_scope_filter"
+        ],
+        "forbidden_events": [
+          "cross_chat_document"
+        ]
+      },
+      "execution_layer": "repository/service",
+      "deterministic": true,
+      "repetitions": 1,
+      "tags": [
+        "scope_isolation",
+        "documents"
+      ],
+      "status": "passed",
+      "actual_result": {
+        "associated_chat": "A",
+        "chat_A": [
+          "doc-A"
+        ],
+        "chat_B": []
+      },
+      "root_cause": null,
+      "database_state_diff": {},
+      "required_call_or_event_mismatch": [],
+      "forbidden_side_effect": null,
+      "trace_or_screenshot_path": null,
+      "error": null,
+      "duration_ms": 5.035
+    },
+    {
+      "case_id": "PB-PERSIST-007",
+      "category": "persistence",
+      "description": "Evidence provenance references existing chats, messages, documents, and valid ranges.",
+      "expected_invariant": {
+        "expected_state": {
+          "dangling_references": 0
+        },
+        "required_events": [
+          "provenance_validation"
+        ],
+        "forbidden_events": [
+          "dangling_message_id",
+          "invalid_range"
+        ]
+      },
+      "execution_layer": "repository/service",
+      "deterministic": true,
+      "repetitions": 1,
+      "tags": [
+        "scope_isolation",
+        "no_collateral_damage"
+      ],
+      "status": "passed",
+      "actual_result": {
+        "dangling_references": 0,
+        "valid_range": true
+      },
+      "root_cause": null,
+      "database_state_diff": {},
+      "required_call_or_event_mismatch": [],
+      "forbidden_side_effect": null,
+      "trace_or_screenshot_path": null,
+      "error": null,
+      "duration_ms": 4.047
+    }
+  ],
+  "runtime_ms": 642.2528319963021
+}

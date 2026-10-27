@@ -99,32 +99,30 @@
     },
     "app-composition": {
       "category": "offline-integration",
-      "enabled": false,
+      "enabled": true,
       "files": [
         "tests/test_chainlit_chat_actions.py",
         "tests/test_chainlit_memory_trace_helpers.py",
         "tests/product_behavior/test_runner.py"
       ],
-      "reason": "Pending app import/model/cache setup review; isolation does not supply prerequisites."
+      "reason": "Admitted with isolated writable Chainlit app root, tracked asset hashes, canonical storage/settings and deterministic embedding dependency before app import. Existing services/handlers remain real; existing local per-test fakes retained."
     },
     "subprocess-wrappers": {
       "category": "offline-integration",
-      "enabled": false,
+      "enabled": true,
       "files": [
         "tests/test_final_eval_wrappers.py",
         "tests/test_targeted_eval_wrapper.py"
       ],
-      "reason": "Pending actual uv/no-sync, synthetic Git and ephemeral output prerequisites review; tracked sourced helper verified present."
+      "reason": "Admitted with actual read-only uv, no-sync/offline/no Python downloads, synthetic Git metadata, snapshot-matched read-only source copy and ephemeral fixed artifact directory. Existing fake answer/judge scripts remain fixtures."
     },
     "browser": {
       "category": "browser",
-      "enabled": false,
+      "enabled": true,
       "files": [
-        "tests/e2e/test_product_behavior_browser.py",
-        "braemon/e2e/chat-messages.test.mjs",
-        "braemon/e2e/smoke.test.mjs"
+        "tests/e2e/test_product_behavior_browser.py"
       ],
-      "reason": "Pending tracked Chainlit configuration, fixture/runtime and private-loopback review; optional loopback support is implemented but not accepted/executed."
+      "reason": "Python browser scenarios with actual Chrome/Playwright, isolated local service/loopback, tracked assets, existing deterministic browser fixture. Native Chrome and child inheritance canaries must pass before pytest."
     },
     "live-provider": {
       "category": "live-provider",
@@ -154,6 +152,15 @@
       "reason": "HTTP/socket diagnostics use existing services; not isolated pytest protection.",
       "entry_register": "docs/audit/stage5/exclusions.md",
       "expense_assessment": "docs/audit/stage5/group-assessment.md"
+    },
+    "node-browser": {
+      "category": "browser",
+      "enabled": false,
+      "files": [
+        "braemon/e2e/chat-messages.test.mjs",
+        "braemon/e2e/smoke.test.mjs"
+      ],
+      "reason": "Separate Node frontend build/service/runtime/dependency runner not admitted; Python Chainlit browser scenarios do not protect these paths."
     }
   },
   "excluded_nodes": {

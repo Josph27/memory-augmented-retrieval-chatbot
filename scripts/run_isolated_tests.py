@@ -18,7 +18,7 @@ import tempfile
 import time
 
 DEFAULT_VENV = "/home/josph/UNI/TUM/PRAK-AGENTS/repo/.venv"
-SAFE_TRACKED_ASSETS = {".chainlit/config.toml"}
+SAFE_TRACKED_ASSETS = {".chainlit/config.toml", "chainlit.md", "public/product-navigation.js"}
 PRIVATE_NAMES = {".git", ".env", "local_settings.py"}
 RUNTIME_ROOTS = {
     "data",
@@ -69,6 +69,7 @@ def source_snapshot(repo):
             files[name] = {
                 "sha256": hashlib.sha256(absolute.read_bytes()).hexdigest(),
                 "size": absolute.stat().st_size,
+                "mode": absolute.stat().st_mode & 0o777,
             }
         else:
             files[name] = {"missing": True}
@@ -96,6 +97,7 @@ def parse_args():
         help="Evidence label: initial or post-<repair-id>; never overwrites prior runs",
     )
     parser.add_argument("--venv", default=DEFAULT_VENV)
+    parser.add_argument("--uv", type=Path, default=Path("/home/josph/.local/bin/uv"))
     parser.add_argument("--output-root", type=Path, default=Path(tempfile.gettempdir()))
     parser.add_argument("--timeout", type=int, default=300)
     parser.add_argument("--chrome-runtime", type=Path, default=Path("/opt/google/chrome"))
@@ -121,7 +123,16 @@ def launch(args):
             )
     if args.timeout < 1 or args.timeout > 3600:
         raise SystemExit("--timeout must be 1..3600 seconds")
+    wrappers = "subprocess-wrappers" in groups
+    app_group = "app-composition" in groups
     browser = any(registry["groups"][g]["category"] == "browser" for g in groups)
+    if args.configuration == "canonical" and any(
+        group not in {"offline-unit", "offline-integration"} for group in groups
+    ):
+        raise SystemExit(
+            "Canonical configuration is supported only for the core offline groups; "
+            "admitted app/wrapper/browser groups require explicit deterministic setup."
+        )
     venv = Path(args.venv).resolve()
     if not (venv / "bin/python").exists() or not shutil.which("bwrap"):
         raise SystemExit("Prerequisite unavailable: bwrap and configured venv/bin/python required")
@@ -150,6 +161,24 @@ def launch(args):
             raise SystemExit("Tracked configuration changed while snapshotting")
         tracked_assets[name] = {"sha256": digest}
     write_json(output / "tracked-inputs.json", tracked_assets)
+    source_mount = repo
+    if wrappers:
+        # Fixed wrapper output paths require a writable empty artifacts directory.
+        # Materialize only snapshot-approved inputs, never ignored/private/runtime files.
+        source_mount = output / "source"
+        source_mount.mkdir()
+        for name, identity in snapshot["working_files"].items():
+            if "sha256" not in identity:
+                raise SystemExit(f"Wrapper snapshot requires regular existing files: {name}")
+            destination = source_mount / name
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            destination.write_bytes((repo / name).read_bytes())
+            destination.chmod(identity["mode"])
+            if hashlib.sha256(destination.read_bytes()).hexdigest() != identity["sha256"]:
+                raise SystemExit(f"Source changed while creating wrapper snapshot: {name}")
+        (source_mount / "artifacts").mkdir()
+        (source_mount / ".cache").mkdir(exist_ok=True)
+        (source_mount / ".git").touch()
     host_ns = {name: os.readlink(f"/proc/self/ns/{name}") for name in ("net", "mnt")}
     write_json(
         output / "request.json",
@@ -160,6 +189,9 @@ def launch(args):
             "collect_only": args.collect_only,
             "canary_only": args.canary_only,
             "controlled_loopback": browser,
+            "wrappers": wrappers,
+            "app_group": app_group,
+            "source_copy": wrappers,
             "host_namespaces": host_ns,
             "source_head": snapshot["head"],
             "timeout_seconds": args.timeout,
@@ -201,15 +233,20 @@ def launch(args):
         str(venv),
         "/venv",
         "--ro-bind",
-        str(repo),
+        str(source_mount),
         "/repo",
     ]
     for name in sorted(PRIVATE_NAMES | RUNTIME_ROOTS):
-        path = repo / name
+        path = source_mount / name
         if path.is_dir() and not path.is_symlink():
             command += ["--tmpfs", f"/repo/{name}"]
         elif path.exists():
             command += ["--ro-bind", "/dev/null", f"/repo/{name}"]
+    if wrappers:
+        uv = args.uv.resolve()
+        if not uv.is_file():
+            raise SystemExit("Wrapper prerequisite unavailable: configured uv executable")
+        command += ["--ro-bind", str(uv), "/tools/uv", "--tmpfs", "/repo/artifacts"]
     for name in sorted(tracked_assets):
         command += ["--ro-bind", str(output / "tracked-inputs" / name), "/repo/" + name]
     if browser:
@@ -235,7 +272,7 @@ def launch(args):
         "--clearenv",
         "--setenv",
         "PATH",
-        "/venv/bin:/usr/bin:/bin",
+        "/tools:/venv/bin:/usr/bin:/bin",
         "--setenv",
         "LANG",
         "C.UTF-8",
@@ -261,6 +298,15 @@ def launch(args):
             "venv_host_path": str(venv),
             "started_unix": time.time(),
             "runner_sha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
+            "source_mount": str(source_mount),
+            "uv_sha256": hashlib.sha256(args.uv.resolve().read_bytes()).hexdigest()
+            if wrappers
+            else None,
+            "chrome_sha256": hashlib.sha256(
+                (args.chrome_runtime.resolve() / "chrome").read_bytes()
+            ).hexdigest()
+            if browser
+            else None,
         },
     )
     start = time.monotonic()
@@ -396,6 +442,14 @@ def inner(args):
         if (repo / name).exists():
             (work / name).symlink_to(repo / name, target_is_directory=(repo / name).is_dir())
     (work / "tmp").mkdir()
+    (work / "run").mkdir(mode=0o700)
+    app_root = work / "app-root"
+    (app_root / ".files").mkdir(parents=True)
+    for name, identity in tracked_assets.items():
+        destination = app_root / name
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_bytes((work / "tracked-inputs" / name).read_bytes())
+        assert hashlib.sha256(destination.read_bytes()).hexdigest() == identity["sha256"]
     os.environ.update(
         {
             "BREAMON_ISOLATED_PROOF": hashlib.sha256(
@@ -403,6 +457,7 @@ def inner(args):
             ).hexdigest(),
             "PYTEST_DISABLE_PLUGIN_AUTOLOAD": "1",
             "PYTHONDONTWRITEBYTECODE": "1",
+            "PYTHONUNBUFFERED": "1",
             "PYTHON_DOTENV_DISABLED": "1",
             "HF_HUB_OFFLINE": "1",
             "HF_DATASETS_OFFLINE": "1",
@@ -412,8 +467,18 @@ def inner(args):
             "TOKENIZERS_PARALLELISM": "false",
             "HF_HOME": "/work/hf",
             "XDG_CACHE_HOME": "/work/cache",
+            "XDG_CONFIG_HOME": "/work/config",
+            "XDG_RUNTIME_DIR": "/work/run",
             "TORCH_HOME": "/work/torch",
             "UV_CACHE_DIR": "/work/uv",
+            "UV_NO_SYNC": "1",
+            "UV_PROJECT_ENVIRONMENT": "/venv",
+            "UV_PYTHON": "/venv/bin/python",
+            "UV_PYTHON_DOWNLOADS": "never",
+            "UV_OFFLINE": "1",
+            "CHAINLIT_APP_ROOT": "/work/app-root",
+            "CHAINLIT_AUTH_SECRET": "stage5-synthetic-auth-secret",
+            "PRODUCT_E2E_CHROME": "/opt/google/chrome/chrome",
             "DATABASE_PATH": "/work/default.db",
             "LANGCHAIN_CHROMA_PERSIST_DIR": "/work/chroma",
             "TMPDIR": "/work/tmp",
@@ -428,6 +493,93 @@ def inner(args):
             "MKL_NUM_THREADS": "1",
         }
     )
+    prerequisite_evidence = {}
+    if request["wrappers"]:
+        synthetic_git = work / "synthetic.git"
+        subprocess.run(
+            ["git", "init", "--bare", "--initial-branch=stage5-isolated", str(synthetic_git)],
+            check=True,
+            capture_output=True,
+        )
+        os.environ.update(
+            {
+                "GIT_DIR": str(synthetic_git),
+                "GIT_WORK_TREE": "/repo",
+                "GIT_CONFIG_GLOBAL": "/dev/null",
+                "GIT_CONFIG_SYSTEM": "/dev/null",
+                "GIT_CONFIG_NOSYSTEM": "1",
+                "GIT_TERMINAL_PROMPT": "0",
+            }
+        )
+        tree = subprocess.check_output(["git", "mktree"], input=b"").decode().strip()
+        commit = subprocess.check_output(
+            [
+                "git",
+                "-c",
+                "user.name=Stage5",
+                "-c",
+                "user.email=stage5@invalid",
+                "commit-tree",
+                tree,
+                "-m",
+                "Synthetic wrapper metadata only",
+            ],
+            text=True,
+        ).strip()
+        subprocess.run(["git", "update-ref", "refs/heads/stage5-isolated", commit], check=True)
+        version = subprocess.check_output(["uv", "--version"], text=True).strip()
+        uv_child = subprocess.run(
+            [
+                "uv",
+                "run",
+                "python",
+                "-c",
+                "import sys; assert sys.prefix == '/venv'; print(sys.version)",
+            ],
+            cwd="/repo",
+            env={**os.environ, "UV_CACHE_DIR": "/repo/.cache/uv"},
+            capture_output=True,
+            text=True,
+            timeout=20,
+        )
+        assert uv_child.returncode == 0, uv_child.stderr
+        assert subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip() == commit
+        (repo / "artifacts" / "stage5-write-canary").write_text("ephemeral")
+        (repo / "artifacts" / "stage5-write-canary").unlink()
+        prerequisite_evidence["wrapper_runtime"] = {
+            "uv_version": version,
+            "uv_sha256": hashlib.sha256(Path("/tools/uv").read_bytes()).hexdigest(),
+            "synthetic_git_commit": commit,
+            "git_is_source_history": False,
+            "uv_child_python": uv_child.stdout.strip(),
+            "verified_wrapper_cache": "/repo/.cache/uv",
+        }
+    if request["controlled_loopback"]:
+        chrome = "/opt/google/chrome/chrome"
+        version = subprocess.check_output([chrome, "--version"], text=True, timeout=10).strip()
+        check = subprocess.run(
+            [
+                chrome,
+                "--headless",
+                "--no-sandbox",
+                "--disable-dev-shm-usage",
+                "--disable-background-networking",
+                "--no-first-run",
+                "--user-data-dir=/work/chrome-canary",
+                "--dump-dom",
+                "data:text/html,<p>STAGE5_NATIVE_CHROME</p>",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        assert check.returncode == 0 and "STAGE5_NATIVE_CHROME" in check.stdout, check.stderr
+        prerequisite_evidence["browser_runtime"] = {
+            "chrome_version": version,
+            "chrome_sha256": hashlib.sha256(Path(chrome).read_bytes()).hexdigest(),
+            "native_launch_passed": True,
+        }
+    write_json("/work/prerequisites.json", prerequisite_evidence)
     if request["configuration"] == "deterministic":
         os.environ.update(
             {
@@ -458,6 +610,8 @@ def inner(args):
     assert configured_evidence["passed"]
     canaries["subprocess_inherits_synthetic_configuration"] = True
     proof["configured_child"] = configured_evidence
+    proof["prerequisites"] = prerequisite_evidence
+    proof["tracked_app_assets"] = tracked_assets
     write_json("/work/isolation-proof.json", proof)
     os.environ["BREAMON_ISOLATED_PROOF"] = hashlib.sha256(
         Path("/work/isolation-proof.json").read_bytes()
@@ -524,6 +678,13 @@ def inner(args):
         settings.RERANKER_MODE = "deterministic"
         settings.ROUTING_MODE = "rule"
         settings.PREVIOUS_CHAT_GIST_EXTRACTOR = "deterministic"
+    if request["app_group"] or request["controlled_loopback"]:
+        os.chdir(app_root)
+    if request["app_group"]:
+        sys.path.insert(0, "/repo/tests")
+        from support.chainlit_bootstrap import prepare_chainlit_dependencies
+
+        prepare_chainlit_dependencies()
     import importlib.metadata
 
     dependencies = sorted(
@@ -542,7 +703,8 @@ def inner(args):
                 "document_chroma": "/work/chroma",
                 "structured_vectors": "same isolated SQLite",
             },
-            "model_substitutions": "Only existing test fixtures; no global fake product/ConnectionGuard outcome",
+            "model_substitutions": "Existing test fixtures; app group additionally injects deterministic embeddings only before app import. No global product/ConnectionGuard outcome override.",
+            "prerequisites": prerequisite_evidence,
         },
     )
     import pytest
@@ -628,6 +790,7 @@ def inner(args):
                 "duration_seconds": report.duration,
                 "detail": str(report.longrepr) if report.longrepr else None,
                 "captured_sections": list(report.sections),
+                "user_properties": list(report.user_properties),
             }
             if getattr(report, "wasxfail", False):
                 entry["classified"] = "xfailed" if report.skipped else "xpassed"

@@ -1,5 +1,5 @@
 {
-  "tracked_python_files": 232,
+  "python_files": 233,
   "syntax_errors": [
     {
       "path": "scripts/rebuild_long_term_memory_index.py",
@@ -20,5 +20,7 @@
     "tests/test_coordinator_agent.py"
   ],
   "diagnostic_files_changed_since_initial": [],
-  "reference": "e7ad3b7"
+  "reference": "e7ad3b7",
+  "private_settings_not_read": true,
+  "syntax_check": "builtin compile(source, filename, exec): no execution or bytecode writes"
 }
