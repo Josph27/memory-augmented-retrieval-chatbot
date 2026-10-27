@@ -42,6 +42,8 @@ from evals.mab_answer_eval.judge import (
 from evals.mab_answer_eval.runner import (
     ANSWER_PARAMETERS,
     artifact_paths,
+    find_answer,
+    find_completed_judge,
     stable_hash,
 )
 from evals.mab_answer_eval.schemas import EvaluationModels, JudgeResult, OfficialMetricResult
@@ -1043,33 +1045,6 @@ def base_record(
         "result_identity": identity,
         "generation_parameters": ANSWER_PARAMETERS,
     }
-
-
-def find_answer(rows: list[dict[str, Any]], *, answer_key: str) -> dict[str, Any] | None:
-    for row in reversed(rows):
-        if (
-            row.get("answer_cache_key") == answer_key
-            and row.get("generated_answer") is not None
-            and row.get("status") in {"answer_completed", "completed", "failed"}
-        ):
-            return row
-    return None
-
-
-def find_completed_judge(
-    rows: list[dict[str, Any]],
-    *,
-    answer_key: str,
-    judge_key: str,
-) -> dict[str, Any] | None:
-    for row in reversed(rows):
-        if (
-            row.get("answer_cache_key") == answer_key
-            and row.get("judge_cache_key") == judge_key
-            and row.get("status") == "completed"
-        ):
-            return row
-    return None
 
 
 def main() -> None:

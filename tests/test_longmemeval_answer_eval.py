@@ -533,3 +533,23 @@ def test_timestamp_status_prefers_message_then_session_timestamps() -> None:
     assert timestamp_preservation_status(session_case) == (
         "session_timestamp_preserved_when_message_timestamp_absent"
     )
+
+
+def test_resume_cache_finders_choose_latest_eligible_answer_and_judge() -> None:
+    from evals.mab_answer_eval import runner as mab_runner
+
+    rows = [
+        {"answer_cache_key": "a", "generated_answer": "old", "status": "completed",
+         "judge_cache_key": "j"},
+        {"answer_cache_key": "a", "generated_answer": "failed but reusable", "status": "failed",
+         "judge_cache_key": "j"},
+        {"answer_cache_key": "a", "generated_answer": None, "status": "completed",
+         "judge_cache_key": "other"},
+        {"answer_cache_key": "other", "generated_answer": "wrong", "status": "completed",
+         "judge_cache_key": "j"},
+    ]
+    for module in (mab_runner, longmemeval_eval):
+        assert module.find_answer(rows, answer_key="a") is rows[1]
+        assert module.find_answer(rows, answer_key="missing") is None
+        assert module.find_completed_judge(rows, answer_key="a", judge_key="j") is rows[0]
+        assert module.find_completed_judge(rows, answer_key="a", judge_key="missing") is None
