@@ -81,3 +81,7 @@ DEC019 execution: original PURGE1/PURGE2 completion claims were premature. Revie
 ## DEC020 — Focused maintainability challenge and React End semantics
 
 User requested three consequential responsibility comparisons, fresh independent challenge, and bounded authorized corrective work; PURGE3 remains stopped. On 2026-10-27 the user explicitly selected the same finalization for React End as Chainlit: flush pending memory, create gist, then inactivate; finalization failure may prevent ending. This authorizes the necessary REST and React error handling correction, not general bug fixing. React partial-fetch error policy remains a pending question. See [focused challenge](purge-challenge.md#focused-maintainability-challenge-task19--dec020).
+
+## DEC021 — PURGE3 request and prior acceptance gate
+
+The user requested full PURGE3 restructuring and verification, with a specific prerequisite: if consequential work or required user acceptance remains outstanding, prepare the plan and pause dependent moves. TASK18's corrective PURGE2 functionality confirmation remains unrecorded; the subsequent user-approved React End correction also lacks tier-end functionality confirmation. The new PURGE3 request is authorization for the phase, not evidence of that check. [TASK20](cleanup-plan.md#task20--purge3-restructuring-plan-awaiting-prerequisite) records the independently challenged target map and the paused gate. No PURGE3 source, path, command or data move is authorized until that prerequisite is met or the user explicitly changes it.
