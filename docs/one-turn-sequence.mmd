@@ -154,7 +154,7 @@ sequenceDiagram
         LangMem->>LangMem: LLM extraction → normalize → validate
         LangMem->>LTStore: upsert(records)
         LTStore->>DB: write to SQLite (long_term_memories)
-        LTStore->>Chroma: sync vectors (long_term_memory index)
+        LTStore->>DB: sync structured-memory vectors (sqlite-vec)
         STM->>DB: mark messages as summarized
         STM-->>STM_Agent: MemoryUpdateResult
         STM_Agent-->>Coord: update complete

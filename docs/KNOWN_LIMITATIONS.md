@@ -7,22 +7,18 @@ current and intentional unless otherwise noted.
 
 - The app uses a fixed local user identity.
 - Multi-user authorization isolation is not implemented.
-- Ended chats are retained and readable, but there is no user-facing archive or
-  deletion workflow.
+- Ended chats remain readable; the React interface supports reactivation and deletion.
 - There is no general memory conflict-resolution UI.
 
 ## Operations and consistency
+
+- `scripts/rebuild_long_term_memory_index.py` currently fails to compile and cannot be used for recovery.
 
 - Upload idempotency is guarded, but there is no unified operation key across
   every possible write path.
 - Document upload locks are process-local.
 - There is no background reconciliation job for stale document states.
-- There is no coordinated automatic deletion of Chroma chunks when document
-  metadata is removed or superseded.
-- `LONG_TERM_MEMORY_CHROMA_PERSIST_DIR` defaults to the same path as
-  `LANGCHAIN_CHROMA_PERSIST_DIR`. If a single Chroma directory holds both
-  document chunks and long-term memory vectors, collection collision is
-  possible.
+- Document hard deletion attempts Chroma chunk cleanup; a cleanup failure can leave orphaned chunks. Structured-memory vectors use sqlite-vec in SQLite.
 - Memory update is LLM-backed (LangMem). When the model call fails, the error
   is caught silently — the user receives a successful answer but no new
   structured memories are extracted that turn. Unprocessed messages remain

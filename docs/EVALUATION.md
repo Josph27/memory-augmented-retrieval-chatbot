@@ -15,14 +15,7 @@ ORCHESTRATION_MODE=langgraph_demo \
 uv run python -m evals.product_behavior.runner
 ```
 
-Expected current result in a full local environment:
-
-```text
-48 passed
-2 documented failures
-0 errors
-0 not executed
-```
+The earlier 48/50 result is historical, not an expected current outcome. Stage 5 recorded 39/42 non-browser oracle rows passing; see [current audit evidence](audit/stage5/readiness.md).
 
 Documented remaining failures:
 
@@ -38,12 +31,10 @@ Restricted sandboxes may fail before app startup with a socket permission error.
 Command:
 
 ```bash
-ORCHESTRATION_MODE=langgraph_demo \
-PRODUCT_E2E_HEADED=0 \
-uv run pytest -q tests/e2e
+python3 scripts/run_isolated_tests.py --group browser --label local-browser --timeout 600
 ```
 
-These tests cover Home, navigation, active/ended chats, lifecycle controls,
+The isolated native browser group uses synthetic model and document fixtures. These tests cover Home, navigation, active/ended chats, lifecycle controls,
 forking, document upload timing, and the Answer Inspector.
 
 ## MAB answer-level evaluation

@@ -12,9 +12,9 @@ RV001 rebuild syntax/API remains parked. PB-FAIL-003 timeout oracle conflicts wi
 
 S5-UI-03 — native trace-comment presentation: an affected-run screenshot shows serialized breamon-trace comment text visible in the native transcript. app.py appends that metadata; React explicitly strips it in ChainlitChat.jsx. This is observed presentation evidence, not a new blocker fix or a claim that native message formatting is fully verified. Screenshot retained in blockers-affected-browser.tar.gz. Park for a separate UI task; it does not affect the proposed unreferenced diagram deletion.
 
-## CH-UI-01 — React deleted-fetch failure reporting (static finding)
+## CH-UI-01 — React deleted-fetch failure reporting (corrected; DEC022)
 
-TASK19 source review also found that either displayed load error hides all rows despite the partial-results message. User policy decision is pending; React browser behavior has not been reproduced in an isolated browser.
+DEC022 approved partial results with a warning. Implemented in `edc32fc`; synthetic helper tests and six isolated React component browser scenarios passed. Full-app React journeys remain unverified.
 
 `braemon/src/pages/Documents.jsx` and `Memories.jsx` log a rejected deleted/inactive fetch but do not add it to their `errors` list. If both fetches reject, source inspection indicates the UI reports only the active failure instead of the intended all-failed message; an inactive-only failure reports no page error. This is a static finding, not a runtime reproduction. A controlled React test and a separately scoped behavior/bug-fix decision should precede any shared loader hook; it does not block independently verified backend/evaluation cleanup.
 
@@ -33,3 +33,7 @@ Backlog entry only: no test deletion, runner rewrite or evidence removal authori
 ## User-reported functionality check — 2026-10-27
 
 The user reports: “I have already done a full functionality check.” Record this as user-reported manual verification of the current application. Detailed scenarios, exact source revision and results were not supplied. It does not overwrite historical automated failures or deferred coverage. TASK14 reconciles these observations and records subsequent passing automation separately; exact manual surface/revision remains unknown.
+
+## PURGE3-DOC-01 — Structured-memory index rebuild command
+
+`scripts/rebuild_long_term_memory_index.py` has a pre-existing indentation/syntax failure and uses an outdated index constructor; it is unavailable as a recovery command. This documentation audit did not repair it or operate on stored data.

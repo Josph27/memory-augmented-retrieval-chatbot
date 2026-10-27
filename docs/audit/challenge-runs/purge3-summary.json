@@ -1,0 +1,118 @@
+{
+  "runs": [
+    {
+      "group": "offline-unit",
+      "collected": 127,
+      "selected": 127,
+      "counts": {
+        "errored": 0,
+        "failed": 0,
+        "passed": 127,
+        "skipped": 0,
+        "xfailed": 0,
+        "xpassed": 0
+      },
+      "deselected": [],
+      "duration_seconds": 15.845638715996756,
+      "source_before_sha256": "98d756e217722126a71a281d23b02e7a0d57d759184225151cc48238b11cfb72",
+      "source_head": "edc32fc6408a7d28cdc62825efe0a43d4008b230",
+      "external_inference_requests": 0,
+      "temporary_log_directory": "/tmp/breamon-stage5-zn36lief"
+    },
+    {
+      "group": "offline-integration",
+      "collected": 518,
+      "selected": 517,
+      "counts": {
+        "errored": 0,
+        "failed": 0,
+        "passed": 517,
+        "skipped": 0,
+        "xfailed": 0,
+        "xpassed": 0
+      },
+      "deselected": [
+        "tests/test_memory_reranker.py::test_cross_encoder_backend_preload_loads_model"
+      ],
+      "duration_seconds": 40.45839006200549,
+      "source_before_sha256": "98d756e217722126a71a281d23b02e7a0d57d759184225151cc48238b11cfb72",
+      "source_head": "edc32fc6408a7d28cdc62825efe0a43d4008b230",
+      "external_inference_requests": 0,
+      "temporary_log_directory": "/tmp/breamon-stage5-x7x8hwjx"
+    },
+    {
+      "group": "app-composition",
+      "collected": 25,
+      "selected": 25,
+      "counts": {
+        "errored": 0,
+        "failed": 0,
+        "passed": 25,
+        "skipped": 0,
+        "xfailed": 0,
+        "xpassed": 0
+      },
+      "deselected": [],
+      "duration_seconds": 6.869211160999839,
+      "source_before_sha256": "98d756e217722126a71a281d23b02e7a0d57d759184225151cc48238b11cfb72",
+      "source_head": "edc32fc6408a7d28cdc62825efe0a43d4008b230",
+      "external_inference_requests": 0,
+      "temporary_log_directory": "/tmp/breamon-stage5-_hf1k825"
+    },
+    {
+      "group": "subprocess-wrappers",
+      "collected": 21,
+      "selected": 21,
+      "counts": {
+        "errored": 0,
+        "failed": 0,
+        "passed": 21,
+        "skipped": 0,
+        "xfailed": 0,
+        "xpassed": 0
+      },
+      "deselected": [],
+      "duration_seconds": 1.9840441560081672,
+      "source_before_sha256": "98d756e217722126a71a281d23b02e7a0d57d759184225151cc48238b11cfb72",
+      "source_head": "edc32fc6408a7d28cdc62825efe0a43d4008b230",
+      "external_inference_requests": 0,
+      "temporary_log_directory": "/tmp/breamon-stage5-sw22o8wk"
+    },
+    {
+      "group": "native-browser",
+      "collected": 13,
+      "selected": 13,
+      "counts": {
+        "errored": 0,
+        "failed": 0,
+        "passed": 13,
+        "skipped": 0,
+        "xfailed": 0,
+        "xpassed": 0
+      },
+      "deselected": [],
+      "duration_seconds": 87.7751246340049,
+      "source_before_sha256": "98d756e217722126a71a281d23b02e7a0d57d759184225151cc48238b11cfb72",
+      "source_head": "edc32fc6408a7d28cdc62825efe0a43d4008b230",
+      "external_inference_requests": 0,
+      "temporary_log_directory": "/tmp/breamon-stage5-9shjt1ud"
+    }
+  ],
+  "frontend": {
+    "node_cases": 3,
+    "node_passed": 3,
+    "synthetic_component_browser_cases": 6,
+    "browser_passed": 6,
+    "component_harness": "Intercepted synthetic responses; private network namespace; does not run full app authentication or model loading",
+    "browser_result": "/tmp/breamon-react-partial-co2vzjuo/result.json",
+    "frontend_checks": "build, dependency consistency and lint passed; three existing lint warnings and bundle-size warning",
+    "frontend_log_directory": "/tmp/breamon-purge1-frontend-zn_x5f6m"
+  },
+  "limits": [
+    "one real cross-encoder case deselected",
+    "live/paid inference and real model assets not tested",
+    "React full-app journeys not tested",
+    "documentation-only corrections followed these source-stable runs",
+    "temporary logs may be removed by host cleanup"
+  ]
+}

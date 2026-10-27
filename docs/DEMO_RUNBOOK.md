@@ -26,13 +26,13 @@ uses only current application behavior.
    uv run python startup.py -w
    ```
 
-   For higher-quality retrieval in evaluations, use:
+   For the experimental alternate cross-encoder mode (quality and latency remain uncharacterized), use:
 
    ```bash
    uv run python startup.py --cross-encoder -w
    ```
 
-3. Open the local Chainlit URL.
+3. Open the React frontend at `http://localhost:5173`; the Chainlit backend runs on port 8000.
 
 ## Demo sequence
 
@@ -71,7 +71,7 @@ answers from stored evidence.
 Use **Inspect answer** on the assistant message. Point out:
 
 - requested mode: `native`;
-- authoritative context: LangGraph unless fallback occurred;
+- authoritative context: native `ContextPacket` for `native` mode;
 - route and selected sources;
 - selected evidence/provenance;
 - token diagnostics;

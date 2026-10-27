@@ -259,8 +259,7 @@ All variables from `src/settings.py` (single source of truth), loaded into `AppC
 | Env var | Default | Controls |
 |---|---|---|
 | `STRUCTURED_MEMORY_RETRIEVAL_MODE` | `hybrid` | `sqlite`, `vector`, or `hybrid` |
-| `LONG_TERM_MEMORY_CHROMA_PERSIST_DIR` | (same as `LANGCHAIN_CHROMA_PERSIST_DIR`) | Chroma directory for long-term memory vectors |
-| `LONG_TERM_MEMORY_COLLECTION` | `long_term_memory` | Chroma collection name |
+Structured-memory vectors use sqlite-vec in the configured SQLite database. Document chunks use Chroma.
 
 ### Gists
 
@@ -333,9 +332,9 @@ All routes registered in `src/api_routes.py` on Chainlit's FastAPI app.
 | `GET` | `/api/chats/{chat_id}/messages` | Get message history for a chat |
 | `POST` | `/api/chats` | Create a new chat |
 | `POST` | `/api/chats/{chat_id}/fork` | Fork a chat (copy messages to new chat) |
-| `POST` | `/api/chats/{chat_id}/end` | End a chat (mark inactive) |
+| `POST` | `/api/chats/{chat_id}/end` | Flush pending memory and finalize gists; mark inactive on success |
 | `POST` | `/api/chats/{chat_id}/reactivate` | Reactivate an ended chat |
-| `POST` | `/api/chats/{chat_id}/consolidate` | Trigger memory consolidation (30s timeout) |
+| `POST` | `/api/chats/{chat_id}/consolidate` | Trigger memory consolidation |
 | `GET` | `/api/chats/{chat_id}/consolidation-log` | Get consolidation log text |
 | `DELETE` | `/api/chats/{chat_id}` | Hard delete a chat |
 
@@ -347,7 +346,7 @@ All routes registered in `src/api_routes.py` on Chainlit's FastAPI app.
 | `POST` | `/api/documents/upload` | Upload a file (multipart/form-data) |
 | `POST` | `/api/documents/{doc_id}/deactivate` | Soft-delete document |
 | `POST` | `/api/documents/{doc_id}/activate` | Restore a soft-deleted document |
-| `DELETE` | `/api/documents/{doc_id}` | Hard delete (includes Chroma cleanup) |
+| `DELETE` | `/api/documents/{doc_id}` | Hard delete metadata; Chroma cleanup is attempted and failures produce warnings |
 
 ### Memories
 
@@ -362,7 +361,7 @@ All routes registered in `src/api_routes.py` on Chainlit's FastAPI app.
 
 | Method | Path | Purpose |
 |---|---|---|
-| `GET` | `/api/models/status` | Returns `{ready: bool}` — model reachability |
+| `GET` | `/api/models/status` | Returns `{ready: bool}` — startup warmup completion gate, not model reachability |
 | `GET` | `/api/retrieval-logs/{chat_id}/{turn_index}` | Get per-turn retrieval debug log |
 | `GET` | `/api/stats` | System stats: active chats, memory count, document count, version `v2.4.1` |
 

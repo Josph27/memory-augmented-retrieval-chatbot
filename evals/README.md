@@ -4,8 +4,7 @@
 structured memory lifecycle, multi-source selection, generated answer quality,
 end-to-end scenarios, product behavior (50 frozen cases), typed-memory E2E,
 MemoryAgentBench answer eval, LongMemEval pilot, held-out answer analysis,
-short-term memory tests, and RAGAS-compatible export. Most evals support a
-deterministic `--mode mock` that requires no model, Chroma, or network access.
+short-term memory tests, and RAGAS-compatible export. Several synthetic runners support `--mode mock`; consult each runner because document QA and other paths can require Chroma, embeddings or models.
 
 ---
 
@@ -43,7 +42,7 @@ evals/
 | 4 | **Multi-Source Retrieval** | `multi_source_retrieval/` | Source selection and retrieval correctness. Checks `recent_messages`, `structured_memory`, `document_memory`, `previous_chat_gist`, `raw_message_span`. No answer grading. |
 | 5 | **Generated Answer** | `generated_answer/` | Controlled answer grading from prepared contexts. Checks expected content, forbidden claims, source use, abstention. |
 | 6 | **Typed-Memory E2E** | `typed_memory_e2e/` | End-to-end typed memory benchmark. Cases span structured, episodic, and document memory integration. |
-| 7 | **Product Behavior** | `product_behavior/` | 50 frozen app-level scenarios: navigation (8), lifecycle (10), persistence (7), documents (15), failures/races/idempotency (10). 48 pass, 2 documented failures. |
+| 7 | **Product Behavior** | `product_behavior/` | 50 frozen app-level scenarios: navigation (8), lifecycle (10), persistence (7), documents (15), failures/races/idempotency (10). Earlier 48/50 is historical; Stage 5 recorded 39/42 non-browser oracle rows passing. |
 | 8 | **MAB Answer Eval** | `mab_answer_eval/` | Held-out MemoryAgentBench answer evaluation. Judge-model scoring with manifest-based case selection. Supports native and graph execution modes. |
 | 9 | **MemoryAgentBench** | `memory_agent_bench/` | MAB adapter: raw replay, gist-only, and span-retrieval comparison. Selected suite with deterministic and model modes. |
 | 10 | **LongMemEval Adapter** | `longmemeval_adapter/` | Pilot adapter for LongMemEval-style cases. `recent_only`, `gist_only`, `span_retrieval`, `full` memory modes. Unofficial scoring. |

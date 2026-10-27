@@ -23,16 +23,9 @@ Eight scenarios are browser E2E. They execute when the local environment can
 bind a localhost port and launch Chrome. Restricted sandboxes may fail before
 app startup.
 
-## Current expected result
+## Historical result
 
-In a full local environment the expected result is:
-
-```text
-48 passed
-2 documented failures
-0 errors
-0 not executed
-```
+An earlier 48/50 result is historical, not an expected current result. Stage 5 recorded 39/42 non-browser oracle rows passing; see [audit readiness](../../docs/audit/stage5/readiness.md).
 
 Expected remaining failures:
 
@@ -42,6 +35,8 @@ Expected remaining failures:
   future work.
 
 ## Commands
+
+The examples below explicitly select `langgraph_demo`; the application default is `native`. Use the root README isolated runner for offline regression checks.
 
 ```bash
 # All 50 cases
@@ -63,9 +58,7 @@ ORCHESTRATION_MODE=langgraph_demo \
 uv run python -m evals.product_behavior.runner --category lifecycle
 
 # Browser E2E tests
-ORCHESTRATION_MODE=langgraph_demo \
-PRODUCT_E2E_HEADED=0 \
-uv run pytest -q tests/e2e
+python3 scripts/run_isolated_tests.py --group browser --label local-browser --timeout 600
 
 # Regenerate reports from an existing result file
 uv run python -m evals.product_behavior.report \

@@ -12,13 +12,16 @@ heavy model weight and constrained development hardware.
 
 ## Cleanup and audit status
 
-The user confirmed PURGE1 functionality. PURGE1 and PURGE2 were subsequently
-challenged and corrected; functionality confirmation is pending. The final isolated groups
-passed 698 selected cases with one real-model exclusion. Native browser checks
-and the React build passed; React browser journeys and live inference remain
-unverified. See the [current purge challenge](docs/audit/purge-challenge.md)
+The user confirmed functionality after PURGE1 and the subsequent PURGE1/PURGE2 corrective work. The latest isolated groups passed 703 selected cases with one real-model exclusion. Native browser checks, the React build and controlled partial-load component checks passed; full React browser journeys and live inference remain unverified. See the [current purge challenge](docs/audit/purge-challenge.md)
 and [current decisions and task ledger](docs/audit/README.md). Historical audit
-evidence is preserved. Test-suite simplification and restructuring remain deferred.
+evidence is preserved. Test-suite simplification remains deferred; PURGE3 engineering and the current documentation pass are complete, pending final functionality confirmation.
+
+## Maintainer orientation
+
+- Startup and configuration: `startup.py`, `app.py`, `src/config.py` and `src/provider_settings.py`.
+- A chat turn: `src/chat_service.py` → `src/agents/coordinator_agent.py` → `src/routing/`, `src/retrieval/` and `src/context/`.
+- Document ingestion: `src/agents/document_ingestion_agent.py` and `src/documents/`; persistence: `src/database.py` and `src/memory/`.
+- Frontend: `braemon/`; safe checks and operational commands: [scripts](scripts/README.md); evaluations: [guide](docs/EVALUATION.md). Current architecture and historical audit records are indexed in [docs](docs/ARCHITECTURE.md) and [audit handoff](docs/audit/README.md).
 
 ## Implemented features
 
@@ -41,7 +44,7 @@ evidence is preserved. Test-suite simplification and restructuring remain deferr
 ## Architecture at a glance
 
 ```text
-Chainlit UI → ChatService → CoordinatorAgent (14-phase turn pipeline)
+Chainlit UI → ChatService → CoordinatorAgent (turn pipeline)
   ├── Routing: QueryAnalyzer → RoutePlanner → RoutingAgent (rule/hybrid)
   ├── Retrieval: RetrieverDispatcher → 7 source retrievers → GistRawSpanExpander
   ├── Reranking: MemoryReranker (deterministic + cross-encoder + optional LLM gate)
@@ -160,7 +163,7 @@ Required application variables:
 | `OPENAI_API_KEY` | Credential for the OpenAI-compatible endpoint. Use `dummy` for local endpoints that do not require a key. |
 | `OPENAI_BASE_URL` | OpenAI-compatible chat-completions endpoint. |
 | `MODEL_NAME` | Model ID sent to the endpoint. |
-| `ORCHESTRATION_MODE` | `native` (default). `langgraph_demo` and `compare` are diagnostic alternatives. |
+| `ORCHESTRATION_MODE` | `native` (default). `langgraph_demo` and `langgraph_shadow` are diagnostic alternatives. |
 
 Important optional variables:
 
@@ -223,6 +226,7 @@ python3 scripts/run_isolated_tests.py --group offline-unit --label local --timeo
 python3 scripts/run_isolated_tests.py --group offline-integration --label local --timeout 600
 python3 scripts/run_isolated_tests.py --group app-composition --label local --timeout 300
 python3 scripts/run_isolated_tests.py --group subprocess-wrappers --label local --timeout 300
+python3 scripts/run_isolated_tests.py --group browser --label local-browser --timeout 600
 ```
 
 Omitting --group runs the two core groups. App/wrapper groups remain explicit
@@ -292,7 +296,7 @@ The prototype intentionally keeps some constraints visible:
 
 - fixed local/single-user identity;
 - no multi-user authorization isolation;
-- no coordinated automatic Chroma deletion;
+- best-effort Chroma cleanup can leave orphaned chunks after a document hard delete;
 - process-local document upload locks;
 - no general memory conflict-resolution UI;
 - long-term memory vectors use sqlite-vec (in-process), not a standalone vector DB;

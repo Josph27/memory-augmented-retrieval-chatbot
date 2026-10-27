@@ -8,21 +8,7 @@
 
 **Diagnosis:** Chroma persists collections on disk. When embedding model changes (or when switching branches that changed `EMBEDDING_MODEL_NAME`), the existing collection has embeddings with different dimensionality than the new model produces.
 
-**Fix:**
-
-```bash
-# Remove the Chroma directory and restart — data will be re-indexed from source
-rm -rf data/chroma
-# Then restart the app. Re-upload documents if needed.
-```
-
-If only long-term memory vectors are affected:
-
-```bash
-rm -rf data/chroma/long_term_memory*
-# Then run the rebuild script:
-python scripts/rebuild_long_term_memory_index.py
-```
+**Recovery:** Preserve the runtime data first. The Chroma directory is a document index; removing it discards indexed chunks and documents may need re-uploading. Structured-memory vectors live in SQLite via sqlite-vec, not in this Chroma directory. The long-term-memory rebuild script is currently broken; see [known limitations](KNOWN_LIMITATIONS.md) before attempting recovery.
 
 ---
 
@@ -92,7 +78,7 @@ SELECT COUNT(*) FROM long_term_memories WHERE status = 'active';
 
 ```bash
 # Ensure the Python backend is running on port 8000
-python app.py
+uv run python startup.py -w
 # Should show "Your app is available at http://localhost:8000"
 
 # Ensure the frontend dev server is running
@@ -173,15 +159,7 @@ python scripts/inspect_document_memory.py
 python scripts/inspect_long_term_memory.py
 ```
 
-**Fix — rebuild indexes:**
-
-```bash
-# Rebuild long-term memory vector index from SQLite records:
-python scripts/rebuild_long_term_memory_index.py
-
-# Rebuild previous-chat gists:
-python scripts/rebuild_previous_chat_gists.py
-```
+**Recovery:** The long-term memory vector rebuild script is currently broken. `scripts/rebuild_previous_chat_gists.py` modifies persisted gist state; inspect its options and back up data before using it.
 
 **Fix — check routing is enabling the correct sources:**
 
@@ -219,7 +197,7 @@ grep -i "error\|timeout\|context_length" logs/*.log
 
 **Symptoms:** In `langgraph_demo` mode, the assistant returns an insufficient-evidence message (e.g. "MOCK INSUFFICIENT EVIDENCE") instead of a real answer.
 
-**Diagnosis:** `langgraph_demo` is the default production mode and normally produces real answers via `ChatAgent` using the LangGraph-assembled context. The mock strings only appear when the LangGraph pipeline's `validate_evidence` node detects an unsatisfied evidence contract — meaning required raw spans, document citations, or structured memories are absent.
+**Diagnosis:** `langgraph_demo` is an optional diagnostic mode; `native` is the default. Demo mode uses graph-assembled context, while native uses the coordinator context. The mock strings only appear when the LangGraph pipeline's `validate_evidence` node detects an unsatisfied evidence contract — meaning required raw spans, document citations, or structured memories are absent.
 
 **Fix:** Check the workflow trace for which evidence requirement failed. Consider:
 
@@ -250,11 +228,11 @@ grep -i "error\|timeout\|context_length" logs/*.log
 
 **Symptoms:** The braemon frontend shows a spinner with "Loading models…" and never loads the app. The backend is running and the API is reachable.
 
-**Diagnosis:** The `ModelLoadingScreen` component polls `GET /api/models/status` every 500ms and blocks rendering until `{ ready: true }`. If the backend's model warmup failed or the endpoint is returning an unexpected response, the screen stays forever (120s timeout, then error).
+**Diagnosis:** The `ModelLoadingScreen` component polls `GET /api/models/status` every 500ms and blocks rendering until `{ ready: true }`. A missing, unreachable, or false readiness response keeps the screen blocked until its 120s timeout. Warmup failure alone does not prove the gate stays blocked: the backend can set ready after a failed attempt.
 
 **Fix:**
 
-1. Check that the backend model warmup succeeded — look for "Model warm-up" messages in the Python server output.
+1. Check the backend warmup logs separately for model availability; readiness does not prove models loaded successfully.
 2. Verify `GET /api/models/status` returns `{"ready": true}`:
 
    ```bash
@@ -278,11 +256,10 @@ grep -i "error\|timeout\|context_length" logs/*.log
 # Check if another app.py process is running
 ps aux | grep app.py
 
-# Kill stale processes
-pkill -f app.py
+# Stop the specific stale application process after checking its identity
 
 # Restart
-python app.py
+uv run python startup.py -w
 ```
 
 The database uses WAL mode by default, which allows concurrent readers while one writer is active. If you're running eval scripts simultaneously with the app, run them sequentially.

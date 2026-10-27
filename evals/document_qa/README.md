@@ -264,10 +264,7 @@ RAGAS-compatible evaluation pipeline.
 ## Limitations
 
 - No PDF parsing pipeline beyond the optional local file loader.
-- No production document upload UI yet.
-- No semantic reranker yet.
 - No required RAGAS dependency.
 - Natural Questions is currently filtered to single-hop answer-in-context cases.
 - HotpotQA and multi-hop retrieval/reasoning evaluation are future work.
-- Normal pytest does not require internet, Ollama, Chroma downloads, or model
-  generation.
+- Use the isolated test runner documented in the root README; normal pytest collection is blocked to protect local stores and credentials.

@@ -144,6 +144,10 @@ The system successfully implements a reliable and explainable multi-agent typed-
 * scoped chat lifecycle actions and gist compaction
 * comprehensive evaluation support for document retrieval and structured cross-chat memory
 
+## Maintainer Orientation
+
+Use the root README for startup, safe test commands and the concise responsibility map. Operational scripts are indexed in `scripts/README.md`; historical audit evidence remains in `docs/audit/`.
+
 ## Deeper Project Docs
 
 Before major implementation work, read:

@@ -21,7 +21,7 @@ The Python backend must be running first (`uv run python startup.py -w`).
 ## Architecture
 
 - **7 routes**: Home, Chat, Chats, Documents, Memories, Diagnostics, RetrievalLogs
-- **2 data channels**: REST API (20 functions via Vite proxy) + Chainlit WebSocket
+- **2 data channels**: REST API (18 exported functions via Vite proxy) + Chainlit WebSocket
 - **Design system**: "Stitch" — 50 M3 colors, 5 semantic aliases, Inter typography, Tailwind v4
 - **No TypeScript** — plain JSX with Oxlint
 
@@ -41,9 +41,11 @@ The Python backend must be running first (`uv run python startup.py -w`).
 |---|---|
 | `src/main.jsx` | Bootstrap: Recoil, ChainlitAPI, AuthWrapper, ModelLoadingScreen |
 | `src/App.jsx` | Route definitions (7 routes) |
-| `src/api.js` | REST client — 20 functions |
+| `src/api.js` | REST client — 18 exported functions |
 | `src/index.css` | Stitch design tokens + custom utilities |
 | `src/components/ChainlitChat.jsx` | Core chat: WebSocket, messages, trace display |
 | `src/components/ModelLoadingScreen.jsx` | Startup gate: polls backend until models ready |
 
 See `.doc.md` for comprehensive documentation.
+
+For the offline synthetic partition-loader check, run `node --test tests/loadRecordPartitions.test.mjs` from `braemon/`. The Puppeteer `test:e2e` command requires a configured local service and is not included in the isolated native browser suite.

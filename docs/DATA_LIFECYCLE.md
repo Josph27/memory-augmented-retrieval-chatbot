@@ -41,7 +41,7 @@ online trigger threshold.
 upload
 -> document_records row
 -> chat_documents association
--> indexing (256-token chunks, hybrid retrieval)
+-> indexing (default 1024-character chunks, 164-character overlap; hybrid retrieval)
 -> summary generation (LLM, stored in summary_text)
 -> Ready or Failed
 -> scoped retrieval (with sticky scope + pre-computed summaries)

@@ -1,6 +1,6 @@
 # Architecture — System Overview
 
-> **Generated:** 2026-07-14 | **Source:** deterministic AST extraction from 69 Python files
+> Maintained architecture overview; verify implementation details against the current source.
 > **View:** paste the Mermaid blocks into [mermaid.live](https://mermaid.live) or open in VS Code with a Mermaid preview extension
 
 ---
@@ -170,7 +170,7 @@ graph TB
     coordinator --> sqlite
     short_term --> sqlite
     lt_store --> sqlite
-    lt_vector --> chroma
+    lt_vector --> sqlite
     prev_gist_gen --> sqlite
     gist_sum --> sqlite
 
@@ -373,7 +373,7 @@ sequenceDiagram
         LangMem->>LangMem: LLM extraction → normalize → validate
         LangMem->>LTStore: upsert(records)
         LTStore->>DB: write to SQLite (long_term_memories)
-        LTStore->>Chroma: sync vectors (long_term_memory index)
+        LTStore->>DB: sync structured-memory vectors (sqlite-vec)
         STM->>DB: mark messages as summarized
         STM-->>STM_Agent: MemoryUpdateResult
         STM_Agent-->>Coord: update complete
@@ -464,9 +464,9 @@ Storage         SQLite (10 tables, sqlite-vec for structured memory vectors) + C
 
 | Mode | Behavior |
 |------|----------|
-| `native` (default) | CoordinatorAgent's imperative pipeline only. `LANGGRAPH_DEMO`/`compare` modes skipped. |
+| `native` (default) | CoordinatorAgent's imperative pipeline only. Graph modes skipped. |
 | `langgraph_demo` | LangGraph StateGraph pipeline is authoritative; native is fallback |
-| `compare` | Both run; native is authoritative; LangGraph is comparison-only |
+| `langgraph_shadow` | Both run; native is authoritative; LangGraph is comparison-only |
 
 **Default:** `ORCHESTRATION_MODE=native` (set in `settings.py`).
 
@@ -568,7 +568,7 @@ Two independent channels connect to the Python backend:
 
 | Channel | Tech | Path | Purpose |
 |---|---|---|---|
-| REST | `fetch()` / XHR | 20 functions via Vite proxy `/api/*` → `:8000` | CRUD for chats, documents, memories, stats, retrieval logs |
+| REST | `fetch()` / XHR | 18 exported functions via Vite proxy `/api/*` → `:8000` | CRUD for chats, documents, memories, stats, retrieval logs |
 | WebSocket | `@chainlit/react-client` v0.4.2 | Vite proxy `/ws` (ws:true) → `:8000` | Real-time chat streaming, file upload, session management |
 
 ### 7.2 Routes and Pages
@@ -614,7 +614,6 @@ Communication with the Python backend via `window.postMessage` protocol
 
 `ModelLoadingScreen` polls `GET /api/models/status` every 500ms until
 `{ ready: true }`. 120s timeout with retry button. Blocks all rendering
-until the backend's embedding model, cross-encoder, and tokenizer are
-loaded into RAM.
+until the backend signals completion of its startup warmup attempt. This does not prove models loaded successfully.
 
 See [braemon/.doc.md](../braemon/.doc.md) for the full frontend reference.

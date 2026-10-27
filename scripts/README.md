@@ -1,110 +1,16 @@
-# scripts/ — Operational Tooling
+# Operational scripts
 
-**TL;DR:** Python and shell scripts for evaluation, inspection, maintenance,
-and rebuild tasks. All Python scripts accept `--help` for usage. Shell scripts
-use `lib/load_eval_env.sh` for shared environment setup.
+Paths below identify entry points, not shell commands. From the repository root, invoke Python files with `uv run python <path>` and shell files with `bash <path>` unless the individual script says otherwise. Inspect `--help` where supported. Commands that inspect or modify data operate on the configured local stores: use a backup and an appropriate isolated environment when needed.
 
----
-
-## Script inventory
-
-### Python inspection scripts
-
-| Script | Lines | Purpose |
+| Task | Entry point | Notes |
 |---|---|---|
-| `eval_memory.py` | 231 | Synthetic conversation evaluation: replays 2 frozen scenarios through `ShortTermMemory` and asserts expected/forbidden structured memories. |
-| `inspect_document_memory.py` | 61 | Print all Chroma document-chunk records and their metadata. |
-| `inspect_long_term_memory.py` | 56 | Print all active long-term memories from SQLite. |
-| `inspect_mab_context_case.py` | 451 | Load a MAB (MemoryAgentBench) answer-eval artifact and cross-reference it against surviving SQLite state (chat gists, messages, memory). |
-| `inspect_raw_message_span.py` | ~65 | Drill into raw message evidence: resolve a gist ID → raw SQLite messages, or load an explicit message-ID span. |
-| `index_document_file.py` | ~50 | Load a local file once and index that snapshot directly into Chroma. |
+| Safe automated checks | `python3 scripts/run_isolated_tests.py --group offline-unit --label local --timeout 300` | See [isolation and all groups](../docs/audit/stage5/INFRASTRUCTURE.md); plain pytest collection is blocked. |
+| Index a document | `scripts/index_document_file.py` | Writes the configured document index. |
+| Inspect documents or memories | `scripts/inspect_document_memory.py`, `scripts/inspect_long_term_memory.py`, `scripts/inspect_raw_message_span.py` | Reads configured local stores. |
+| Inspect a benchmark | `scripts/inspect_mab_context_case.py`, `scripts/inspect_eval_run.sh` | Reads existing evaluation outputs and, where applicable, local stores. |
+| Rebuild previous-chat gists | `scripts/rebuild_previous_chat_gists.py` | Modifies persisted data; back up and inspect options first. |
+| Rebuild structured-memory vector index | `scripts/rebuild_long_term_memory_index.py` | **Currently broken**; do not use as a recovery command. |
+| Evaluation and validation | `scripts/eval_memory.py`, `scripts/validate_final_answer_run.py`, `scripts/run_final_52.sh`, `scripts/run_final_judge.sh`, `scripts/run_final_52_and_judge.sh`, `scripts/run_mab_post_fix_targeted.sh` | Some invoke models or judges and can incur cost. Read each command and [evaluation guide](../docs/EVALUATION.md) before running. |
+| Diagnostic | `scripts/verify_natural_long_term_memory_flow.py`, `scripts/token_monitor.py` | Check each script's requirements before running. |
 
-### Python rebuild scripts
-
-| Script | Lines | Purpose |
-|---|---|---|
-| `rebuild_long_term_memory_index.py` | 53 | Rebuild the Chroma long-term-memory vector index from SQLite `long_term_memories` records. |
-| `rebuild_previous_chat_gists.py` | 59 | Re-generate previous-chat gists for all ended chats that lack them. |
-
-### Python validation/verification
-
-| Script | Lines | Purpose |
-|---|---|---|
-| `validate_final_answer_run.py` | 124 | Validate a completed final answer-only eval run: check JSONL structure, row counts, and metric consistency. |
-| `verify_natural_long_term_memory_flow.py` | 335 | End-to-end natural-flow verification: replay a conversation, trigger memory updates, and assert that structured memories meeting the natural-flow contract were actually stored. |
-
-### Shell scripts
-
-| Script | Purpose |
-|---|---|
-| `lib/load_eval_env.sh` | Sourced by other scripts. Exports `PYTHONPATH`, `UV_CACHE_DIR`, loads `.env`, and provides `eval_repo_root()`. |
-| `final_eval_paths.sh` | Timestamped run-directory creation for the final-52 product-behavior evaluation. |
-| `inspect_eval_run.sh` | Print the current final-52 run path or accept an explicit directory override. |
-| `run_final_52.sh` | Execute the full 52-case product-behavior lifecycle (chats → end → answer). |
-| `run_final_52_and_judge.sh` | Run final 52 then immediately apply the LLM judge. |
-| `run_final_judge.sh` | Run only the LLM judge against an existing answer run directory. |
-| `run_mab_post_fix_targeted.sh` | Targeted re-run of MemoryAgentBench answer evaluation post product-behavior fixes. |
-
----
-
-## Common patterns
-
-### Python scripts
-
-All Python scripts follow the same pattern:
-
-```text
-from __future__ import annotations
-import argparse
-import sys
-from pathlib import Path
-
-REPO_ROOT = Path(__file__).resolve().parents[1]
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
-```
-
-This makes them runnable from any directory: `python scripts/eval_memory.py`.
-All accept standard argparse arguments and print JSON results to stdout.
-
-### Shell scripts
-
-All shell scripts source `lib/load_eval_env.sh` for shared configuration:
-
-```bash
-source "${SCRIPT_DIR}/lib/load_eval_env.sh"
-ROOT="$(eval_repo_root)"
-cd "$ROOT"
-```
-
-- `set -euo pipefail` enforces strict error handling.
-- Timestamp-based run directories prevent accidental file collision.
-
-### Rebuild vs. inspect pattern
-
-- **Inspect scripts** read the current database/Chroma state and print it. Read-only.
-- **Rebuild scripts** regenerate derived data from the SQLite source of truth: Chroma index or previous-chat gists. Safe to run while the app is stopped.
-
----
-
-## Running
-
-```bash
-# Inspect
-python scripts/inspect_long_term_memory.py
-python scripts/inspect_document_memory.py
-
-# Rebuild
-python scripts/rebuild_long_term_memory_index.py
-python scripts/rebuild_previous_chat_gists.py
-
-# Eval memory scenarios
-python scripts/eval_memory.py
-
-# Final 52 product-behavior lifecycle
-bash scripts/run_final_52.sh
-bash scripts/run_final_52_and_judge.sh
-```
-
-Most scripts accept `--help` for detailed usage. Eval shell scripts expect a
-valid `.env` and an available model endpoint.
+The shell evaluation wrappers use `scripts/lib/load_eval_env.sh` and `scripts/final_eval_paths.sh`; preserve their relative locations. Historical runs and generated output are evidence, not default commands.
