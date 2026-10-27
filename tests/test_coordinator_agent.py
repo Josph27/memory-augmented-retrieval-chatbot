@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+from dataclasses import replace
 from pathlib import Path
 from unittest.mock import MagicMock
 
@@ -295,3 +296,37 @@ def replace_decision_plan(decision: RoutingDecision, plan: RoutePlan) -> Routing
         routing_fallback_reason=decision.routing_fallback_reason,
         metadata=decision.metadata,
     )
+
+
+def test_attachment_then_sticky_scope_preserves_empty_query_and_both_metadata_flags() -> None:
+    original = _make_routing_decision()
+    original_plan = replace(original.route_plan, query="")
+    original = replace(original, route_plan=original_plan)
+    attachment = require_document_memory(original)
+    result = require_chat_document_memory(attachment)
+    doc = next(source for source in result.route_plan.sources if source.source == "document_memory")
+    assert doc.enabled and doc.query == ""
+    assert doc.filters == {"same_turn_attachment": True}
+    assert result.route_plan.intent == "document_question"
+    assert result.route_plan.context_profile == "document_question"
+    assert result.route_plan.metadata["same_turn_attachment"] is True
+    assert result.route_plan.metadata["chat_document_scope_sticky"] is True
+    assert result.metadata["same_turn_attachment"] is True
+    assert result.metadata["chat_document_scope_sticky"] is True
+    assert original.route_plan.sources[-1].filters == {}
+
+    sparse = replace(original, route_plan=replace(original_plan, sources=[]))
+    appended = require_document_memory(sparse).route_plan.sources
+    assert len(appended) == 1 and appended[0].query == ""
+    assert appended[0].filters == {"same_turn_attachment": True}
+
+    duplicate = replace(original_plan, sources=[
+        SourcePlan(source="document_memory", query=None, filters={"id": 1}),
+        SourcePlan(source="document_memory", query="specified", filters={"id": 2}),
+    ])
+    updated = require_document_memory(replace(original, route_plan=duplicate)).route_plan.sources
+    assert [source.query for source in updated] == ["", "specified"]
+    assert [source.filters for source in updated] == [
+        {"id": 1, "same_turn_attachment": True},
+        {"id": 2, "same_turn_attachment": True},
+    ]

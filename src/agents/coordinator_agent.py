@@ -22,6 +22,7 @@ from src.context.prompt_messages import context_packet_to_model_messages
 from src.core.contracts import (
     AgentTurnResult,
     OrchestrationResult,
+    RoutePlan,
     SourcePlan,
     WorkflowTrace,
 )
@@ -623,109 +624,76 @@ def _dump_retrieval_log(
         json.dump(rows, f, ensure_ascii=False, indent=2)
 
 
-def require_document_memory(decision: RoutingDecision) -> RoutingDecision:
-    """Enable scoped document retrieval when the current turn uploaded a document."""
-    route_plan = decision.route_plan
-    document_found = False
+def _enable_document_sources(
+    route_plan: RoutePlan, *, reason: str, default_query: str | None = None,
+    additional_filters: dict[str, object] | None = None,
+) -> list[SourcePlan]:
+    """Enable existing document sources, or append one using the supplied defaults."""
     sources: list[SourcePlan] = []
+    found = False
     for source in route_plan.sources:
         if source.source != "document_memory":
             sources.append(source)
             continue
-        document_found = True
-        sources.append(
-            replace(
-                source,
-                enabled=True,
-                reason="Same-turn attachment requires scoped document retrieval.",
-                query=source.query or route_plan.query,
-                filters={
-                    **source.filters,
-                    "same_turn_attachment": True,
-                },
-            )
-        )
-    if not document_found:
+        found = True
+        changes: dict[str, object] = {"enabled": True, "reason": reason}
+        if default_query is not None:
+            changes["query"] = source.query or default_query
+        if additional_filters is not None:
+            changes["filters"] = {**source.filters, **additional_filters}
+        sources.append(replace(source, **changes))
+    if not found:
         sources.append(
             SourcePlan(
-                source="document_memory",
-                enabled=True,
-                reason="Same-turn attachment requires scoped document retrieval.",
-                query=route_plan.query,
-                filters={"same_turn_attachment": True},
+                source="document_memory", enabled=True, reason=reason,
+                query=default_query, filters=dict(additional_filters or {}),
             )
         )
+    return sources
+
+
+def require_document_memory(decision: RoutingDecision) -> RoutingDecision:
+    """Enable scoped document retrieval when the current turn uploaded a document."""
+    route_plan = decision.route_plan
+    reason = "Same-turn attachment requires scoped document retrieval."
+    sources = _enable_document_sources(
+        route_plan, reason=reason, default_query=route_plan.query,
+        additional_filters={"same_turn_attachment": True},
+    )
     updated_plan = replace(
         route_plan,
         intent="document_question",
         requires_retrieval=True,
         sources=sources,
         context_profile="document_question",
-        metadata={
-            **route_plan.metadata,
-            "same_turn_attachment": True,
-        },
+        metadata={**route_plan.metadata, "same_turn_attachment": True},
     )
     return replace(
         decision,
         route_plan=updated_plan,
         use_document_memory=True,
-        reason="Same-turn attachment requires scoped document retrieval.",
-        metadata={
-            **(decision.metadata or {}),
-            "same_turn_attachment": True,
-        },
+        reason=reason,
+        metadata={**(decision.metadata or {}), "same_turn_attachment": True},
     )
 
 
 def require_chat_document_memory(decision: RoutingDecision) -> RoutingDecision:
-    """Enable scoped document retrieval when the chat has associated documents.
-
-    Unlike require_document_memory (same-turn attachment), this does NOT
-    override intent or context_profile.  It only enables document_memory and
-    records chat_document_scope_sticky in metadata.
-    """
+    """Enable scoped retrieval for associated documents without changing intent/profile."""
     route_plan = decision.route_plan
-    document_found = False
-    sources: list[SourcePlan] = []
-    for source in route_plan.sources:
-        if source.source != "document_memory":
-            sources.append(source)
-            continue
-        document_found = True
-        sources.append(
-            replace(
-                source,
-                enabled=True,
-                reason="Chat has associated documents (sticky scope).",
-            )
-        )
-    if not document_found:
-        sources.append(
-            SourcePlan(
-                source="document_memory",
-                enabled=True,
-                reason="Chat has associated documents (sticky scope).",
-            )
-        )
+    reason = "Chat has associated documents (sticky scope)."
+    sources = _enable_document_sources(route_plan, reason=reason)
     updated_plan = replace(
         route_plan,
         requires_retrieval=True,
         sources=sources,
-        metadata={
-            **route_plan.metadata,
-            "chat_document_scope_sticky": True,
-        },
+        metadata={**route_plan.metadata, "chat_document_scope_sticky": True},
     )
     return replace(
         decision,
         route_plan=updated_plan,
         use_document_memory=True,
-        reason="Chat has associated documents (sticky scope).",
-        metadata={
-            **(decision.metadata or {}),
-            "chat_document_scope_sticky": True,
-        },
+        reason=reason,
+        metadata={**(decision.metadata or {}), "chat_document_scope_sticky": True},
     )
 
 
