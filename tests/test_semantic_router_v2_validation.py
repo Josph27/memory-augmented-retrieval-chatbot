@@ -14,6 +14,7 @@ from src.orchestration.langgraph_memory_pipeline import (
 )
 from src.retrieval.current_chat_span_retriever import CurrentChatSpanRetriever
 from src.retrieval.previous_chat_gist_retriever import PreviousChatGistRetriever
+from src.retrieval.raw_message_span_retriever import RawMessageSpanRetriever
 from src.retrieval.recent_messages_retriever import RecentMessagesRetriever
 from src.retrieval.retriever_dispatcher import RetrieverDispatcher
 from src.routing.semantic_router import CASUAL_CHAT, EXACT_QUOTE, SemanticRouter
@@ -170,6 +171,8 @@ def test_previous_chat_quote_expands_finalized_gist_to_raw_span(
         query=query,
         retrievers={
             "previous_chat_gist": PreviousChatGistRetriever(database),
+            # This case verifies the finalized gist's own expansion/provenance.
+            "raw_message_span": RawMessageSpanRetriever(database, enable_direct=False),
         },
     )
 

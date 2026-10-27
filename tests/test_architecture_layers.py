@@ -4,6 +4,8 @@ import json
 from dataclasses import replace
 from pathlib import Path
 
+from support.deterministic_services import local_document_retriever
+
 from src.chat_service import ChatService
 from src.context.context_budget_allocator import ContextBudgetAllocator
 from src.context.context_builder import ContextBuilder
@@ -293,6 +295,7 @@ def test_coordinator_trace_contains_all_trace_only_layers(tmp_path: Path) -> Non
     model = FakeModel()
     service = ChatService(
         database=db,
+        document_indexer=local_document_retriever(db),
         model=model,
         raw_message_limit=8,
         memory_update_batch_size=6,
@@ -356,6 +359,7 @@ def test_coordinator_falls_back_when_context_packet_is_invalid(tmp_path: Path) -
     model = FakeModel()
     service = ChatService(
         database=db,
+        document_indexer=local_document_retriever(db),
         model=model,
         raw_message_limit=8,
         memory_update_batch_size=6,

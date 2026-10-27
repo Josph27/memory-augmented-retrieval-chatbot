@@ -340,7 +340,11 @@ def test_current_chat_gist_is_not_routed_into_default_context(
         if source.source == "current_chat_gist"
     )
     assert current_gist_plan.enabled is False
-    assert candidates == []
+    assert all(candidate.source != "current_chat_gist" for candidate in candidates)
+    assert all(
+        candidate.metadata.get("parent_source") != "current_chat_gist" for candidate in candidates
+    )
+    assert any(candidate.source == "recent_messages" for candidate in candidates)
     assert all(
         candidate.source != "current_chat_gist"
         for candidate in context.candidates

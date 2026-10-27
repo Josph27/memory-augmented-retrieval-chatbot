@@ -85,8 +85,8 @@ def test_compact_cross_chat_document_and_casual_demo_regression(
             {
                 "memories": [
                     {
-                        "id": "preferences:architecture",
-                        "category": "preferences",
+                        "id": "user_preferences:architecture",
+                        "category": "user_preferences",
                         "key": "architecture",
                         "value": "Keep typed memory source semantics.",
                         "confidence": 0.95,

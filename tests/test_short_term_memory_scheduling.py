@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from support.deterministic_services import local_document_retriever
+
 from src.chat_service import ChatService
 from src.actions.chat_end import ChatEndAction
 from src.config import AppConfig
@@ -284,6 +286,7 @@ def test_live_deferred_post_answer_update_keeps_turns_intact(tmp_path: Path) -> 
     updater = RecordingUpdater()
     service = ChatService(
         database=db,
+        document_indexer=local_document_retriever(db),
         model=FakeModel(),
         raw_message_limit=1,
         memory_update_batch_size=2,
@@ -368,6 +371,7 @@ def test_agentic_each_turn_service_policy_evaluates_every_completed_turn(
     updater = RecordingUpdater()
     service = ChatService(
         database=db,
+        document_indexer=local_document_retriever(db),
         model=FakeModel(),
         raw_message_limit=1,
         memory_update_batch_size=2,

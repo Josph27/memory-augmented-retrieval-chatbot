@@ -1,0 +1,24 @@
+{
+  "tracked_python_files": 232,
+  "syntax_errors": [
+    {
+      "path": "scripts/rebuild_long_term_memory_index.py",
+      "line": 23,
+      "error": "unexpected indent"
+    }
+  ],
+  "ruff_diagnostics": 31,
+  "ruff_exit_code": 1,
+  "ruff_diagnostic_files": [
+    "app.py",
+    "scripts/rebuild_long_term_memory_index.py",
+    "scripts/token_monitor.py",
+    "src/connection_guard.py",
+    "src/context/evidence_selector.py",
+    "src/memory/structured_memory_vector_sync.py",
+    "startup.py",
+    "tests/test_coordinator_agent.py"
+  ],
+  "diagnostic_files_changed_since_initial": [],
+  "reference": "e7ad3b7"
+}

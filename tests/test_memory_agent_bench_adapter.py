@@ -6,6 +6,8 @@ from types import SimpleNamespace
 
 import pytest
 
+from support.deterministic_services import DeterministicEmbeddings
+
 from evals.memory_agent_bench.adapter import (
     MockAnswerModel,
     ProductionLikeHarness,
@@ -39,6 +41,7 @@ from src.core.contracts import (
     WorkflowTrace,
 )
 from src.memory.structured_state import MemoryUpdateResult
+from src.retrieval.langchain_chroma_retriever import LangChainChromaRetriever
 
 
 FIXTURE = (
@@ -48,6 +51,27 @@ FIXTURE = (
     / "fixtures"
     / "tiny_sample.jsonl"
 )
+
+
+@pytest.fixture
+def offline_document_embeddings(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """Keep default Chroma construction; replace only its model dependency per test."""
+    from langchain_chroma import Chroma
+
+    persist_dir = tmp_path / "document-chroma"
+    initialized: list[LangChainChromaRetriever] = []
+
+    def embeddings(retriever: LangChainChromaRetriever) -> DeterministicEmbeddings:
+        assert retriever.persist_dir == persist_dir
+        initialized.append(retriever)
+        return DeterministicEmbeddings()
+
+    monkeypatch.setenv("LANGCHAIN_CHROMA_PERSIST_DIR", str(persist_dir))
+    monkeypatch.setattr(LangChainChromaRetriever, "_embeddings", embeddings)
+    yield
+    assert initialized, "the real document backend must reach its embedding dependency"
+    assert persist_dir.is_dir()
+    assert all(isinstance(retriever._vector_store, Chroma) for retriever in initialized)
 
 
 class DeterministicEmbeddingBackend:
@@ -530,6 +554,7 @@ def test_literal_answer_without_local_relation_is_not_complete_evidence() -> Non
     )
 
 
+@pytest.mark.usefixtures("offline_document_embeddings")
 def test_mock_answer_mode_is_labeled_honestly() -> None:
     report = run_benchmark(load_examples(FIXTURE, limit=1), answer_mode="mock")
 
@@ -542,6 +567,7 @@ def test_mock_answer_mode_is_labeled_honestly() -> None:
     assert row["structured_update_backend_calls"] == 0
 
 
+@pytest.mark.usefixtures("offline_document_embeddings")
 def test_cross_encoder_ablation_is_explicit_and_traceable() -> None:
     report = run_benchmark(
         load_examples(FIXTURE, limit=1),
@@ -572,6 +598,7 @@ def test_simple_answer_metrics() -> None:
     assert metrics.evidence_contains_answer is True
 
 
+@pytest.mark.usefixtures("offline_document_embeddings")
 def test_jsonl_report_contains_summary_and_results(tmp_path: Path) -> None:
     report = run_benchmark(load_examples(FIXTURE, limit=1), answer_mode="mock")
     output = tmp_path / "report.jsonl"
@@ -630,6 +657,7 @@ def test_eval_raw_replay_retrieval_finds_old_chunk_with_provenance() -> None:
     assert candidates[0].metadata["eval_only"] is True
 
 
+@pytest.mark.usefixtures("offline_document_embeddings")
 def test_raw_replay_diagnostic_is_disabled_by_default() -> None:
     report = run_benchmark(load_examples(FIXTURE, limit=1), answer_mode="mock")
     row = report["results"][0]
@@ -699,6 +727,7 @@ def test_raw_replay_candidates_are_bounded() -> None:
     assert all(candidate.metadata["truncated"] is True for candidate in candidates)
 
 
+@pytest.mark.usefixtures("offline_document_embeddings")
 def test_enabled_raw_replay_reaches_context_packet() -> None:
     report = run_benchmark(
         load_examples(FIXTURE, limit=1),

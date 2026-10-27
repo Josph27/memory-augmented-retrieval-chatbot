@@ -13,12 +13,12 @@ from src.memory.previous_chat_gist import (
     PreviousChatGistGenerator,
 )
 from src.memory.short_term import (
-    ChatEndMemoryProcessingError,
     ChatEndMemoryProcessingResult,
     ShortTermMemory,
 )
 from src.memory.structured_state import MemoryUpdateResult
 from src.retrieval.previous_chat_gist_retriever import PreviousChatGistRetriever
+from src.retrieval.raw_message_span_retriever import RawMessageSpanRetriever
 from src.retrieval.retriever_dispatcher import RetrieverDispatcher
 from src.routing.route_planner import RoutePlanner
 
@@ -463,6 +463,8 @@ def test_finalized_previous_chat_gist_reaches_context_packet(
         database,
         retrievers={
             "previous_chat_gist": PreviousChatGistRetriever(database),
+            # Keep this assertion specific to the finalized gist expansion path.
+            "raw_message_span": RawMessageSpanRetriever(database, enable_direct=False),
         },
     ).retrieve("current-chat", route_plan)
 

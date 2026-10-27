@@ -7,6 +7,8 @@ from typing import Any
 
 import pytest
 
+from support.deterministic_services import DeterministicEmbeddings
+
 from evals.mab_answer_eval.artifacts import read_jsonl
 from evals.mab_answer_eval.judge import (
     JUDGE_PROMPT_VERSION,
@@ -33,6 +35,7 @@ from evals.memory_agent_bench.adapter import MockAnswerModel, ProductionLikeHarn
 from evals.memory_agent_bench.schemas import MABenchExample, MABenchSession
 from src.config import AppConfig
 from src.memory.structured_state import MemoryUpdateResult
+from src.retrieval.langchain_chroma_retriever import LangChainChromaRetriever
 
 
 VALID_JUDGE = json.dumps(
@@ -45,6 +48,27 @@ VALID_JUDGE = json.dumps(
         "brief_reason": "Supported by the selected evidence.",
     }
 )
+
+
+@pytest.fixture
+def offline_document_embeddings(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """Keep default Chroma construction; replace only its model dependency per test."""
+    from langchain_chroma import Chroma
+
+    persist_dir = tmp_path / "document-chroma"
+    initialized: list[LangChainChromaRetriever] = []
+
+    def embeddings(retriever: LangChainChromaRetriever) -> DeterministicEmbeddings:
+        assert retriever.persist_dir == persist_dir
+        initialized.append(retriever)
+        return DeterministicEmbeddings()
+
+    monkeypatch.setenv("LANGCHAIN_CHROMA_PERSIST_DIR", str(persist_dir))
+    monkeypatch.setattr(LangChainChromaRetriever, "_embeddings", embeddings)
+    yield
+    assert initialized, "the real document backend must reach its embedding dependency"
+    assert persist_dir.is_dir()
+    assert all(isinstance(retriever._vector_store, Chroma) for retriever in initialized)
 
 
 class FakeJudge:
@@ -556,6 +580,7 @@ def test_judge_client_error_does_not_expose_credentials(monkeypatch) -> None:
     assert secret not in str(captured.value)
 
 
+@pytest.mark.usefixtures("offline_document_embeddings")
 def test_answer_execution_uses_existing_answer_agent_and_graph_path(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -779,6 +804,7 @@ def test_same_history_is_prepared_once_for_multiple_questions(
     assert len({path for path in case_db_paths if path.name == "case.db"}) == 2
 
 
+@pytest.mark.usefixtures("offline_document_embeddings")
 def test_mab_history_finalization_persists_memory_gist_and_inactive_chat() -> None:
     updater = AcceptedMemoryUpdater()
     example = MABenchExample(

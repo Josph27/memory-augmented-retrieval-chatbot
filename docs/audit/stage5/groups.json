@@ -130,13 +130,17 @@
       "category": "live-provider",
       "enabled": false,
       "files": [],
-      "reason": "Live inference not authorized; full entry-point/cost registry being prepared from existing audit."
+      "reason": "No live or paid execution authorized; retained commands and transitive request/cost bounds in exclusions.md and live-proposal.md.",
+      "entry_register": "docs/audit/stage5/exclusions.md",
+      "expense_assessment": "docs/audit/stage5/group-assessment.md"
     },
     "expensive-evaluations": {
       "category": "expensive-evaluations",
       "enabled": false,
       "files": [],
-      "reason": "Repeated dataset/model/judge evaluation not authorized; fake evaluation unit regressions remain in offline-integration."
+      "reason": "Repeated dataset/model/judge evaluations deferred; commands/bounds in exclusions.md; fake regressions remain offline-integration.",
+      "entry_register": "docs/audit/stage5/exclusions.md",
+      "expense_assessment": "docs/audit/stage5/group-assessment.md"
     },
     "manual": {
       "category": "manual",
@@ -147,7 +151,9 @@
         "tests/test_socket.cjs",
         "tests/test_socket_2.js"
       ],
-      "reason": "HTTP/socket diagnostics use existing services; not isolated pytest protection."
+      "reason": "HTTP/socket diagnostics use existing services; not isolated pytest protection.",
+      "entry_register": "docs/audit/stage5/exclusions.md",
+      "expense_assessment": "docs/audit/stage5/group-assessment.md"
     }
   },
   "excluded_nodes": {

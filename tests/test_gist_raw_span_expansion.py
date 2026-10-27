@@ -16,6 +16,7 @@ from src.memory.short_term import ChatEndMemoryProcessingResult
 from src.retrieval.current_chat_gist_retriever import CurrentChatGistRetriever
 from src.retrieval.gist_raw_span_expander import GistRawSpanExpander
 from src.retrieval.previous_chat_gist_retriever import PreviousChatGistRetriever
+from src.retrieval.raw_message_span_retriever import RawMessageSpanRetriever
 from src.retrieval.reranker import MemoryReranker
 from src.retrieval.retriever_dispatcher import RetrieverDispatcher
 from src.routing.route_planner import RoutePlanner
@@ -64,6 +65,8 @@ def test_finalized_previous_gist_expands_to_exact_raw_context(
         database,
         retrievers={
             "previous_chat_gist": PreviousChatGistRetriever(database),
+            # Exercise gist expansion independently of direct raw retrieval.
+            "raw_message_span": RawMessageSpanRetriever(database, enable_direct=False),
         },
     ).retrieve("current-chat", route_plan)
 
@@ -469,6 +472,7 @@ def test_current_gist_expands_only_when_source_is_explicitly_enabled(
         database,
         retrievers={
             "current_chat_gist": CurrentChatGistRetriever(database),
+            "raw_message_span": RawMessageSpanRetriever(database, enable_direct=False),
         },
     )
 
@@ -478,14 +482,25 @@ def test_current_gist_expands_only_when_source_is_explicitly_enabled(
         explicitly_enable_source(default_plan, "current_chat_gist"),
     )
 
-    assert default_candidates == []
-    assert {candidate.source for candidate in enabled_candidates} == {
+    assert all(candidate.source != "current_chat_gist" for candidate in default_candidates)
+    assert all(
+        candidate.metadata.get("parent_source") != "current_chat_gist"
+        for candidate in default_candidates
+    )
+    assert any(candidate.source == "recent_messages" for candidate in default_candidates)
+    tested_candidates = [
+        candidate
+        for candidate in enabled_candidates
+        if candidate.source == "current_chat_gist"
+        or candidate.metadata.get("parent_source") == "current_chat_gist"
+    ]
+    assert {candidate.source for candidate in tested_candidates} == {
         "current_chat_gist",
         "raw_message_span",
     }
     raw = next(
         candidate
-        for candidate in enabled_candidates
+        for candidate in tested_candidates
         if candidate.source == "raw_message_span"
     )
     assert "user: The active task codename is topaz." in raw.content

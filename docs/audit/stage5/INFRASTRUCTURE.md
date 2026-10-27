@@ -55,6 +55,6 @@ Zero external inference requests/tokens/cost is supported by the passed native p
 - No test collection/execution, existing assertion modifications, credential reads, or live inference performed by infrastructure implementation. Controlled child AppConfig/provider imports occur only after native confinement.
 - Independent reviewer should verify mount closure, namespace/proof gate, explicit-path collection handling, child inheritance, exclusions and result counting before initial baseline execution. Browser loopback support is unexecuted and browser remains disabled.
 
-Browser tracked `.chainlit/config.toml` is currently masked with the entire runtime directory. Enabling browser coverage requires copying only explicitly reviewed tracked configuration into ephemeral `.chainlit` and separately hashing that input; do not expose ignored auth/cache files.
+Initial limitation (superseded by batch1): the full .chainlit directory was masked. The runner now copies, hashes and exposes only tracked config.toml with a passing only-config sentinel. Browser admission still requires separate service-root assets, child configuration/runtime and controlled-loopback review; ignored auth/cache files remain hidden.
 
 Independent reviewer accepted the final implementation and canary evidence for offline-unit16/offline-integration53 collection and execution. Eight canaries passed; no remaining offline safety blocker. Browser remains disabled and semantic vector-namespace protection is a separate test claim.

@@ -13,12 +13,25 @@ from evals.e2e_scenarios.run_e2e_scenarios import (
     summarize_results,
     write_report,
 )
+from src.memory.long_term_store import category_namespace, structured_memory_namespaces
+from src.memory.structured_state import MEMORY_CATEGORIES
 
 
 def test_e2e_scenario_dataset_loads_controlled_cases() -> None:
     cases = load_jsonl(DEFAULT_DATASET)
 
     assert len(cases) == 7
+    seeded_memories = [
+        memory
+        for case in cases
+        for memory in case.get("setup", {}).get("long_term_memories", [])
+    ]
+    assert seeded_memories
+    assert all(memory["category"] in MEMORY_CATEGORIES for memory in seeded_memories)
+    assert all(
+        category_namespace(memory["category"]) in structured_memory_namespaces("fixture-chat")
+        for memory in seeded_memories
+    )
     assert {case["case_id"] for case in cases} >= {
         "document_question",
         "semantic_memory_paraphrase",

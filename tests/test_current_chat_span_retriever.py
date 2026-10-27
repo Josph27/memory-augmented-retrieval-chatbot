@@ -38,7 +38,7 @@ def enabled_span_plan(
 
 
 def span_dispatcher(database: Database) -> RetrieverDispatcher:
-    """Return the production dispatcher with only the tested backend registered."""
+    """Override the tested backend while retaining the dispatcher's default sources."""
     return RetrieverDispatcher(
         database,
         retrievers={
@@ -119,6 +119,7 @@ def test_exact_quote_comes_from_raw_current_chat_messages(
         ),
     )
 
+    candidates = [candidate for candidate in candidates if candidate.source == "current_chat_span"]
     assert len(candidates) == 1
     assert candidates[0].source == "current_chat_span"
     assert candidates[0].content == ("user: Ship slowly, measure twice, and preserve rollback.")
@@ -178,8 +179,11 @@ def test_current_user_query_is_excluded_from_span_and_context(
         .context_packet
     )
 
-    assert all(current_id not in candidate.source_message_ids for candidate in candidates)
-    assert all(query not in candidate.content for candidate in candidates)
+    spans = [candidate for candidate in candidates if candidate.source == "current_chat_span"]
+    assert spans, "the exclusion assertion must exercise retrieved span evidence"
+    assert all(current_id not in candidate.source_message_ids for candidate in spans)
+    assert all(query not in candidate.content for candidate in spans)
+    assert current_id not in packet.recent_message_ids
     assert (
         sum(
             message["role"] == "user" and query in message["content"]
@@ -266,8 +270,12 @@ def test_current_chat_span_is_disabled_by_default_but_works_when_enabled(
 
     source = next(source for source in default_plan.sources if source.source == "current_chat_span")
     assert source.enabled is False
-    assert default_candidates == []
-    assert len(enabled_candidates) == 1
+    assert all(candidate.source != "current_chat_span" for candidate in default_candidates)
+    spans = [
+        candidate for candidate in enabled_candidates if candidate.source == "current_chat_span"
+    ]
+    assert len(spans) == 1
+    assert "The build marker is amber." in spans[0].content
 
 
 def test_oversized_span_is_dropped_without_exceeding_context_budget(
@@ -303,7 +311,7 @@ def test_oversized_span_is_dropped_without_exceeding_context_budget(
         route_plan=route_plan,
     )
 
-    assert len(candidates) == 1
+    assert len([candidate for candidate in candidates if candidate.source == "current_chat_span"]) == 1
     assert all(
         candidate.source != "current_chat_span" for candidate in result.context_packet.candidates
     )

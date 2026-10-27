@@ -28,9 +28,9 @@ Independent read-only review accepted batch1 before execution. Post-batch1: unit
 
 ## Repair batch2 — storage and meaningful assertions
 
-Independent review accepted9test/supportfiles; coordinator corrected two setup issues before execution (fake delete lookup; extension-loaded native inspection connection). Run post-batch2:509collected/508selected,475passed32failed1skipped/1deselected;30.5s approximate, exact duration in machine summary. All strengthened SQL/logging/manager and Chroma separation cases passed. New native sqlite-vec separate and delete parameters passed; update failed with UNIQUE constraint on vec_memories primary key from actual INSERT OR REPLACE. No native-path substitution or skip was added. Failed snapshot-write test passed with pending flags and deliberate seam restoration inside the test.
+Independent review accepted9test/supportfiles; coordinator corrected two setup issues before execution (fake delete lookup; extension-loaded native inspection connection). Run post-batch2:509collected/508selected,475passed32failed1skipped/1deselected;Exact duration is in the machine summary. All strengthened SQL/logging/manager and Chroma separation cases passed. New native sqlite-vec separate and delete parameters passed; update failed with UNIQUE constraint on vec_memories primary key from actual INSERT OR REPLACE. No native-path substitution or skip was added. Failed snapshot-write test passed with pending flags and deliberate seam restoration inside the test.
 
-A second new failure was a test setup defect: the nonraw formatting fixture supplied an unranked score=None and was legitimately excluded below minimum utility. It is corrected to ranked score1.0 with every content/provenance assertion retained; rerun remains required. Initial and post-batch2 failed evidence stays preserved.
+A second new failure was a test setup defect: the nonraw formatting fixture supplied an unranked score=None and was legitimately excluded below minimum utility. It is corrected to ranked score1.0 with every content/provenance assertion retained; rerun was required at that point and is completed in the later ranked-input entry below. Initial and post-batch2 failed evidence stays preserved.
 
 ### S5-APP-01 — native vector update
 
@@ -39,3 +39,13 @@ Actual native384-dimensional test first indexes a record, updates the same SQL i
 Ranked-input correction independently accepted and rerun:509collected/508selected,476passed31failed1skipped,1excluded. Nonraw processing passed; native update failure remains. Full corrected run and previous failed fixture run both archived separately; external requests/tokens/cost0, fake counts unknown, stable source. This overlaps prior runs.
 
 Withdrawn prerequisite claim: a worker inferred scripts/lib/load_eval_env.sh was absent from a search omission; coordinator verified tracked2218-byte file via git ls-files/git show/direct read. Helper exists; no missing-helper blocker. User and reviewers were explicitly corrected. Wrapper admission still needs real uv, synthetic Git metadata and ephemeral artifacts.
+
+## Repair batch3 — prerequisite/source/assertion repairs
+
+Fourteen owned test/fixturefiles independently accepted. Unit127passed/0failed (14.34s); integration509collected/508selected,500passed7failed1skipped/1excluded (30.48s). Stable source and external usage0; fakecallsunknown. Six failures remain actual source/evaluation harness blockers:3LongMemConfig,2structuredmockguard,1nativeupdate. Seventh was a NEW repair assertion mistake: same-chat query enables current_chat_span, while newly added assertion demanded raw_message_span. Coordinator and independent reviewer confirmed correction to nonempty current-chat spans containing old sourceID/excluding currentID, retaining every chronology/queryonce/budget assertion. This was a test defect; previous failedrun preserved and rerun recorded separately.
+
+Prompt tests accept current policy wording via regex; no prompt mutation tests were added. Existing selected/leaked actual-request negative controls belong to batch1. Gist-specific direct=False fixture scope does not prove parent metadata under default competing direct/gist dedup.
+
+Tracked-source syntax scan:232Pythonfiles, one existing unexpected-indent at rebuild CLIline23 (RV001). Full Ruff31diagnostics across8files; those8files are byte-for-byte unchanged since initial e7ad3b7. Changed-test focusedRuff passes. Machine reports static-summary.json/static-ruff.json; no application imports or compilation writes.
+
+Source-specific fixture correction rerun: integration509collected/508selected,501passed6failed1skipped/1excluded. All batch3 repaired cases passed; six source/evaluation-harness failures remain visible. Stable source/externalusage0, fakecallsunknown. This overlaps earlier integrationruns; unit's last run127passed is a separate snapshot, to be refreshed with final admitted groups.

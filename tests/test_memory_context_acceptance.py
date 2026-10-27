@@ -230,10 +230,16 @@ def test_production_recent_messages_keep_old_fact_and_current_query_once(
     ].index("Earlier fact: the staging environment is named cobalt.") < [
         message["content"] for message in result.context_packet.model_messages
     ].index("I will remember that staging is cobalt.")
-    assert sum(
-        message["role"] == "user" and message["content"] == query
-        for message in result.context_packet.model_messages
-    ) == 1
+    messages = result.context_packet.model_messages
+    final_user = messages[-1]
+    assert final_user["role"] == "user"
+    # Default same-chat span retrieval adds context to the final user message.
+    assert final_user["content"].rsplit("[Question]\n", maxsplit=1)[-1] == query
+    assert sum(message["content"].count(query) for message in messages) == 1
+    spans = [c for c in result.context_packet.candidates if c.source == "current_chat_span"]
+    assert spans
+    assert any(old_user_id in c.source_message_ids for c in spans)
+    assert all(current_id not in c.source_message_ids for c in spans)
     assert_source_budgets_respect_total(result)
 
 
