@@ -23,3 +23,16 @@ Test-only delivery complete; purge gate remains unpassed pending separately auth
 - [x] Preserve initial/final evidence, reconcile manual/UI limits, update readiness and propose first cleanup.
 
 DEC015 supersedes the earlier test-only authorization for these four blockers only. MAINT-01/TASK13 deferred; no paid/live inference, unrelated fixes, broad expansion or purge.
+
+
+## TASK16 / DEC017 — complete PURGE1
+
+- [x] Preserve starting branch/source and complete approved PNG batch752065d.
+- [ ] Record dispositions across all maintained areas and protected runtime/data metadata using existing audit.
+- [ ] Independently challenge code/dependency candidates, execute safe removals in small coherent batches.
+- [ ] Run affected offline checks per batch; final core/app/wrapper/browser and frontend build for accumulated changes.
+- [ ] Reconcile docs, counts/sizes, exclusions and any specific decisions; final tier-end acceptance checklist.
+
+No deletion quota; do not consolidate live responsibilities or restructure; MAINT-01/TASK13 deferred. Preserve data/credentials/stashes/recovery/historical evidence. Exactly one implementation writer; independent reviewers read-only. No source/docs/index mutations during isolated runs.
+
+PURGE1 static check note: first backend-focused Ruff found the preexisting unused urllib.parse.urljoin import in the now-touched guard; it has no consumers and is removed as an unused import within P1-C03. Initial whitespace check found trailing blank lines after declaration deletion; normalized EOF only. No behavior fix or assertion change.

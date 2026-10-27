@@ -1,0 +1,41 @@
+[
+  {
+    "complete": true,
+    "collected_case_count": 509,
+    "selected_case_count": 508,
+    "collection_error_count": 0,
+    "counts": {
+      "errored": 0,
+      "failed": 0,
+      "passed": 508,
+      "skipped": 0,
+      "xfailed": 0,
+      "xpassed": 0
+    },
+    "duration_seconds": 29.899674161992152,
+    "deselected": [
+      "tests/test_memory_reranker.py::test_cross_encoder_backend_preload_loads_model"
+    ],
+    "not_completed_nodeids": [],
+    "external_inference_requests": 0,
+    "external_tokens": 0,
+    "external_cost": 0,
+    "fake_model_calls": null,
+    "label": "backend",
+    "group": [
+      "offline-integration"
+    ],
+    "archive": "backend.tar.gz",
+    "sha256": "89fc41cc059471289cae5093fb5c2a33de7c9cd5edb702b599511459257a651e",
+    "launch": {
+      "duration_seconds": 32.43190574100299,
+      "exit_code": 0,
+      "output_dir": "/tmp/breamon-stage5-m0pzoet4",
+      "progress_exists": true,
+      "result_exists": true,
+      "source_unchanged_during_run": true,
+      "timed_out": false
+    },
+    "source_head": "752065da7c39ac64181b5c65472b5fd1569486e2"
+  }
+]

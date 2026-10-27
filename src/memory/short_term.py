@@ -91,10 +91,6 @@ class ConversationUnit:
         return [message.id for message in self.messages]
 
 
-class ChatEndMemoryProcessingError(RuntimeError):
-    """Raised when a pending chat-end memory batch cannot be accepted."""
-
-
 class StructuredMemoryUpdater(Protocol):
     """Protocol for structured memory update backends."""
 
