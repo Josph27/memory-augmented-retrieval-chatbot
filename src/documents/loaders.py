@@ -192,15 +192,6 @@ def index_loaded_document(loaded: LoadedDocument, indexer: TextDocumentIndexer):
     )
 
 
-def index_file_document(
-    path: str | Path,
-    indexer: TextDocumentIndexer,
-    display_name: str | None = None,
-):
-    """Load and index one local document file."""
-    return index_loaded_document(load_document_file(path, display_name=display_name), indexer)
-
-
 def display_stem(path: Path, display_name: str | None = None) -> str:
     """Return the original upload stem when provided, otherwise the filesystem stem."""
     return Path(display_name).stem if display_name else path.stem

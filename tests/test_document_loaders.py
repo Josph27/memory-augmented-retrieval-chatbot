@@ -7,7 +7,6 @@ import pytest
 from src.documents.loaders import (
     DocumentLoaderError,
     LoadedDocument,
-    index_file_document,
     index_loaded_document,
     load_document_file,
 )
@@ -142,12 +141,12 @@ def test_index_loaded_document_uses_existing_indexing_api() -> None:
     ]
 
 
-def test_index_file_document_loads_then_indexes(tmp_path: Path) -> None:
+def test_loaded_file_indexes_with_source_metadata(tmp_path: Path) -> None:
     path = tmp_path / "manual.md"
     path.write_text("Manual body", encoding="utf-8")
     indexer = FakeIndexer()
 
-    index_file_document(path, indexer)
+    index_loaded_document(load_document_file(path), indexer)
 
     assert indexer.calls[0]["title"] == "manual"
     assert indexer.calls[0]["text"] == "Manual body"
@@ -155,12 +154,12 @@ def test_index_file_document_loads_then_indexes(tmp_path: Path) -> None:
     assert indexer.calls[0]["metadata"]["file_name"] == "manual.md"
 
 
-def test_index_file_document_accepts_display_name_for_temp_upload(tmp_path: Path) -> None:
+def test_loaded_upload_indexes_with_display_name(tmp_path: Path) -> None:
     path = tmp_path / "upload.bin"
     path.write_text("Temporary markdown body", encoding="utf-8")
     indexer = FakeIndexer()
 
-    index_file_document(path, indexer, display_name="README.md")
+    index_loaded_document(load_document_file(path, display_name="README.md"), indexer)
 
     assert indexer.calls[0]["title"] == "README"
     assert indexer.calls[0]["text"] == "Temporary markdown body"
@@ -172,7 +171,7 @@ def test_loaded_file_indexes_and_retrieves_document_memory_candidate() -> None:
     path = Path("tests/fixtures/docs/sample_report.txt")
     retriever = FakeLangChainChromaRetriever()
 
-    index_file_document(path, retriever)
+    index_loaded_document(load_document_file(path), retriever)
     candidates = retriever.retrieve(
         chat_id="chat",
         source_plan=SourcePlan(
@@ -235,3 +234,60 @@ def test_pdf_loader_extracts_text_and_page_metadata(tmp_path: Path) -> None:
     assert loaded.metadata["file_name"] == "text-report.pdf"
     assert loaded.metadata["file_path"] == str(path)
     assert loaded.metadata["loader_name"] in {"pypdf", "pymupdf"}
+
+
+def test_index_document_cli_loads_once_and_indexes_that_snapshot(tmp_path, monkeypatch, capsys) -> None:
+    import sys
+    from types import SimpleNamespace
+
+    from scripts import index_document_file as cli
+    import src.documents.loaders as loaders
+
+    path = tmp_path / "report.txt"
+    path.write_text("original document", encoding="utf-8")
+    real_load = loaders.load_document_file
+    loads = []
+    indexed = []
+
+    def load_once(file_path):
+        loaded = real_load(file_path)
+        loads.append(loaded)
+        return loaded
+
+    class Indexer:
+        def index_text_document(self, **kwargs):
+            indexed.append(kwargs)
+            return SimpleNamespace(document_id="doc-1", chunk_count=1)
+
+    def create_indexer():
+        # Simulate the input changing while the backend is initialized.
+        path.write_text("later document", encoding="utf-8")
+        return Indexer()
+
+    monkeypatch.setattr(loaders, "load_document_file", load_once)
+    monkeypatch.setattr(LangChainChromaRetriever, "from_env", create_indexer)
+    monkeypatch.setattr(sys, "argv", ["index_document_file.py", str(path)])
+    cli.main()
+
+    assert len(loads) == 1
+    assert indexed == [{"title": "report", "text": "original document",
+                        "source": "file", "metadata": loads[0].metadata}]
+    assert capsys.readouterr().out.strip() == (
+        f"indexed_document_file path={path} title='report' document_id=doc-1 chunk_count=1"
+    )
+
+
+def test_index_document_cli_rejects_missing_file_before_backend(tmp_path, monkeypatch, capsys) -> None:
+    import sys
+
+    from scripts import index_document_file as cli
+
+    def unexpected_backend():
+        pytest.fail("backend must not start when input cannot be loaded")
+
+    monkeypatch.setattr(LangChainChromaRetriever, "from_env", unexpected_backend)
+    monkeypatch.setattr(sys, "argv", ["index_document_file.py", str(tmp_path / "missing.txt")])
+    with pytest.raises(SystemExit) as error:
+        cli.main()
+    assert error.value.code == 1
+    assert "Could not index document file: Document file does not exist:" in capsys.readouterr().out

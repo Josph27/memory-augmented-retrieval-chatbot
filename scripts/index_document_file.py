@@ -16,7 +16,7 @@ def main() -> None:
     """Load a local file and index it into the LangChain-Chroma document backend."""
     ensure_repo_root_on_path()
 
-    from src.documents.loaders import DocumentLoaderError, index_file_document, load_document_file
+    from src.documents.loaders import DocumentLoaderError, index_loaded_document, load_document_file
     from src.retrieval.langchain_chroma_retriever import (
         LangChainChromaRetriever,
         LangChainChromaUnavailable,
@@ -29,7 +29,7 @@ def main() -> None:
     try:
         loaded = load_document_file(args.path)
         retriever = LangChainChromaRetriever.from_env()
-        result = index_file_document(args.path, retriever)
+        result = index_loaded_document(loaded, retriever)
     except (DocumentLoaderError, LangChainChromaUnavailable) as error:
         print(f"Could not index document file: {error}")
         raise SystemExit(1) from error

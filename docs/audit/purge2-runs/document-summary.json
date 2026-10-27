@@ -1,0 +1,33 @@
+{
+  "collected_case_count": 511,
+  "selected_case_count": 510,
+  "counts": {
+    "errored": 0,
+    "failed": 0,
+    "passed": 510,
+    "skipped": 0,
+    "xfailed": 0,
+    "xpassed": 0
+  },
+  "deselected": [
+    "tests/test_memory_reranker.py::test_cross_encoder_backend_preload_loads_model"
+  ],
+  "duration_seconds": 35.94224705599481,
+  "external_inference_requests": 0,
+  "external_tokens": 0,
+  "external_cost": 0,
+  "fake_model_calls": null,
+  "archive": "document-integration.tar.gz",
+  "sha256": "23b2358de9469a88f74490ac2058c526284b452ba6043aaaa01f40a6d1c45cf8",
+  "launch": {
+    "duration_seconds": 38.62460146100784,
+    "exit_code": 0,
+    "output_dir": "/tmp/breamon-stage5-jw7j2ydl",
+    "progress_exists": true,
+    "result_exists": true,
+    "source_unchanged_during_run": true,
+    "timed_out": false
+  },
+  "review": "Independent read-only review accepted CLI semantics/callers/tests; stale document helper description corrected.",
+  "source": "HEAD 6d3e049 with documented dirty implementation/test bytes; exact before/after snapshots in archive"
+}
