@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
+import { loadRecordPartitions } from "../loadRecordPartitions";
 import {
 	fetchDocuments,
 	deleteDocument,
@@ -10,41 +11,21 @@ function Documents() {
 	const [docs, setDocs] = useState([]);
 	const [loading, setLoading] = useState(true);
 	const [error, setError] = useState(null);
+	const [failedPartitions, setFailedPartitions] = useState([]);
 
 	const loadDocuments = useCallback(() => {
 		setLoading(true);
 		setError(null);
-		// Fetch active and deleted independently so a failure in one
-		// does not discard successful results from the other.
-		Promise.allSettled([
+		setFailedPartitions([]);
+		loadRecordPartitions(
 			fetchDocuments(),
 			fetchDocuments({ status: "deleted" }),
-		])
-			.then(([activeResult, deletedResult]) => {
-				const merged = [];
-				const errors = [];
-				if (activeResult.status === "fulfilled") {
-					merged.push(...activeResult.value);
-				} else {
-					console.error("Active documents fetch failed:", activeResult.reason);
-					errors.push("active");
-				}
-				if (deletedResult.status === "fulfilled") {
-					merged.push(...deletedResult.value);
-				} else {
-					console.error(
-						"Inactive documents fetch failed:",
-						deletedResult.reason,
-					);
-				}
-				setDocs(merged);
-				if (errors.length === 2) {
-					setError("Failed to load documents.");
-				} else if (errors.length === 1) {
-					setError(
-						`Could not load ${errors[0]} documents — showing available data.`,
-					);
-				}
+			"documents",
+		)
+			.then(({ records, failed }) => {
+				setDocs(records);
+				setFailedPartitions(failed);
+				if (failed.length === 2) setError("Failed to load documents.");
 				setLoading(false);
 			})
 			.catch((err) => {
@@ -136,10 +117,10 @@ function Documents() {
 					Quick Stats:
 				</span>
 				<span className="font-body-md text-body-md text-on-secondary-container">
-					Active: {loading ? "..." : activeDocs.length}
+					Active: {loading ? "..." : failedPartitions.includes("active") ? "Unavailable" : activeDocs.length}
 				</span>
 				<span className="font-body-md text-body-md text-on-secondary-container">
-					Inactive: {loading ? "..." : inactiveDocs.length}
+					Inactive: {loading ? "..." : failedPartitions.includes("inactive") ? "Unavailable" : inactiveDocs.length}
 				</span>
 				<button
 					onClick={loadDocuments}
@@ -156,7 +137,12 @@ function Documents() {
 			</div>
 
 			{loading && <div className="text-on-surface-variant">Loading...</div>}
-			{error && <div className="text-error mb-lg">{error}</div>}
+			{error && <div className="text-error mb-lg" role="alert">{error}</div>}
+			{!loading && !error && failedPartitions.length === 1 && (
+				<div className="text-error mb-lg" role="alert">
+					Could not load {failedPartitions[0]} documents — showing available data.
+				</div>
+			)}
 
 			{!loading && !error && (
 				<>
@@ -166,7 +152,11 @@ function Documents() {
 							Active Documents
 						</h2>
 						<div className="bg-surface-container-low border border-outline-variant/20 rounded overflow-hidden">
-							{activeDocs.length === 0 ? (
+							{failedPartitions.includes("active") ? (
+								<div className="px-lg py-sm text-on-surface-variant italic">
+									Active documents unavailable.
+								</div>
+							) : activeDocs.length === 0 ? (
 								<div className="px-lg py-sm text-on-surface-variant italic">
 									No active documents.
 								</div>
@@ -223,7 +213,11 @@ function Documents() {
 							Inactive Documents
 						</h2>
 						<div className="bg-surface-container-lowest border border-outline-variant/20 rounded overflow-hidden opacity-80">
-							{inactiveDocs.length === 0 ? (
+							{failedPartitions.includes("inactive") ? (
+								<div className="px-lg py-sm text-on-surface-variant italic">
+									Inactive documents unavailable.
+								</div>
+							) : inactiveDocs.length === 0 ? (
 								<div className="px-lg py-sm text-on-surface-variant italic">
 									No inactive documents.
 								</div>

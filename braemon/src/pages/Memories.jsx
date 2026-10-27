@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
+import { loadRecordPartitions } from "../loadRecordPartitions";
 import {
 	fetchMemories,
 	deactivateMemory,
@@ -11,41 +12,21 @@ export default function Memories() {
 	const [memories, setMemories] = useState([]);
 	const [loading, setLoading] = useState(true);
 	const [error, setError] = useState(null);
+	const [failedPartitions, setFailedPartitions] = useState([]);
 
 	const loadMemories = useCallback(() => {
 		setLoading(true);
 		setError(null);
-		// Fetch active and deleted independently so a failure in one
-		// does not discard successful results from the other.
-		Promise.allSettled([
+		setFailedPartitions([]);
+		loadRecordPartitions(
 			fetchMemories({ status: "active" }),
 			fetchMemories({ status: "deleted" }),
-		])
-			.then(([activeResult, deletedResult]) => {
-				const merged = [];
-				const errors = [];
-				if (activeResult.status === "fulfilled") {
-					merged.push(...activeResult.value);
-				} else {
-					console.error("Active memories fetch failed:", activeResult.reason);
-					errors.push("active");
-				}
-				if (deletedResult.status === "fulfilled") {
-					merged.push(...deletedResult.value);
-				} else {
-					console.error(
-						"Inactive memories fetch failed:",
-						deletedResult.reason,
-					);
-				}
-				setMemories(merged);
-				if (errors.length === 2) {
-					setError("Failed to load memories.");
-				} else if (errors.length === 1) {
-					setError(
-						`Could not load ${errors[0]} memories — showing available data.`,
-					);
-				}
+			"memories",
+		)
+			.then(({ records, failed }) => {
+				setMemories(records);
+				setFailedPartitions(failed);
+				if (failed.length === 2) setError("Failed to load memories.");
 				setLoading(false);
 			})
 			.catch((err) => {
@@ -222,10 +203,10 @@ export default function Memories() {
 					Quick Stats:
 				</span>
 				<span className="font-body-md text-body-md text-on-secondary-container">
-					Active: {loading ? "..." : activeMemories.length}
+					Active: {loading ? "..." : failedPartitions.includes("active") ? "Unavailable" : activeMemories.length}
 				</span>
 				<span className="font-body-md text-body-md text-on-secondary-container">
-					Inactive: {loading ? "..." : inactiveMemories.length}
+					Inactive: {loading ? "..." : failedPartitions.includes("inactive") ? "Unavailable" : inactiveMemories.length}
 				</span>
 			</div>
 
@@ -245,7 +226,12 @@ export default function Memories() {
 			</div>
 
 			{loading && <div className="text-on-surface-variant">Loading...</div>}
-			{error && <div className="text-error mb-lg">{error}</div>}
+			{error && <div className="text-error mb-lg" role="alert">{error}</div>}
+			{!loading && !error && failedPartitions.length === 1 && (
+				<div className="text-error mb-lg" role="alert">
+					Could not load {failedPartitions[0]} memories — showing available data.
+				</div>
+			)}
 
 			{!loading && !error && (
 				<>
@@ -255,7 +241,11 @@ export default function Memories() {
 							Active Memories
 						</h2>
 						<div className="bg-surface-container-low border border-outline-variant/20 rounded overflow-hidden">
-							{activeMemories.length === 0 ? (
+							{failedPartitions.includes("active") ? (
+								<div className="px-lg py-sm text-on-surface-variant italic">
+									Active memories unavailable.
+								</div>
+							) : activeMemories.length === 0 ? (
 								<div className="px-lg py-sm text-on-surface-variant italic">
 									No active memories.
 								</div>
@@ -271,7 +261,11 @@ export default function Memories() {
 							Inactive Memories
 						</h2>
 						<div className="bg-surface-container-lowest border border-outline-variant/20 rounded overflow-hidden opacity-80">
-							{inactiveMemories.length === 0 ? (
+							{failedPartitions.includes("inactive") ? (
+								<div className="px-lg py-sm text-on-surface-variant italic">
+									Inactive memories unavailable.
+								</div>
+							) : inactiveMemories.length === 0 ? (
 								<div className="px-lg py-sm text-on-surface-variant italic">
 									No inactive memories.
 								</div>
