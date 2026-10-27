@@ -579,13 +579,6 @@ def record_to_memory_state_record(record: LongTermMemoryRecord) -> dict[str, Any
     return record.as_memory_record()
 
 
-def memory_state_from_records(
-    records: list[LongTermMemoryRecord],
-) -> dict[str, list[dict[str, Any]]]:
-    """Convert store records into the existing chat_memory_state JSON shape."""
-    return {"memories": [record_to_memory_state_record(record) for record in records]}
-
-
 def merge_memory_records(
     existing_records: list[dict[str, Any]],
     new_records: list[dict[str, Any]],
