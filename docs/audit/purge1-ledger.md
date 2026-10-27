@@ -1,6 +1,6 @@
 # PURGE1 maintained-area and removal ledger
 
-TASK16 / DEC017. Engineering complete; tier-end user functionality confirmation pending; baseline3a3ad03e5fb33b23c56aa5f36e49c1f2e413bf67. Existing audit/workflow/test maps supply area coverage; this is cleanup disposition work, not a general audit restart. One implementation writer; independent read-only challenge of consequential removals.
+TASK16 / DEC017. Engineering complete; user confirmed application functionality under DEC018; baseline3a3ad03e5fb33b23c56aa5f36e49c1f2e413bf67. Existing audit/workflow/test maps supply area coverage; this is cleanup disposition work, not a general audit restart. One implementation writer; independent read-only challenge of consequential removals.
 
 ## Reviewed maintained areas
 
@@ -58,7 +58,7 @@ Offline isolated verification passed dependency-root consistency, actual Puppete
 
 ## Final verification gate
 
-All safe code/dependency/artifact batches are implemented and independently reviewed. Final accumulated-state core/app/wrapper/native-browser groups passed689selected cases,1real-model exclusion. Final frontend checks/build/lint passed after the last import-only change. Current source/link/entrypoint checks and size-accounting handoff are recorded in the [completion report](purge1-completion.md) and [machine results](purge1-runs/final-summary.json). Four coherent removal commits preserve recovery history. No unresolved PURGE1 removal decision; no PURGE2 work. Await user tier-end functionality confirmation.
+All safe code/dependency/artifact batches are implemented and independently reviewed. Final accumulated-state core/app/wrapper/native-browser groups passed689selected cases,1real-model exclusion. Final frontend checks/build/lint passed after the last import-only change. Current source/link/entrypoint checks and size-accounting handoff are recorded in the [completion report](purge1-completion.md) and [machine results](purge1-runs/final-summary.json). Four coherent removal commits preserve recovery history. No unresolved PURGE1 removal decision; no PURGE2 work had begun at that checkpoint. User confirmed application functionality on 2026-10-27 (DEC018).
 
 ## Final known-static-findings closure
 

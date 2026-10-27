@@ -2,7 +2,7 @@
 
 2026-10-27 · TASK16 / DEC017 · branch `codex/audit-main` at `/home/josph/.codex/worktrees/audit-main/repo`.
 
-Engineering complete, pending the user's tier-end functionality confirmation. Every justified safe removal from the recorded review is executed and independently reviewed. All 463 baseline tracked paths have a disposition in 11 areas; ignored/runtime areas have preservation boundaries, with recursive contents and sizes intentionally unknown. No unresolved PURGE1 product/data/value decision remains. This is bounded consumer/responsibility review using the existing audit, not a claim that every branch is covered or all possible dead code has been proven absent. PURGE2 has not started.
+Engineering complete; the user confirmed application functionality on 2026-10-27 (DEC018). Every justified safe removal from the recorded review is executed and independently reviewed. All 463 baseline tracked paths have a disposition in 11 areas; ignored/runtime areas have preservation boundaries, with recursive contents and sizes intentionally unknown. No unresolved PURGE1 product/data/value decision remains. This is bounded consumer/responsibility review using the existing audit, not a claim that every branch is covered or all possible dead code has been proven absent. PURGE2 had not started at that checkpoint; subsequent work is recorded in the [PURGE2 ledger](purge2-ledger.md).
 
 ## 1. Changes and recovery
 
@@ -86,4 +86,4 @@ Using the existing local setup, confirm:
 2. Create/send/end/resume/fork a chat; confirm history and cross-chat memory still work as expected.
 3. Upload a small document, ask a grounded question, inspect retrieval provenance; in development, check that browser console forwarding still writes its log.
 
-These are user acceptance checks, not completed automated live checks. Wait for the user's functionality confirmation before any PURGE2 work.
+The user subsequently confirmed application functionality without specifying individual scenarios or runtime configuration. This confirmation does not convert these items into completed automated live checks.

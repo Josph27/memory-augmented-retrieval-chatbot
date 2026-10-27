@@ -1,6 +1,6 @@
 # PURGE2 consolidation ledger
 
-TASK17 / DEC018. Baseline `ae35188`, clean `codex/audit-main` worktree. User confirmed application functionality after PURGE1; precise manual scenarios and runtime configuration were not specified. Prior [PURGE1 evidence](purge1-completion.md) remains the automated baseline. One implementation writer, independent challenge of consequential batches. No live inference or production data.
+TASK17 / DEC018. Engineering complete; user PURGE2 functionality confirmation pending. Baseline `ae35188`, clean `codex/audit-main` worktree. User confirmed application functionality after PURGE1; precise manual scenarios and runtime configuration were not specified. Prior [PURGE1 evidence](purge1-completion.md) remains the automated baseline. One implementation writer, independent challenge of consequential batches. No live inference or production data.
 
 | Responsibility / area | Implementations and callers | Meaningful differences / proposed boundary | Protection | Disposition / outcome |
 |---|---|---|---|---|
@@ -17,3 +17,26 @@ TASK17 / DEC018. Baseline `ae35188`, clean `codex/audit-main` worktree. User con
 | Tests/fixtures, historical audit, data/runtime | Existing protection, historical records and ignored stores | No suite-wide cleanup under MAINT-01; protected data/credentials/stashes/recovery untouched. | Existing isolation and baseline evidence. | Deferred/preserved. |
 
 MAINT-01/TASK13 test-suite simplification and PURGE3 broad restructuring remain deferred.
+
+## Final verification and review
+
+Final product source `fcaaef85bf8c8a9964f153a8f1143c5c3f2ebb81`; final audit records below were updated after execution. Three affected integration runs and independent reviews preceded their commits; the final five groups below are disjoint and ran on the same clean product source. Full allowlisted logs, JUnit, before/after source snapshots and isolation proofs: [machine summary](purge2-runs/final-summary.json).
+
+| Group | Collected | Passed | Excluded | Duration |
+|---|---:|---:|---:|---:|
+| Offline unit | 127 | 127 | 0 | 18.25s |
+| Offline integration | 513 | 512 | 1 | 44.97s |
+| App composition | 20 | 20 | 0 | 7.37s |
+| Subprocess wrappers | 21 | 21 | 0 | 2.43s |
+| Native browser | 13 | 13 | 0 | 95.36s |
+| **Distinct total** | **694** | **693** | **1** | **168.38s summed** |
+
+Zero failures, errors, skips, xfails or xpasses. One actual cross-encoder preload remains excluded. Controlled private namespaces, fake/synthetic stores, subprocess inheritance and negative network canaries support zero external inference requests/tokens/cost; fake calls are unmeasured. Direct CLI `--help` for all four affected evaluation entry points ran from a non-repository working directory inside the isolated integration group. The document-indexing CLI `--help` also passed in the reviewed isolated namespace; [result](purge2-runs/cli-help.json). Frontend dependency/API/dev-console checks, production build and lint passed; three existing lint warnings and the bundle-size warning remain. Native browser passed 12 journeys plus one setup case; React/Node browser paths remain unexecuted.
+
+Independent reviewers accepted all three source/test/consumer migrations, identified and verified the non-root CLI check, reviewed retained boundaries, and confirmed final results, isolation and disjoint case IDs. The existing product-oracle report remains 39 passed / 3 failed among 42 rows, separately from the passing pytest harness. Actual model assets, live/provider inference, paid evaluations and production data were not run; see [exclusions](stage5/exclusions.md). Existing Ruff/syntax/backlog findings remain. No product behavior choice or consequential regression is outstanding.
+
+## Size and acceptance
+
+Git baseline `ae35188` to final product `fcaaef8`: maintained application/evaluation/operations code **174 → 176 files, 43,330 → 43,314 logical lines, 1,554,729 → 1,554,114 bytes**. The two added modules are small shared readers with distinct raw versus location-wrapped error contracts. Tests remain 89 files but grow **22,606 → 22,732 lines** and **775,754 → 780,638 bytes** from four targeted cases and adaptation of three existing cases. Documentation and generated audit evidence are separate from code counts; [machine counts](purge2-runs/size-counts.json) capture their pre-final-handoff sizes. No test assertions were weakened.
+
+For tier-end acceptance, confirm: (1) use the document indexing CLI with a small text/PDF and verify the reported document is searchable; (2) run the structured-memory, multi-source and document-QA offline evaluations using their documented mock/fixture paths, and confirm usual output; (3) use the app to upload a document, ask a grounded question and inspect the retrieval result. The CLI now indexes its first loaded snapshot if the file changes while the backend initializes; the former implementation loaded twice. The user has not yet confirmed PURGE2 functionality. No PURGE3 or MAINT-01 work has begun.

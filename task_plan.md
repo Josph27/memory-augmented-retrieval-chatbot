@@ -40,3 +40,12 @@ PURGE1 static check note: first backend-focused Ruff found the preexisting unuse
 PURGE1 frontend auxiliary check: first logger smoke read an existing file before asynchronous append completed (empty content). Production logger unchanged. Corrected the temporary verification script to await the actual fs.promises.appendFile promise, preserving initial failed log evidence; no polling/retries or application fix.
 
 TASK16 engineering complete:689unique selected cases pass,1real-model exclusion; finalfrontend check/tree/build/lint0 with3warnings. All463baseline paths dispositioned; safe batches reviewed/committed; no unresolvedPURGE1decision. Evidence/handoff finalized, stop for user tier-end functionality confirmation. No PURGE2.
+
+## TASK17 / DEC018 — PURGE2
+
+- [x] Record PURGE1 user acceptance and assess maintained-area consolidation boundaries.
+- [x] Implement/review/commit the document snapshot and two distinct evaluation-reader batches.
+- [x] Run affected and final isolated checks; preserve source snapshots and limitations.
+- [x] Final ledger/decisions and tier-end checklist; await user PURGE2 functionality confirmation.
+
+No PURGE3 or MAINT-01 simplification; preserve data, credentials and recovery material.

@@ -1,0 +1,54 @@
+{
+  "baseline": "ae35188",
+  "product_head": "fcaaef8",
+  "units": [
+    "files",
+    "bytes",
+    "logical lines (code only)"
+  ],
+  "before": {
+    "code": [
+      174,
+      1554729,
+      43330
+    ],
+    "tests": [
+      89,
+      775754,
+      22606
+    ],
+    "documentation": [
+      40,
+      355851,
+      null
+    ],
+    "evidence": [
+      138,
+      7706766,
+      null
+    ]
+  },
+  "after_committed_batches": {
+    "code": [
+      176,
+      1554114,
+      43314
+    ],
+    "tests": [
+      89,
+      780638,
+      22732
+    ],
+    "documentation": [
+      40,
+      355999,
+      null
+    ],
+    "evidence": [
+      145,
+      8467473,
+      null
+    ]
+  },
+  "note": "Final audit handoff evidence added after fcaaef8 is excluded from these committed-batch counts."
+}

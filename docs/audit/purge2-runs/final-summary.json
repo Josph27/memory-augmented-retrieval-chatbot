@@ -1,0 +1,203 @@
+{
+  "baseline": "ae35188cdd6d44502daa4e55a69a61357148de85",
+  "product_head": "fcaaef85bf8c8a9964f153a8f1143c5c3f2ebb81",
+  "runs": [
+    {
+      "collected_case_count": 127,
+      "selected_case_count": 127,
+      "counts": {
+        "errored": 0,
+        "failed": 0,
+        "passed": 127,
+        "skipped": 0,
+        "xfailed": 0,
+        "xpassed": 0
+      },
+      "deselected": [],
+      "collection_error_count": 0,
+      "duration_seconds": 18.252234029001556,
+      "external_inference_requests": 0,
+      "external_tokens": 0,
+      "external_cost": 0,
+      "fake_model_calls": null,
+      "group": "unit",
+      "archive": "final-unit.tar.gz",
+      "sha256": "a576c549c6b813e594b4af1deeb03ff5222915be0d68bbb314a9ec3f6bd8759b",
+      "launch": {
+        "duration_seconds": 21.70631962599873,
+        "exit_code": 0,
+        "output_dir": "/tmp/breamon-stage5-0k42fjmn",
+        "progress_exists": true,
+        "result_exists": true,
+        "source_unchanged_during_run": true,
+        "timed_out": false
+      }
+    },
+    {
+      "collected_case_count": 513,
+      "selected_case_count": 512,
+      "counts": {
+        "errored": 0,
+        "failed": 0,
+        "passed": 512,
+        "skipped": 0,
+        "xfailed": 0,
+        "xpassed": 0
+      },
+      "deselected": [
+        "tests/test_memory_reranker.py::test_cross_encoder_backend_preload_loads_model"
+      ],
+      "collection_error_count": 0,
+      "duration_seconds": 44.97417714400217,
+      "external_inference_requests": 0,
+      "external_tokens": 0,
+      "external_cost": 0,
+      "fake_model_calls": null,
+      "group": "integration",
+      "archive": "final-integration.tar.gz",
+      "sha256": "91c542b74deb846bfb7ce8c5980a567d1a861fd65f07392071a938802f061970",
+      "launch": {
+        "duration_seconds": 47.98445257300045,
+        "exit_code": 0,
+        "output_dir": "/tmp/breamon-stage5-looz2nij",
+        "progress_exists": true,
+        "result_exists": true,
+        "source_unchanged_during_run": true,
+        "timed_out": false
+      }
+    },
+    {
+      "collected_case_count": 20,
+      "selected_case_count": 20,
+      "counts": {
+        "errored": 0,
+        "failed": 0,
+        "passed": 20,
+        "skipped": 0,
+        "xfailed": 0,
+        "xpassed": 0
+      },
+      "deselected": [],
+      "collection_error_count": 0,
+      "duration_seconds": 7.369180794004933,
+      "external_inference_requests": 0,
+      "external_tokens": 0,
+      "external_cost": 0,
+      "fake_model_calls": null,
+      "group": "app",
+      "archive": "final-app.tar.gz",
+      "sha256": "0ee2f832a90fa01e1f7542868dcb3f171fe0140db5cc88c40bfb29fe6c11e8d3",
+      "launch": {
+        "duration_seconds": 8.761363231998985,
+        "exit_code": 0,
+        "output_dir": "/tmp/breamon-stage5-e8kyksjj",
+        "progress_exists": true,
+        "result_exists": true,
+        "source_unchanged_during_run": true,
+        "timed_out": false
+      }
+    },
+    {
+      "collected_case_count": 21,
+      "selected_case_count": 21,
+      "counts": {
+        "errored": 0,
+        "failed": 0,
+        "passed": 21,
+        "skipped": 0,
+        "xfailed": 0,
+        "xpassed": 0
+      },
+      "deselected": [],
+      "collection_error_count": 0,
+      "duration_seconds": 2.4331053420028184,
+      "external_inference_requests": 0,
+      "external_tokens": 0,
+      "external_cost": 0,
+      "fake_model_calls": null,
+      "group": "wrappers",
+      "archive": "final-wrappers.tar.gz",
+      "sha256": "1ed9b6a72d7f4e0355ab81361f6298bfe692706db8fc103adc40fd94d731d77a",
+      "launch": {
+        "duration_seconds": 3.5291273000038927,
+        "exit_code": 0,
+        "output_dir": "/tmp/breamon-stage5-5ytzj2ay",
+        "progress_exists": true,
+        "result_exists": true,
+        "source_unchanged_during_run": true,
+        "timed_out": false
+      }
+    },
+    {
+      "collected_case_count": 13,
+      "selected_case_count": 13,
+      "counts": {
+        "errored": 0,
+        "failed": 0,
+        "passed": 13,
+        "skipped": 0,
+        "xfailed": 0,
+        "xpassed": 0
+      },
+      "deselected": [],
+      "collection_error_count": 0,
+      "duration_seconds": 95.35531349800294,
+      "external_inference_requests": 0,
+      "external_tokens": 0,
+      "external_cost": 0,
+      "fake_model_calls": null,
+      "group": "browser",
+      "archive": "final-browser.tar.gz",
+      "sha256": "28212206e4ee26e7cf84a67c950f27261edadeebc86d324e4595201efa9daabb",
+      "launch": {
+        "duration_seconds": 99.6322468950093,
+        "exit_code": 0,
+        "output_dir": "/tmp/breamon-stage5-m8mii6wk",
+        "progress_exists": true,
+        "result_exists": true,
+        "source_unchanged_during_run": true,
+        "timed_out": false
+      }
+    }
+  ],
+  "frontend": {
+    "archive": "final-frontend.tar.gz",
+    "sha256": "be45eaf0411a8fe1d9938c199248bfe0c11f28df5306d5a67055a91a40a00082",
+    "results": [
+      {
+        "label": "checks",
+        "exit_code": 0
+      },
+      {
+        "label": "dependency-tree",
+        "exit_code": 0
+      },
+      {
+        "label": "build",
+        "exit_code": 0
+      },
+      {
+        "label": "lint",
+        "exit_code": 0
+      }
+    ],
+    "warnings": 3,
+    "errors": 0,
+    "external_requests": 0,
+    "installs": 0,
+    "source_hashes_match": true
+  },
+  "unique_selected": 693,
+  "collected": 694,
+  "excluded": 1,
+  "source_snapshots_identical": true,
+  "selected_nodeids_disjoint": true,
+  "external_inference": "zero requests/tokens/cost supported by isolated network/credentials controls; fake calls unmeasured",
+  "product_oracle": "42 non-browser rows: 39 passed, 3 failed; separate from pytest case outcomes",
+  "limits": [
+    "Real cross-encoder preload excluded",
+    "Live inference, actual model assets, React/Node browser paths and paid evaluations not run",
+    "Global Ruff existing diagnostics; frontend lint three warnings and >500kB bundle warning",
+    "Final documentation and evidence changes were made after execution; product source is fcaaef8"
+  ]
+}

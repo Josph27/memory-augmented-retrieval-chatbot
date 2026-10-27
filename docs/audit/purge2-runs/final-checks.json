@@ -1,0 +1,21 @@
+{
+  "local_markdown_links_checked": 78,
+  "missing_paths": [],
+  "scope": "Current changed Markdown paths only; remote links and anchors not checked.",
+  "shell_syntax_checked": [
+    "run.sh",
+    ".dev/start-dev.sh",
+    ".dev/stop-dev.sh",
+    "scripts/run_final_52_and_judge.sh",
+    "scripts/run_final_52.sh",
+    "scripts/run_mab_post_fix_targeted.sh",
+    "scripts/inspect_eval_run.sh",
+    "scripts/run_final_judge.sh",
+    "scripts/final_eval_paths.sh",
+    "scripts/lib/load_eval_env.sh"
+  ],
+  "startup_help_exit": 0,
+  "document_cli_help": "cli-help.json",
+  "final_archive_digests_and_private_filename_exclusions": "passed",
+  "git_diff_check": "passed"
+}

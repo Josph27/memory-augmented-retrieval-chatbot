@@ -1,0 +1,6 @@
+{
+  "exit_code": 0,
+  "stdout": "usage: index_document_file.py [-h] path\n\nIndex a local file into document memory.\n\npositional arguments:\n  path        Path to a .txt, .md, or .pdf file.\n\noptions:\n  -h, --help  show this help message and exit\n",
+  "stderr": "",
+  "basis": "Same reviewed read-only source/masked private settings, synthetic workdir and isolated network mounts as final offline integration run; actual CLI --help only."
+}

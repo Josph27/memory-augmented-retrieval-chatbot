@@ -12,15 +12,13 @@ heavy model weight and constrained development hardware.
 
 ## Cleanup and audit status
 
-PURGE1 engineering is complete and the user confirmed functionality. PURGE2
-consolidation is in progress under DEC018. Removed unused implementation declarations and wrappers, obsolete
-patch/template assets, one diagram render and a redundant direct dependency
-declaration. Final isolated groups passed 689 selected cases; one real-model case
-was excluded. Native browser checks and the React build passed; React browser
-journeys and live inference remain unverified. See the
-[completion report and acceptance checklist](docs/audit/purge1-completion.md) and
-[current decisions and task ledger](docs/audit/README.md). Historical evidence is
-preserved. Test-suite simplification and restructuring remain deferred.
+PURGE1 is complete and the user confirmed functionality. PURGE2 consolidation
+is complete, awaiting user functionality confirmation. Its final isolated groups
+passed 693 selected cases with one real-model exclusion. Native browser checks
+and the React build passed; React browser journeys and live inference remain
+unverified. See the [PURGE2 ledger and acceptance checklist](docs/audit/purge2-ledger.md)
+and [current decisions and task ledger](docs/audit/README.md). Historical audit
+evidence is preserved. Test-suite simplification and restructuring remain deferred.
 
 ## Implemented features
 
