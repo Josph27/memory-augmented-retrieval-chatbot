@@ -35,3 +35,9 @@ User instruction2026-10-27 authorizes isolated offline baselines, test infrastru
 ## DEC013 — Durable SQL with nonfatal vector synchronization failure
 
 User explicitly chose “Keep SQL success and log vector failure (recommended; matches current code)” on2026-10-27. Protection must assert the committed SQLite memory remains durable and the vector failure is logged. Replace conflicting exception expectations at the combined upsert boundary; retain direct vector-operation error coverage. This approves test contract alignment, not application changes or swallowing SQL failures.
+
+## DEC014 — Manual functionality report and deferred test simplification
+
+Source: user in “Braem. audit co-work”, 2026-10-27: “add the simplification of the test-suite into the backlog. I have already done a full functionality check.”
+
+Authorized now: record deferred MAINT-01/TASK13 and the user-reported manual check; prepare the next coordinator prompt. The check has no supplied scenario matrix or exact source revision and does not supersede automated failure evidence. This request does not itself approve test removals, paid evaluations, application fixes or purging. Any coordinator prompt supplied with this response becomes execution authorization when the user issues it to the coordinator.

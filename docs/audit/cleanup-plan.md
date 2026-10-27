@@ -26,3 +26,11 @@ The nine-stage cleanup order remains. Bugs stay parked unless they block the aut
 Owned batches: infrastructure runner/config/registry/canaries; existing actualrequest/LangMem/concurrency; storage/nativevectors/Chroma/meaningfulassertions; source/category/embeddingfixtures; existing app/wrapper/browser admission and3app assertion repairs. Exactlyone writer atatime; independent isolation/consequential review and15unchangedtest sample. Initial and repair evidence retained.7newsemanticcases; no testsdeleted. All relevant tests executed offline withsource snapshots, externalnetworkdenial andsyntheticstorage. Browser12scenario bodies blocked byobservedloginappdefect, not omitted.
 
 Next bounded decision: application/evaluation blocker proposal in stage5/readiness.md (nativevectorupdate, staleLongMem configuration caller, synthetic evaluator guard, login/loadingJS); no capability expansion/purge bundled. RV001rebuild and timeoutoracle expectation remain explicit backlog items. Live proposal prepared but notauthorized. Maintainer concern recorded; only3equivalentselector parameter instances currently justified as later reductioncandidate. No reductionapproved/performed.
+
+## TASK13 — Deferred test-suite simplification (MAINT-01)
+
+User requested backlog entry on 2026-10-27. Scope: demonstrated test/fixture overlap, isolation-runner complexity and portability, default versus opt-in groups, and generated-evidence retention. Planning/implementation to be scheduled after immediate blocker triage, or alongside a cleanup batch touching the same responsibility. This entry does not authorize removal or infrastructure replacement. Preserve unique outcome protection and verified isolation; require a concrete reviewed proposal and before/after evidence.
+
+### Manual verification update
+
+User reports a full functionality check (DEC014). This supplies manual verification evidence without converting existing automated failures into passes. Next proposed implementation remains a bounded triage/repair of Stage5 blockers, followed by affected-group and final core verification; no exhaustive coverage target or broad overlap audit is required before a separately approved, adequately protected purge batch.
