@@ -2,6 +2,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from src.connection_guard import ConnectionGuard
+from evals.structured_memory.run_structured_memory_eval import FakeLangMemManager
+
 from evals.structured_memory.metrics import score_case, summarize_scores
 from evals.structured_memory.run_structured_memory_eval import load_jsonl, run_cases
 
@@ -110,10 +113,13 @@ def test_lifecycle_metrics_score_update_and_stale_memory() -> None:
     assert score.answer_uses_correct_memory is True
 
 
-def test_lifecycle_eval_runs_local_sample_dataset() -> None:
+def test_lifecycle_eval_runs_local_sample_dataset(monkeypatch) -> None:
     cases = load_jsonl(Path("evals/structured_memory/datasets/lifecycle_sample.jsonl"))
 
+    invocations, guard_calls = watch_mock_dependencies(monkeypatch)
     results = run_cases(cases)
+    assert len(invocations) == len(cases)
+    assert guard_calls == []
     summary = summarize_scores([result.score for result in results])
 
     assert summary["total_cases"] == 5
@@ -126,10 +132,13 @@ def test_lifecycle_eval_runs_local_sample_dataset() -> None:
     assert summary["failed_case_ids"] == []
 
 
-def test_structured_memory_eval_runs_local_sample_dataset() -> None:
+def test_structured_memory_eval_runs_local_sample_dataset(monkeypatch) -> None:
     cases = load_jsonl(Path("evals/structured_memory/datasets/cross_chat_sample.jsonl"))
 
+    invocations, guard_calls = watch_mock_dependencies(monkeypatch)
     results = run_cases(cases)
+    assert len(invocations) == len(cases)
+    assert guard_calls == []
     summary = summarize_scores([result.score for result in results])
 
     assert summary["total_cases"] == 3
@@ -138,3 +147,21 @@ def test_structured_memory_eval_runs_local_sample_dataset() -> None:
     assert summary["answer_uses_memory"] == 1.0
     assert summary["answer_avoids_false_memory"] == 1.0
     assert summary["failed_case_ids"] == []
+
+
+def watch_mock_dependencies(monkeypatch):
+    invocations, guard_calls = [], []
+    original_invoke = FakeLangMemManager.invoke
+
+    def record_invoke(self, payload):
+        assert payload["messages"]
+        invocations.append(payload)
+        return original_invoke(self, payload)
+
+    def reject_real_guard(self):
+        guard_calls.append(self)
+        raise AssertionError("Mock evaluation must not contact a real provider guard")
+
+    monkeypatch.setattr(FakeLangMemManager, "invoke", record_invoke)
+    monkeypatch.setattr(ConnectionGuard, "check", reject_real_guard)
+    return invocations, guard_calls

@@ -412,7 +412,6 @@ def build_reranker(mode: str, model: ModelLike | None) -> MemoryReranker:
         llm_top_k=config.reranker_llm_top_k,
         llm_min_confidence=config.reranker_llm_min_confidence,
         cross_encoder_model=config.reranker_cross_encoder_model,
-        cross_encoder_top_k=config.reranker_cross_encoder_top_k,
         cross_encoder_weight=config.reranker_cross_encoder_weight,
         hybrid_backend=config.reranker_hybrid_backend,
         llm_ambiguity_margin=config.reranker_llm_ambiguity_margin,

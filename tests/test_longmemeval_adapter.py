@@ -5,6 +5,8 @@ from pathlib import Path
 
 import pytest
 
+from support.deterministic_services import DeterministicEmbeddings
+
 from evals.longmemeval_adapter.loader import (
     load_longmemeval_cases,
     normalize_record,
@@ -17,6 +19,7 @@ from evals.longmemeval_adapter.span_retriever import (
 )
 from src.core.contracts import SourcePlan
 from src.database import Database
+from src.retrieval.langchain_chroma_retriever import LangChainChromaRetriever
 
 
 FIXTURE = (
@@ -26,6 +29,27 @@ FIXTURE = (
     / "fixtures"
     / "tiny_longmemeval_sample.jsonl"
 )
+
+
+@pytest.fixture
+def offline_document_embeddings(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """Use the real temporary Chroma backend with an explicit local embedding dependency."""
+    from langchain_chroma import Chroma
+
+    persist_dir = tmp_path / "document-chroma"
+    initialized: list[LangChainChromaRetriever] = []
+
+    def embeddings(retriever: LangChainChromaRetriever) -> DeterministicEmbeddings:
+        assert retriever.persist_dir == persist_dir
+        initialized.append(retriever)
+        return DeterministicEmbeddings()
+
+    monkeypatch.setenv("LANGCHAIN_CHROMA_PERSIST_DIR", str(persist_dir))
+    monkeypatch.setattr(LangChainChromaRetriever, "_embeddings", embeddings)
+    yield
+    assert initialized, "the real document backend must reach its embedding dependency"
+    assert persist_dir.is_dir()
+    assert all(isinstance(retriever._vector_store, Chroma) for retriever in initialized)
 
 
 def test_fixture_loads_and_normalizes_common_fields() -> None:
@@ -97,7 +121,7 @@ def test_scoring_contains_exact_and_abstain() -> None:
     assert abstain.passed is True
 
 
-def test_mock_runner_produces_report_without_live_model() -> None:
+def test_mock_runner_produces_report_without_live_model(offline_document_embeddings) -> None:
     report = run_adapter(
         load_longmemeval_cases(FIXTURE),
         memory_mode="full",
@@ -127,7 +151,7 @@ def test_mock_runner_produces_report_without_live_model() -> None:
     assert report["summary"]["answer_i_dont_know_rate"] == 0.5
 
 
-def test_recent_only_report_and_json_export(tmp_path: Path) -> None:
+def test_recent_only_report_and_json_export(tmp_path: Path, offline_document_embeddings) -> None:
     report = run_adapter(
         load_longmemeval_cases(FIXTURE, limit=1),
         memory_mode="recent_only",
@@ -183,7 +207,7 @@ def test_span_retrieval_finds_fixture_fact(tmp_path: Path) -> None:
     assert candidates[0].metadata["end_message_id"]
 
 
-def test_span_retrieval_mode_uses_raw_message_candidates() -> None:
+def test_span_retrieval_mode_uses_raw_message_candidates(offline_document_embeddings) -> None:
     report = run_adapter(
         load_longmemeval_cases(FIXTURE, limit=1),
         memory_mode="span_retrieval",

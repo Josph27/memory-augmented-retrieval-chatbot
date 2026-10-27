@@ -57,6 +57,13 @@ class FakeLangMemManager:
         return self.output
 
 
+class MockConnectionGuard:
+    """The mock-only evaluator injects local extraction and never checks a provider."""
+
+    def check(self) -> None:
+        pass
+
+
 @dataclass(frozen=True)
 class EvalCaseResult:
     """Result and score for one structured-memory eval case."""
@@ -103,10 +110,10 @@ def run_cases(cases: list[dict[str, Any]]) -> list[EvalCaseResult]:
 
 
 def run_case(case: dict[str, Any]) -> EvalCaseResult:
-    """Run one case through real SQLite memory update and retrieval wiring."""
+    """Run mock extraction through real SQLite update/retrieval; no provider or embeddings."""
     with tempfile.TemporaryDirectory(prefix="structured_memory_eval_") as tmpdir:
         database = Database(Path(tmpdir) / "chatbot.db")
-        store = SQLiteLongTermMemoryStore(database)
+        store = SQLiteLongTermMemoryStore(database, retrieval_mode="sqlite")
         chat1_id = f"{case['case_id']}-chat-1"
         chat2_id = f"{case['case_id']}-chat-2"
         database.create_chat(chat1_id)
@@ -126,6 +133,7 @@ def run_case(case: dict[str, Any]) -> EvalCaseResult:
             structured_memory_updater=LangMemStructuredMemoryState(
                 manager=FakeLangMemManager(case.get("mock_langmem_outputs") or []),
                 long_term_store=store,
+                connection_guard=MockConnectionGuard(),
             ),
         )
         memory.update_memory_if_needed(chat1_id)
@@ -135,7 +143,7 @@ def run_case(case: dict[str, Any]) -> EvalCaseResult:
             stored_records.extend(store.list(namespace))
         stored_memory_text = "\n".join(record.value for record in stored_records)
 
-        candidates = StructuredMemoryRetriever(database).retrieve(
+        candidates = StructuredMemoryRetriever(database, mode="sqlite").retrieve(
             chat_id=chat2_id,
             source_plan=SourcePlan(
                 source="structured_memory",
