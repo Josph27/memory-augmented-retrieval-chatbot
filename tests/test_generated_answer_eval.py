@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from evals.generated_answer.run_generated_answer_eval import (
     DEFAULT_DATASET,
     load_jsonl,
@@ -160,3 +162,39 @@ def test_replay_answers_and_report_export(tmp_path: Path) -> None:
     assert parsed["cases"][0]["trace"]["retrieved_contexts"][0]["source"] == (
         "structured_memory"
     )
+
+
+def test_validated_eval_loaders_preserve_limits_errors_and_cli(tmp_path: Path) -> None:
+    import subprocess
+    import sys
+
+    from evals.e2e_scenarios import run_e2e_scenarios as e2e
+
+    path = tmp_path / "cases.jsonl"
+    for loader, dataset in ((load_jsonl, DEFAULT_DATASET), (e2e.load_jsonl, e2e.DEFAULT_DATASET)):
+        first = json.loads(next(line for line in dataset.read_text().splitlines() if line.strip()))
+        path.write_text("\n" + json.dumps(first) + "\n  {broken\n", encoding="utf-8")
+        for limit in (1, 0, -1):
+            assert loader(path, limit=limit) == [first]
+        with pytest.raises(ValueError) as error:
+            loader(path)
+        assert f"Invalid JSONL at {path}:3:" in str(error.value)
+        assert isinstance(error.value.__cause__, json.JSONDecodeError)
+        assert error.value.__cause__.colno == 4
+        for contents, message in (("[]", "Expected object"), ("{}", "Missing fields")):
+            path.write_text("\n" + contents + "\n", encoding="utf-8")
+            with pytest.raises(ValueError, match=message) as invalid:
+                loader(path)
+            assert f"{path}:2" in str(invalid.value)
+
+    root = Path(__file__).resolve().parents[1]
+    for script in (
+        "evals/generated_answer/run_generated_answer_eval.py",
+        "evals/e2e_scenarios/run_e2e_scenarios.py",
+    ):
+        result = subprocess.run(
+            [sys.executable, str(root / script), "--help"],
+            cwd=tmp_path, capture_output=True, text=True, timeout=30,
+        )
+        assert result.returncode == 0, result.stderr
+        assert "usage:" in result.stdout

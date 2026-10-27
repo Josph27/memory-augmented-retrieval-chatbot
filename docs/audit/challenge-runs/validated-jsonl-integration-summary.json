@@ -1,0 +1,34 @@
+{
+  "collected_case_count": 518,
+  "selected_case_count": 517,
+  "counts": {
+    "errored": 0,
+    "failed": 0,
+    "passed": 517,
+    "skipped": 0,
+    "xfailed": 0,
+    "xpassed": 0
+  },
+  "deselected": [
+    "tests/test_memory_reranker.py::test_cross_encoder_backend_preload_loads_model"
+  ],
+  "duration_seconds": 34.94285340800707,
+  "external_inference_requests": 0,
+  "external_tokens": 0,
+  "external_cost": 0,
+  "fake_model_calls": null,
+  "archive": "validated-jsonl-integration.tar.gz",
+  "sha256": "8011f75b6af6e686369266ca53d4afc33272df47a7c11df95e6a42a24924f9f4",
+  "source_head": "17cbc9dd7df115935f97b613f3e190109d7f9ccb",
+  "source_note": "Full exact dirty/staged/index snapshot is preserved in archive",
+  "launch": {
+    "duration_seconds": 37.46580738801276,
+    "exit_code": 0,
+    "output_dir": "/tmp/breamon-stage5-kad4zpcq",
+    "progress_exists": true,
+    "result_exists": true,
+    "source_unchanged_during_run": true,
+    "timed_out": false
+  },
+  "review": "Independent review: full loop shared with explicit validator callback; unchanged raw parse, line/column error, limits, schema, file closure and CLI paths."
+}

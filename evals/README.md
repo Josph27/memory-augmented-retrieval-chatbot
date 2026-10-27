@@ -13,7 +13,7 @@ deterministic `--mode mock` that requires no model, Chroma, or network access.
 
 ```
 evals/
-├── _jsonl.py                 ← Shared raw JSONL reader for two mock evaluations
+├── _jsonl.py                 ← Shared raw and validator-driven JSONL readers
 ├── document_qa/              ← Retrieval hit@k benchmarks (SQuAD, NQ, Chroma)
 │   ├── datasets/             ← Committed smoke-test JSONL + optional prepared subsets
 │   └── outputs/              ← Generated eval artifacts (not committed)

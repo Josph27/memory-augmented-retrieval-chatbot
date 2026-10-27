@@ -16,6 +16,7 @@ ROOT_DIR = Path(__file__).resolve().parents[2]
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
+from evals._jsonl import load_validated_jsonl  # noqa: E402
 from evals.document_qa.answer_generation import answer_is_unknown  # noqa: E402
 from src.agents.chat_agent import ChatAgent  # noqa: E402
 from src.agents.context_builder_agent import ContextBuilderAgent  # noqa: E402
@@ -205,21 +206,8 @@ def parse_args() -> argparse.Namespace:
 
 
 def load_jsonl(path: Path, limit: int | None = None) -> list[dict[str, Any]]:
-    """Load controlled E2E scenarios."""
-    cases: list[dict[str, Any]] = []
-    with path.open(encoding="utf-8") as handle:
-        for line_number, line in enumerate(handle, start=1):
-            if not line.strip():
-                continue
-            try:
-                case = json.loads(line)
-            except json.JSONDecodeError as error:
-                raise ValueError(f"Invalid JSONL at {path}:{line_number}: {error}") from error
-            validate_case(case, path, line_number)
-            cases.append(case)
-            if limit is not None and len(cases) >= limit:
-                break
-    return cases
+    """Read cases with this evaluator's schema validation."""
+    return load_validated_jsonl(path, limit, validate_case)
 
 
 def validate_case(case: object, path: Path, line_number: int) -> None:
