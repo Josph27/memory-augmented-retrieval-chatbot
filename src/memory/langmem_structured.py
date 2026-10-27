@@ -20,7 +20,6 @@ from src.memory.long_term_store import (
     category_namespace,
     dedupe_memory_records,
     merge_memory_records,
-    record_to_memory_state_record,
     record_to_write,
     structured_memory_namespaces,
 )
@@ -314,7 +313,7 @@ class LangMemStructuredMemoryState:
         source_text_by_id = {message.id: message.content for message in user_messages}
         allowed_source_ids = set(source_text_by_id)
         combined_existing_records = merge_memory_records(
-            [record_to_memory_state_record(record) for record in long_term_records],
+            [record.as_memory_record() for record in long_term_records],
             normalized_memory["memories"],
         )
         try:

@@ -574,11 +574,6 @@ def record_to_candidate(record: LongTermMemoryRecord) -> MemoryCandidate:
     )
 
 
-def record_to_memory_state_record(record: LongTermMemoryRecord) -> dict[str, Any]:
-    """Convert a long-term memory row into the compatibility memory record format."""
-    return record.as_memory_record()
-
-
 def merge_memory_records(
     existing_records: list[dict[str, Any]],
     new_records: list[dict[str, Any]],
