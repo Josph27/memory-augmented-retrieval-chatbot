@@ -1,0 +1,33 @@
+{
+  "collected_case_count": 513,
+  "selected_case_count": 512,
+  "counts": {
+    "errored": 0,
+    "failed": 0,
+    "passed": 512,
+    "skipped": 0,
+    "xfailed": 0,
+    "xpassed": 0
+  },
+  "deselected": [
+    "tests/test_memory_reranker.py::test_cross_encoder_backend_preload_loads_model"
+  ],
+  "duration_seconds": 34.0842602509947,
+  "external_inference_requests": 0,
+  "external_tokens": 0,
+  "external_cost": 0,
+  "fake_model_calls": null,
+  "archive": "docqa-integration.tar.gz",
+  "sha256": "effb1d77a1425d4cb519dae0b27afe5929053cda54130e2dd64606908563ad77",
+  "launch": {
+    "duration_seconds": 36.57679116600775,
+    "exit_code": 0,
+    "output_dir": "/tmp/breamon-stage5-v5azn0pm",
+    "progress_exists": true,
+    "result_exists": true,
+    "source_unchanged_during_run": true,
+    "timed_out": false
+  },
+  "review": "Independent review accepted preserved wrapped error/location/cause, downstream imports, direct CLI fallback and test coverage.",
+  "source": "HEAD 1408a10 plus documented dirty implementation/test bytes; exact before/after snapshots in archive"
+}

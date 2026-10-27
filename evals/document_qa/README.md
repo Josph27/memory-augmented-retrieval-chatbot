@@ -6,7 +6,9 @@ LangChain-Chroma document-memory backend.
 The evals are intentionally lightweight. Deterministic retrieval metrics remain
 the primary signal. Optional model-answer mode and RAGAS-compatible export are
 available, but normal tests do not require Ollama, internet access, RAGAS, or
-model downloads.
+model downloads. The document-QA and RAGAS runners share `_jsonl.py` for
+reading rows with file-and-line parse errors; their existing `load_jsonl`
+imports and direct-script entry points remain available.
 
 ## Dataset Format
 

@@ -5,6 +5,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+import pytest
+
 from evals.document_qa.ragas_export import (
     result_to_ragas_row,
     results_to_ragas_rows,
@@ -112,3 +114,35 @@ def test_write_ragas_jsonl_writes_without_ragas_dependency(tmp_path: Path) -> No
     assert len(raw_lines) == 1
     assert json.loads(raw_lines[0])["metadata"]["ctx_evidence_hit"] is True
     assert load_jsonl(output_path) == rows
+
+
+def test_document_qa_jsonl_loaders_preserve_location_and_cli_contract(tmp_path: Path) -> None:
+    import subprocess
+    import sys
+
+    from evals.document_qa.run_document_qa_eval import load_jsonl as qa_load
+
+    path = tmp_path / "rows.jsonl"
+    path.write_text('\n {"id": 1} \n42\n', encoding="utf-8")
+    for loader in (load_jsonl, qa_load):
+        assert loader(path) == [{"id": 1}, 42]
+        with pytest.raises(FileNotFoundError):
+            loader(tmp_path / "missing.jsonl")
+    path.write_text('\n{"broken": }\n', encoding="utf-8")
+    for loader in (load_jsonl, qa_load):
+        with pytest.raises(ValueError) as error:
+            loader(path)
+        assert f"Invalid JSONL at {path}:2:" in str(error.value)
+        assert isinstance(error.value.__cause__, json.JSONDecodeError)
+
+    root = Path(__file__).resolve().parents[1]
+    for script in (
+        "evals/document_qa/run_document_qa_eval.py",
+        "evals/document_qa/run_ragas_eval.py",
+    ):
+        result = subprocess.run(
+            [sys.executable, str(root / script), "--help"],
+            cwd=tmp_path, capture_output=True, text=True, timeout=30
+        )
+        assert result.returncode == 0, result.stderr
+        assert "usage:" in result.stdout

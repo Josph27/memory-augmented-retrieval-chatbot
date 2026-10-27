@@ -9,6 +9,7 @@ from tempfile import TemporaryDirectory
 from typing import Any
 
 try:
+    from ._jsonl import load_jsonl
     from .answer_generation import (
         AnswerGenerator,
         answer_is_unknown,
@@ -23,6 +24,7 @@ try:
     )
     from .ragas_export import results_to_ragas_rows, write_ragas_jsonl
 except ImportError:
+    from _jsonl import load_jsonl
     from answer_generation import (
         AnswerGenerator,
         answer_is_unknown,
@@ -172,22 +174,6 @@ def main() -> None:
         print(f"exported RAGAS-compatible rows: {args.export_ragas_jsonl}")
     if args.json:
         print(json.dumps(ragas_rows, indent=2))
-
-
-def load_jsonl(path: Path) -> list[dict[str, Any]]:
-    """Load JSONL cases from disk."""
-    cases: list[dict[str, Any]] = []
-    with path.open(encoding="utf-8") as handle:
-        for line_number, line in enumerate(handle, start=1):
-            stripped = line.strip()
-            if not stripped:
-                continue
-            try:
-                cases.append(json.loads(stripped))
-            except json.JSONDecodeError as error:
-                msg = f"Invalid JSONL at {path}:{line_number}: {error}"
-                raise ValueError(msg) from error
-    return cases
 
 
 def evaluate_case(

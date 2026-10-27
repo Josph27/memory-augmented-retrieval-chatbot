@@ -1,10 +1,14 @@
 from __future__ import annotations
 
 import argparse
-import json
 from pathlib import Path
 from typing import Any
 
+
+try:
+    from ._jsonl import load_jsonl
+except ImportError:
+    from _jsonl import load_jsonl
 
 def main() -> None:
     """Run optional RAGAS metrics over exported document QA rows."""
@@ -24,22 +28,6 @@ def main() -> None:
 
     print("RAGAS evaluation result")
     print(scores)
-
-
-def load_jsonl(path: Path) -> list[dict[str, Any]]:
-    """Load exported RAGAS-compatible rows."""
-    rows: list[dict[str, Any]] = []
-    with path.open(encoding="utf-8") as handle:
-        for line_number, line in enumerate(handle, start=1):
-            stripped = line.strip()
-            if not stripped:
-                continue
-            try:
-                rows.append(json.loads(stripped))
-            except json.JSONDecodeError as error:
-                msg = f"Invalid JSONL at {path}:{line_number}: {error}"
-                raise ValueError(msg) from error
-    return rows
 
 
 def run_ragas(rows: list[dict[str, Any]]) -> Any:
