@@ -1,0 +1,11 @@
+{
+  "python_files_parsed": 233,
+  "syntax_errors": [
+    {
+      "path": "scripts/rebuild_long_term_memory_index.py",
+      "line": 23,
+      "reason": "unexpected indent"
+    }
+  ],
+  "note": "Known RV001 preserved; changed files pass focused syntax/lint."
+}

@@ -1,0 +1,48 @@
+{
+  "baseline": "3a3ad03e5fb33b23c56aa5f36e49c1f2e413bf67",
+  "final_product_commit": "3fa357c988155600b74716490085505cec736cc5",
+  "changed_current_markdown_files": 15,
+  "local_markdown_path_links_checked": 69,
+  "missing_paths": [],
+  "link_scope": "Current changed Markdown path existence; remote URLs/anchors not fetched; historical inventories unchanged.",
+  "shell_syntax_files": [
+    "run.sh",
+    ".dev/start-dev.sh",
+    ".dev/stop-dev.sh",
+    "scripts/final_eval_paths.sh",
+    "scripts/inspect_eval_run.sh",
+    "scripts/lib/load_eval_env.sh",
+    "scripts/run_final_52.sh",
+    "scripts/run_final_52_and_judge.sh",
+    "scripts/run_final_judge.sh",
+    "scripts/run_mab_post_fix_targeted.sh"
+  ],
+  "startup_help_exit": 0,
+  "startup_scope": "--help only; real startup/provider/model/data not run",
+  "retained_mermaid_sha256": "9a5b83eaa7dea417e9b520a8e6746b6113d7c4d2145c099125914b144d0fbe95",
+  "protected_test_eval_history_config_data_paths_git_unchanged": 294,
+  "protected_data_method": "Git names/blob/stat metadata only; no database content reads",
+  "python_syntax": {
+    "python_files_parsed": 233,
+    "syntax_errors": [
+      {
+        "path": "scripts/rebuild_long_term_memory_index.py",
+        "line": 23,
+        "reason": "unexpected indent"
+      }
+    ],
+    "note": "Known RV001 preserved; changed files pass focused syntax/lint."
+  },
+  "ruff": {
+    "before_diagnostics": 31,
+    "after_diagnostics": 25,
+    "exit_code": 1,
+    "new_diagnostic_identities": 0
+  },
+  "frontend_lint": {
+    "exit_code": 0,
+    "warnings": 3,
+    "errors": 0
+  },
+  "diff_check_exit": 0
+}

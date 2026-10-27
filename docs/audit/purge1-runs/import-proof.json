@@ -1,0 +1,18 @@
+[
+  {
+    "path": "app.py",
+    "retained_callables_byte_identical": 42
+  },
+  {
+    "path": "scripts/token_monitor.py",
+    "retained_callables_byte_identical": 16
+  },
+  {
+    "path": "src/context/evidence_selector.py",
+    "retained_callables_byte_identical": 31
+  },
+  {
+    "path": "src/memory/structured_memory_vector_sync.py",
+    "retained_callables_byte_identical": 3
+  }
+]

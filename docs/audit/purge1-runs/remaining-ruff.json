@@ -1,0 +1,804 @@
+[
+  {
+    "cell": null,
+    "code": "invalid-syntax",
+    "end_location": {
+      "column": 5,
+      "row": 23
+    },
+    "filename": "/home/josph/.codex/worktrees/audit-main/repo/scripts/rebuild_long_term_memory_index.py",
+    "fix": null,
+    "location": {
+      "column": 1,
+      "row": 23
+    },
+    "message": "Unexpected indentation",
+    "noqa_row": null,
+    "severity": "error",
+    "url": null
+  },
+  {
+    "cell": null,
+    "code": "invalid-syntax",
+    "end_location": {
+      "column": 1,
+      "row": 51
+    },
+    "filename": "/home/josph/.codex/worktrees/audit-main/repo/scripts/rebuild_long_term_memory_index.py",
+    "fix": null,
+    "location": {
+      "column": 1,
+      "row": 51
+    },
+    "message": "Expected a statement",
+    "noqa_row": null,
+    "severity": "error",
+    "url": null
+  },
+  {
+    "cell": null,
+    "code": "F541",
+    "end_location": {
+      "column": 19,
+      "row": 204
+    },
+    "filename": "/home/josph/.codex/worktrees/audit-main/repo/scripts/token_monitor.py",
+    "fix": {
+      "applicability": "safe",
+      "edits": [
+        {
+          "content": "\"  ---\"",
+          "end_location": {
+            "column": 19,
+            "row": 204
+          },
+          "location": {
+            "column": 11,
+            "row": 204
+          }
+        }
+      ],
+      "message": "Remove extraneous `f` prefix"
+    },
+    "location": {
+      "column": 11,
+      "row": 204
+    },
+    "message": "f-string without any placeholders",
+    "noqa_row": 204,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/f-string-missing-placeholders"
+  },
+  {
+    "cell": null,
+    "code": "F541",
+    "end_location": {
+      "column": 37,
+      "row": 213
+    },
+    "filename": "/home/josph/.codex/worktrees/audit-main/repo/scripts/token_monitor.py",
+    "fix": {
+      "applicability": "safe",
+      "edits": [
+        {
+          "content": "\"\\n  Top tool calls:\"",
+          "end_location": {
+            "column": 37,
+            "row": 213
+          },
+          "location": {
+            "column": 15,
+            "row": 213
+          }
+        }
+      ],
+      "message": "Remove extraneous `f` prefix"
+    },
+    "location": {
+      "column": 15,
+      "row": 213
+    },
+    "message": "f-string without any placeholders",
+    "noqa_row": 213,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/f-string-missing-placeholders"
+  },
+  {
+    "cell": null,
+    "code": "F841",
+    "end_location": {
+      "column": 17,
+      "row": 247
+    },
+    "filename": "/home/josph/.codex/worktrees/audit-main/repo/scripts/token_monitor.py",
+    "fix": {
+      "applicability": "unsafe",
+      "edits": [
+        {
+          "content": "",
+          "end_location": {
+            "column": 20,
+            "row": 247
+          },
+          "location": {
+            "column": 5,
+            "row": 247
+          }
+        }
+      ],
+      "message": "Remove assignment to unused variable `total_tokens`"
+    },
+    "location": {
+      "column": 5,
+      "row": 247
+    },
+    "message": "Local variable `total_tokens` is assigned to but never used",
+    "noqa_row": 247,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/unused-variable"
+  },
+  {
+    "cell": null,
+    "code": "F541",
+    "end_location": {
+      "column": 19,
+      "row": 267
+    },
+    "filename": "/home/josph/.codex/worktrees/audit-main/repo/scripts/token_monitor.py",
+    "fix": {
+      "applicability": "safe",
+      "edits": [
+        {
+          "content": "\"  ---\"",
+          "end_location": {
+            "column": 19,
+            "row": 267
+          },
+          "location": {
+            "column": 11,
+            "row": 267
+          }
+        }
+      ],
+      "message": "Remove extraneous `f` prefix"
+    },
+    "location": {
+      "column": 11,
+      "row": 267
+    },
+    "message": "f-string without any placeholders",
+    "noqa_row": 267,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/f-string-missing-placeholders"
+  },
+  {
+    "cell": null,
+    "code": "F541",
+    "end_location": {
+      "column": 47,
+      "row": 279
+    },
+    "filename": "/home/josph/.codex/worktrees/audit-main/repo/scripts/token_monitor.py",
+    "fix": {
+      "applicability": "safe",
+      "edits": [
+        {
+          "content": "\"\\n  Top tools (project-wide):\"",
+          "end_location": {
+            "column": 47,
+            "row": 279
+          },
+          "location": {
+            "column": 15,
+            "row": 279
+          }
+        }
+      ],
+      "message": "Remove extraneous `f` prefix"
+    },
+    "location": {
+      "column": 15,
+      "row": 279
+    },
+    "message": "f-string without any placeholders",
+    "noqa_row": 279,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/f-string-missing-placeholders"
+  },
+  {
+    "cell": null,
+    "code": "F841",
+    "end_location": {
+      "column": 17,
+      "row": 346
+    },
+    "filename": "/home/josph/.codex/worktrees/audit-main/repo/scripts/token_monitor.py",
+    "fix": {
+      "applicability": "unsafe",
+      "edits": [
+        {
+          "content": "",
+          "end_location": {
+            "column": 20,
+            "row": 346
+          },
+          "location": {
+            "column": 5,
+            "row": 346
+          }
+        }
+      ],
+      "message": "Remove assignment to unused variable `mcp_connects`"
+    },
+    "location": {
+      "column": 5,
+      "row": 346
+    },
+    "message": "Local variable `mcp_connects` is assigned to but never used",
+    "noqa_row": 346,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/unused-variable"
+  },
+  {
+    "cell": null,
+    "code": "F541",
+    "end_location": {
+      "column": 36,
+      "row": 375
+    },
+    "filename": "/home/josph/.codex/worktrees/audit-main/repo/scripts/token_monitor.py",
+    "fix": {
+      "applicability": "safe",
+      "edits": [
+        {
+          "content": "\"\\n  📋 HOW CACHE WORKS:\"",
+          "end_location": {
+            "column": 36,
+            "row": 375
+          },
+          "location": {
+            "column": 11,
+            "row": 375
+          }
+        }
+      ],
+      "message": "Remove extraneous `f` prefix"
+    },
+    "location": {
+      "column": 11,
+      "row": 375
+    },
+    "message": "f-string without any placeholders",
+    "noqa_row": 375,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/f-string-missing-placeholders"
+  },
+  {
+    "cell": null,
+    "code": "F541",
+    "end_location": {
+      "column": 97,
+      "row": 376
+    },
+    "filename": "/home/josph/.codex/worktrees/audit-main/repo/scripts/token_monitor.py",
+    "fix": {
+      "applicability": "safe",
+      "edits": [
+        {
+          "content": "\"  DeepSeek's prefix: [TOOL DEFINITIONS] → [system prompt] → [conversation messages]\"",
+          "end_location": {
+            "column": 97,
+            "row": 376
+          },
+          "location": {
+            "column": 11,
+            "row": 376
+          }
+        }
+      ],
+      "message": "Remove extraneous `f` prefix"
+    },
+    "location": {
+      "column": 11,
+      "row": 376
+    },
+    "message": "f-string without any placeholders",
+    "noqa_row": 376,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/f-string-missing-placeholders"
+  },
+  {
+    "cell": null,
+    "code": "F541",
+    "end_location": {
+      "column": 104,
+      "row": 378
+    },
+    "filename": "/home/josph/.codex/worktrees/audit-main/repo/scripts/token_monitor.py",
+    "fix": {
+      "applicability": "safe",
+      "edits": [
+        {
+          "content": "\"  Cache BREAKS when: any tool is added/removed, shifting byte positions of everything after.\"",
+          "end_location": {
+            "column": 104,
+            "row": 378
+          },
+          "location": {
+            "column": 9,
+            "row": 378
+          }
+        }
+      ],
+      "message": "Remove extraneous `f` prefix"
+    },
+    "location": {
+      "column": 9,
+      "row": 378
+    },
+    "message": "f-string without any placeholders",
+    "noqa_row": 378,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/f-string-missing-placeholders"
+  },
+  {
+    "cell": null,
+    "code": "F541",
+    "end_location": {
+      "column": 87,
+      "row": 380
+    },
+    "filename": "/home/josph/.codex/worktrees/audit-main/repo/scripts/token_monitor.py",
+    "fix": {
+      "applicability": "safe",
+      "edits": [
+        {
+          "content": "\"  Cache PERSISTS when: only new messages are appended (prefix unchanged).\"",
+          "end_location": {
+            "column": 87,
+            "row": 380
+          },
+          "location": {
+            "column": 11,
+            "row": 380
+          }
+        }
+      ],
+      "message": "Remove extraneous `f` prefix"
+    },
+    "location": {
+      "column": 11,
+      "row": 380
+    },
+    "message": "f-string without any placeholders",
+    "noqa_row": 380,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/f-string-missing-placeholders"
+  },
+  {
+    "cell": null,
+    "code": "F541",
+    "end_location": {
+      "column": 53,
+      "row": 387
+    },
+    "filename": "/home/josph/.codex/worktrees/audit-main/repo/scripts/token_monitor.py",
+    "fix": {
+      "applicability": "safe",
+      "edits": [
+        {
+          "content": "\"\\n  ⚡ TOOL-LIST MUTATIONS DETECTED:\"",
+          "end_location": {
+            "column": 53,
+            "row": 387
+          },
+          "location": {
+            "column": 15,
+            "row": 387
+          }
+        }
+      ],
+      "message": "Remove extraneous `f` prefix"
+    },
+    "location": {
+      "column": 15,
+      "row": 387
+    },
+    "message": "f-string without any placeholders",
+    "noqa_row": 387,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/f-string-missing-placeholders"
+  },
+  {
+    "cell": null,
+    "code": "F541",
+    "end_location": {
+      "column": 83,
+      "row": 396
+    },
+    "filename": "/home/josph/.codex/worktrees/audit-main/repo/scripts/token_monitor.py",
+    "fix": {
+      "applicability": "safe",
+      "edits": [
+        {
+          "content": "\"\\n  ℹ️  No explicit tool-list mutations detected in this session.\"",
+          "end_location": {
+            "column": 83,
+            "row": 396
+          },
+          "location": {
+            "column": 15,
+            "row": 396
+          }
+        }
+      ],
+      "message": "Remove extraneous `f` prefix"
+    },
+    "location": {
+      "column": 15,
+      "row": 396
+    },
+    "message": "f-string without any placeholders",
+    "noqa_row": 396,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/f-string-missing-placeholders"
+  },
+  {
+    "cell": null,
+    "code": "F541",
+    "end_location": {
+      "column": 79,
+      "row": 397
+    },
+    "filename": "/home/josph/.codex/worktrees/audit-main/repo/scripts/token_monitor.py",
+    "fix": {
+      "applicability": "safe",
+      "edits": [
+        {
+          "content": "\"     Cache resets may be from: DeepSeek server-side eviction,\"",
+          "end_location": {
+            "column": 79,
+            "row": 397
+          },
+          "location": {
+            "column": 15,
+            "row": 397
+          }
+        }
+      ],
+      "message": "Remove extraneous `f` prefix"
+    },
+    "location": {
+      "column": 15,
+      "row": 397
+    },
+    "message": "f-string without any placeholders",
+    "noqa_row": 397,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/f-string-missing-placeholders"
+  },
+  {
+    "cell": null,
+    "code": "F541",
+    "end_location": {
+      "column": 84,
+      "row": 398
+    },
+    "filename": "/home/josph/.codex/worktrees/audit-main/repo/scripts/token_monitor.py",
+    "fix": {
+      "applicability": "safe",
+      "edits": [
+        {
+          "content": "\"     load-balancing to a different node, or implicit tool changes.\"",
+          "end_location": {
+            "column": 84,
+            "row": 398
+          },
+          "location": {
+            "column": 15,
+            "row": 398
+          }
+        }
+      ],
+      "message": "Remove extraneous `f` prefix"
+    },
+    "location": {
+      "column": 15,
+      "row": 398
+    },
+    "message": "f-string without any placeholders",
+    "noqa_row": 398,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/f-string-missing-placeholders"
+  },
+  {
+    "cell": null,
+    "code": "F841",
+    "end_location": {
+      "column": 11,
+      "row": 427
+    },
+    "filename": "/home/josph/.codex/worktrees/audit-main/repo/scripts/token_monitor.py",
+    "fix": {
+      "applicability": "unsafe",
+      "edits": [
+        {
+          "content": "",
+          "end_location": {
+            "column": 14,
+            "row": 427
+          },
+          "location": {
+            "column": 9,
+            "row": 427
+          }
+        }
+      ],
+      "message": "Remove assignment to unused variable `cw`"
+    },
+    "location": {
+      "column": 9,
+      "row": 427
+    },
+    "message": "Local variable `cw` is assigned to but never used",
+    "noqa_row": 427,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/unused-variable"
+  },
+  {
+    "cell": null,
+    "code": "F841",
+    "end_location": {
+      "column": 31,
+      "row": 461
+    },
+    "filename": "/home/josph/.codex/worktrees/audit-main/repo/scripts/token_monitor.py",
+    "fix": {
+      "applicability": "unsafe",
+      "edits": [
+        {
+          "content": "",
+          "end_location": {
+            "column": 34,
+            "row": 461
+          },
+          "location": {
+            "column": 13,
+            "row": 461
+          }
+        }
+      ],
+      "message": "Remove assignment to unused variable `reset_cost_dollars`"
+    },
+    "location": {
+      "column": 13,
+      "row": 461
+    },
+    "message": "Local variable `reset_cost_dollars` is assigned to but never used",
+    "noqa_row": 461,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/unused-variable"
+  },
+  {
+    "cell": null,
+    "code": "F841",
+    "end_location": {
+      "column": 11,
+      "row": 507
+    },
+    "filename": "/home/josph/.codex/worktrees/audit-main/repo/scripts/token_monitor.py",
+    "fix": {
+      "applicability": "unsafe",
+      "edits": [
+        {
+          "content": "",
+          "end_location": {
+            "column": 14,
+            "row": 507
+          },
+          "location": {
+            "column": 5,
+            "row": 507
+          }
+        }
+      ],
+      "message": "Remove assignment to unused variable `resets`"
+    },
+    "location": {
+      "column": 5,
+      "row": 507
+    },
+    "message": "Local variable `resets` is assigned to but never used",
+    "noqa_row": 507,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/unused-variable"
+  },
+  {
+    "cell": null,
+    "code": "F541",
+    "end_location": {
+      "column": 89,
+      "row": 508
+    },
+    "filename": "/home/josph/.codex/worktrees/audit-main/repo/scripts/token_monitor.py",
+    "fix": {
+      "applicability": "safe",
+      "edits": [
+        {
+          "content": "\"\\n  💡 CACHE RESET = cache_read drops to baseline (~29K system prompt only).\"",
+          "end_location": {
+            "column": 89,
+            "row": 508
+          },
+          "location": {
+            "column": 11,
+            "row": 508
+          }
+        }
+      ],
+      "message": "Remove extraneous `f` prefix"
+    },
+    "location": {
+      "column": 11,
+      "row": 508
+    },
+    "message": "f-string without any placeholders",
+    "noqa_row": 508,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/f-string-missing-placeholders"
+  },
+  {
+    "cell": null,
+    "code": "F541",
+    "end_location": {
+      "column": 98,
+      "row": 509
+    },
+    "filename": "/home/josph/.codex/worktrees/audit-main/repo/scripts/token_monitor.py",
+    "fix": {
+      "applicability": "safe",
+      "edits": [
+        {
+          "content": "\"     This means conversation history was NOT cached → recharged at full input price.\"",
+          "end_location": {
+            "column": 98,
+            "row": 509
+          },
+          "location": {
+            "column": 11,
+            "row": 509
+          }
+        }
+      ],
+      "message": "Remove extraneous `f` prefix"
+    },
+    "location": {
+      "column": 11,
+      "row": 509
+    },
+    "message": "f-string without any placeholders",
+    "noqa_row": 509,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/f-string-missing-placeholders"
+  },
+  {
+    "cell": null,
+    "code": "F541",
+    "end_location": {
+      "column": 76,
+      "row": 510
+    },
+    "filename": "/home/josph/.codex/worktrees/audit-main/repo/scripts/token_monitor.py",
+    "fix": {
+      "applicability": "safe",
+      "edits": [
+        {
+          "content": "\"     Each reset costs ~$0.26/M tokens of conversation history.\"",
+          "end_location": {
+            "column": 76,
+            "row": 510
+          },
+          "location": {
+            "column": 11,
+            "row": 510
+          }
+        }
+      ],
+      "message": "Remove extraneous `f` prefix"
+    },
+    "location": {
+      "column": 11,
+      "row": 510
+    },
+    "message": "f-string without any placeholders",
+    "noqa_row": 510,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/f-string-missing-placeholders"
+  },
+  {
+    "cell": null,
+    "code": "F821",
+    "end_location": {
+      "column": 37,
+      "row": 37
+    },
+    "filename": "/home/josph/.codex/worktrees/audit-main/repo/src/memory/structured_memory_vector_sync.py",
+    "fix": null,
+    "location": {
+      "column": 34,
+      "row": 37
+    },
+    "message": "Undefined name `Any`",
+    "noqa_row": 37,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/undefined-name"
+  },
+  {
+    "cell": null,
+    "code": "F541",
+    "end_location": {
+      "column": 70,
+      "row": 62
+    },
+    "filename": "/home/josph/.codex/worktrees/audit-main/repo/startup.py",
+    "fix": {
+      "applicability": "safe",
+      "edits": [
+        {
+          "content": "\"=== Frontend: http://localhost:5173 (Vite default) ===\\n\"",
+          "end_location": {
+            "column": 70,
+            "row": 62
+          },
+          "location": {
+            "column": 11,
+            "row": 62
+          }
+        }
+      ],
+      "message": "Remove extraneous `f` prefix"
+    },
+    "location": {
+      "column": 11,
+      "row": 62
+    },
+    "message": "f-string without any placeholders",
+    "noqa_row": 62,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/f-string-missing-placeholders"
+  },
+  {
+    "cell": null,
+    "code": "F401",
+    "end_location": {
+      "column": 10,
+      "row": 3
+    },
+    "filename": "/home/josph/.codex/worktrees/audit-main/repo/tests/test_coordinator_agent.py",
+    "fix": {
+      "applicability": "safe",
+      "edits": [
+        {
+          "content": "",
+          "end_location": {
+            "column": 1,
+            "row": 4
+          },
+          "location": {
+            "column": 1,
+            "row": 3
+          }
+        }
+      ],
+      "message": "Remove unused import: `os`"
+    },
+    "location": {
+      "column": 8,
+      "row": 3
+    },
+    "message": "`os` imported but unused",
+    "noqa_row": 3,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/unused-import"
+  }
+]

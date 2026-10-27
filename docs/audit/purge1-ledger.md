@@ -1,6 +1,6 @@
 # PURGE1 maintained-area and removal ledger
 
-TASK16 / DEC017. Removal batches verified; final handoff in preparation; baseline3a3ad03e5fb33b23c56aa5f36e49c1f2e413bf67. Existing audit/workflow/test maps supply area coverage; this is cleanup disposition work, not a general audit restart. One implementation writer; independent read-only challenge of consequential removals.
+TASK16 / DEC017. Engineering complete; tier-end user functionality confirmation pending; baseline3a3ad03e5fb33b23c56aa5f36e49c1f2e413bf67. Existing audit/workflow/test maps supply area coverage; this is cleanup disposition work, not a general audit restart. One implementation writer; independent read-only challenge of consequential removals.
 
 ## Reviewed maintained areas
 
@@ -10,8 +10,8 @@ All463baseline tracked paths are accounted for by the areas below, using the exi
 |---|---|
 | Root17 | Retain entrypoints app.py/startup.py/run.sh, provider/config examples, pyproject/uv lock/runtime selector, root conftest, policy/license/README/Chainlit/planning records. Check startup/script references and package selectors; no root backup/patch files found. |
 | .chainlit1 / .dev2 | Retain actual native custom-JS configuration and paired developer start/stop scripts. Different process-management responsibility is not obsolete startup duplication. |
-| src85 | Retain all modules: agents/contracts/context, documents/inspection, DB/API/data-layer/lifecycle, config/provider/model, routing/retrieval/native/demo/shadow, LangMem/storage/vectors/gists. Remove only P1-C01–03 declarations. Thin wrappers, fallbacks, optional modes and legacy persisted-JSON migration remain. |
-| braemon31 | Retain bootstrap,7routes/pages, all active components/SDK paths, styles, config and toolchain. Remove2unused API wrappers, dead plugin bindings,2patch artifacts and2template SVGs; duplicate direct Core declaration only. |
+| src85 | Retain all modules: agents/contracts/context, documents/inspection, DB/API/data-layer/lifecycle, config/provider/model, routing/retrieval/native/demo/shadow, LangMem/storage/vectors/gists. Remove only P1-C01–03 declarations and P1-C04 unused import aliases. Thin wrappers, fallbacks, optional modes and legacy persisted-JSON migration remain. |
+| braemon31 | Retain bootstrap,7routes/pages, all active components/SDK paths, styles, config and toolchain; Home only loses3unused named import bindings. Remove2unused API wrappers, dead plugin bindings,2patch artifacts and2template SVGs; duplicate direct Core declaration only. |
 | public1 | Retain explicitly configured native navigation/Inspector/lifecycle asset. Native is separate from React. |
 | scripts20 | Retain12Python,7shell and maintained doc: index/rebuild/inspect/backfill/forensics, memory/live diagnostics, final-answer/judge/targeted wrappers, shared env/path helpers and isolated runner. Broken RV001 has unique repair capability; no deletion. |
 | evals91 | Retain59Python sources incl21CLI entrypoints plus fixture/manifest/doc support across all evaluation families: retrieval, memory, replay/selection, judge/resume/report/product diagnostics. Optional/expensive/manual paths have distinct roles. |
@@ -58,7 +58,7 @@ Offline isolated verification passed dependency-root consistency, actual Puppete
 
 ## Final verification gate
 
-All safe code/dependency/artifact batches are implemented and independently reviewed. Final accumulated-state core/app/wrapper/native-browser groups passed689selected cases,1real-model exclusion. Final frontend checks/build/lint passed after the last import-only change. Current source/link/entrypoint checks, evidence packaging and size-accounting handoff are being finalized before tier completion.
+All safe code/dependency/artifact batches are implemented and independently reviewed. Final accumulated-state core/app/wrapper/native-browser groups passed689selected cases,1real-model exclusion. Final frontend checks/build/lint passed after the last import-only change. Current source/link/entrypoint checks and size-accounting handoff are recorded in the [completion report](purge1-completion.md) and [machine results](purge1-runs/final-summary.json). Four coherent removal commits preserve recovery history. No unresolved PURGE1 removal decision; no PURGE2 work. Await user tier-end functionality confirmation.
 
 ## Final known-static-findings closure
 

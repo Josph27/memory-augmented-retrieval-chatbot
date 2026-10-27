@@ -8,7 +8,7 @@ Updated 2026-10-27. [Original register](history/tmp-audit/docs/audit/decisions.m
 - DEC-004/006/008: nine-stage sequence remains; Stage 4 existing-test assessment requires targeted main revalidation before Stage 5 protection expansion.
 - DEC-007: original audit chat and independent reviews supplied historical assessment. Internal bounded independent review remains authorized.
 - DEC-101–106: document scope, forgetting, fork/edit semantics, deployment and frontend/configuration coverage remain unresolved. No new product policy inferred from migration.
-- DEC-107: historical no-removal boundary; DEC016 later authorizes one named PNG only.
+- DEC-107: historical no-removal boundary; DEC016 later authorizes one named PNG and DEC017 subsequently authorizes capability-preserving implementation cleanup across PURGE1.
 
 ## DEC-009 — Main-based recovery and transfer
 
@@ -59,3 +59,5 @@ User expanded the assignment to complete PURGE1 across maintained implementation
 Preserve retained workflows, useful optional modes/evaluations/manual diagnostics/fallbacks, credentials/databases/uploads/user data, ignored/runtime data, stashes/recovery backups and historical audit evidence. Static imports alone do not establish safe removal. Consolidation/restructuring belong to PURGE2/PURGE3; MAINT-01/TASK13 remains deferred; no general fixes, live spending or wholesale stash application. Genuine product/value/data decisions block only the affected candidate while independent work continues.
 
 Completion requires recorded dispositions for all relevant repository areas, executed/reviewed justified safe removals, explicit retained/deferred/decision candidates, proportional verification plus final agreed isolated groups/build, updated records and commits. No completion claim with an unresolved PURGE1 decision. Stop after tier-end report for user functionality confirmation; do not begin PURGE2. This supersedes DEC016's proposal-only next-step restriction, not its narrow approved PNG scope.
+
+DEC017 execution: TASK16 engineering completed across the recorded maintained areas; independently reviewed safe removals committed in752065d/3399a2b/858d4f2/3fa357c. All retained workflows, tests/evaluations/data/recovery boundaries preserved at documented verification depth. [Final report](purge1-completion.md) records689selected passes, one real-model exclusion, frontend results and remaining product-oracle/verification limitations. No unresolved PURGE1 removal decision remains. Await user tier-end functionality confirmation; PURGE2 is not begun or authorized by completion.

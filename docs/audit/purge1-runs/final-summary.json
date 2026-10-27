@@ -1,0 +1,251 @@
+{
+  "baseline": "3a3ad03e5fb33b23c56aa5f36e49c1f2e413bf67",
+  "final_product_commit": "3fa357c988155600b74716490085505cec736cc5",
+  "runs": [
+    {
+      "complete": true,
+      "collected_case_count": 127,
+      "selected_case_count": 127,
+      "collection_error_count": 0,
+      "counts": {
+        "errored": 0,
+        "failed": 0,
+        "passed": 127,
+        "skipped": 0,
+        "xfailed": 0,
+        "xpassed": 0
+      },
+      "duration_seconds": 16.480215636998764,
+      "deselected": [],
+      "not_completed_nodeids": [],
+      "external_inference_requests": 0,
+      "external_tokens": 0,
+      "external_cost": 0,
+      "fake_model_calls": null,
+      "label": "final-unit",
+      "group": [
+        "offline-unit"
+      ],
+      "archive": "final-unit.tar.gz",
+      "sha256": "c5e29df790ff63034d830ec82894ff1b5012943e56994e8cbad9797a81a11311",
+      "launch": {
+        "duration_seconds": 19.389485213003354,
+        "exit_code": 0,
+        "output_dir": "/tmp/breamon-stage5-tdqilpvt",
+        "progress_exists": true,
+        "result_exists": true,
+        "source_unchanged_during_run": true,
+        "timed_out": false
+      },
+      "source_head": "858d4f2da2807bc7c38b8a8ba6072af018a1d6a7"
+    },
+    {
+      "complete": true,
+      "collected_case_count": 509,
+      "selected_case_count": 508,
+      "collection_error_count": 0,
+      "counts": {
+        "errored": 0,
+        "failed": 0,
+        "passed": 508,
+        "skipped": 0,
+        "xfailed": 0,
+        "xpassed": 0
+      },
+      "duration_seconds": 37.03788756199356,
+      "deselected": [
+        "tests/test_memory_reranker.py::test_cross_encoder_backend_preload_loads_model"
+      ],
+      "not_completed_nodeids": [],
+      "external_inference_requests": 0,
+      "external_tokens": 0,
+      "external_cost": 0,
+      "fake_model_calls": null,
+      "label": "final-integration",
+      "group": [
+        "offline-integration"
+      ],
+      "archive": "final-integration.tar.gz",
+      "sha256": "3e104db89508e3c24150056e798dad1c6ddee92363696a1c4fdf2bc4f67ad36c",
+      "launch": {
+        "duration_seconds": 40.64135935599916,
+        "exit_code": 0,
+        "output_dir": "/tmp/breamon-stage5-0jxvi6x5",
+        "progress_exists": true,
+        "result_exists": true,
+        "source_unchanged_during_run": true,
+        "timed_out": false
+      },
+      "source_head": "858d4f2da2807bc7c38b8a8ba6072af018a1d6a7"
+    },
+    {
+      "complete": true,
+      "collected_case_count": 20,
+      "selected_case_count": 20,
+      "collection_error_count": 0,
+      "counts": {
+        "errored": 0,
+        "failed": 0,
+        "passed": 20,
+        "skipped": 0,
+        "xfailed": 0,
+        "xpassed": 0
+      },
+      "duration_seconds": 7.003281411001808,
+      "deselected": [],
+      "not_completed_nodeids": [],
+      "external_inference_requests": 0,
+      "external_tokens": 0,
+      "external_cost": 0,
+      "fake_model_calls": null,
+      "label": "final-app",
+      "group": [
+        "app-composition"
+      ],
+      "archive": "final-app.tar.gz",
+      "sha256": "25e9a398e27fcaa96a8c913780cd24bb54ba23d4e6807d3260c9ea8543636fe8",
+      "launch": {
+        "duration_seconds": 8.474649847994442,
+        "exit_code": 0,
+        "output_dir": "/tmp/breamon-stage5-9ot3dvw4",
+        "progress_exists": true,
+        "result_exists": true,
+        "source_unchanged_during_run": true,
+        "timed_out": false
+      },
+      "source_head": "858d4f2da2807bc7c38b8a8ba6072af018a1d6a7"
+    },
+    {
+      "complete": true,
+      "collected_case_count": 21,
+      "selected_case_count": 21,
+      "collection_error_count": 0,
+      "counts": {
+        "errored": 0,
+        "failed": 0,
+        "passed": 21,
+        "skipped": 0,
+        "xfailed": 0,
+        "xpassed": 0
+      },
+      "duration_seconds": 2.057813189996523,
+      "deselected": [],
+      "not_completed_nodeids": [],
+      "external_inference_requests": 0,
+      "external_tokens": 0,
+      "external_cost": 0,
+      "fake_model_calls": null,
+      "label": "final-wrappers",
+      "group": [
+        "subprocess-wrappers"
+      ],
+      "archive": "final-wrappers.tar.gz",
+      "sha256": "ba03c990ebb48f1555e2915e9389c193a3ae15ca889ddfb975265c636a581c17",
+      "launch": {
+        "duration_seconds": 2.882431532998453,
+        "exit_code": 0,
+        "output_dir": "/tmp/breamon-stage5-gya3604l",
+        "progress_exists": true,
+        "result_exists": true,
+        "source_unchanged_during_run": true,
+        "timed_out": false
+      },
+      "source_head": "858d4f2da2807bc7c38b8a8ba6072af018a1d6a7"
+    },
+    {
+      "complete": true,
+      "collected_case_count": 13,
+      "selected_case_count": 13,
+      "collection_error_count": 0,
+      "counts": {
+        "errored": 0,
+        "failed": 0,
+        "passed": 13,
+        "skipped": 0,
+        "xfailed": 0,
+        "xpassed": 0
+      },
+      "duration_seconds": 87.84279080099077,
+      "deselected": [],
+      "not_completed_nodeids": [],
+      "external_inference_requests": 0,
+      "external_tokens": 0,
+      "external_cost": 0,
+      "fake_model_calls": null,
+      "label": "final-browser",
+      "group": [
+        "browser"
+      ],
+      "archive": "final-browser.tar.gz",
+      "sha256": "5a2dd54a00978ce860fca18413be59de87e1cffad6fbf873b05ddce0be81d861",
+      "launch": {
+        "duration_seconds": 91.96600637999654,
+        "exit_code": 0,
+        "output_dir": "/tmp/breamon-stage5-go97h0w2",
+        "progress_exists": true,
+        "result_exists": true,
+        "source_unchanged_during_run": true,
+        "timed_out": false
+      },
+      "source_head": "858d4f2da2807bc7c38b8a8ba6072af018a1d6a7"
+    }
+  ],
+  "frontend": {
+    "archive": "frontend-final.tar.gz",
+    "sha256": "b423a923dd320922450302bd4bb6c389aa8fea945226269f2143a5af768edff8",
+    "results": [
+      {
+        "label": "checks",
+        "exit_code": 0
+      },
+      {
+        "label": "dependency-tree",
+        "exit_code": 0
+      },
+      {
+        "label": "build",
+        "exit_code": 0
+      },
+      {
+        "label": "lint",
+        "exit_code": 0
+      }
+    ],
+    "warnings": 3,
+    "errors": 0,
+    "source_change_after_five_groups": "Only Home.jsx unused named import bindings removed; exact remaining source and API bodies unchanged. Final frontend build/tooling/lint verifies these bytes.",
+    "external_requests": 0,
+    "installs": 0
+  },
+  "unique_collected": 690,
+  "unique_selected": 689,
+  "passed": 689,
+  "failed": 0,
+  "errored": 0,
+  "skipped": 0,
+  "xfailed": 0,
+  "xpassed": 0,
+  "excluded": 1,
+  "collection_errors": 0,
+  "distinct_case_identity_checked": true,
+  "fake_model_calls": "not instrumented; controlled substitutes exercised; not external inference",
+  "external_inference": {
+    "requests": 0,
+    "tokens": 0,
+    "cost": 0,
+    "basis": "Isolated mount/network namespaces, missing private settings/credentials, offline model settings and guards; browser allows only controlled private loopback."
+  },
+  "limits": [
+    "One real cross-encoder model preload deselected, not passing protection.",
+    "Live providers/extraction/judges/evaluations, actual model assets, React/Node browser probes unexecuted; counts unknown here, see existing exclusion register.",
+    "Product oracle tracked separately: 42 non-browser rows,39pass/3fail; not equivalent to harness pytest passes.",
+    "Existing global Ruff25diagnostics and RV001 syntax retained; frontend3warnings and large-chunk build warning remain."
+  ],
+  "source_provenance": "Each archive includes exact858d4f2HEAD plus dirty-file hashes/index state and before/after equality. Backend/Python source bytes match3fa357c; only subsequent Home.jsx binding edit verified by frontend-final. Current documentation after execution is not retrospectively part of run snapshots.",
+  "zero_case_overlap": true,
+  "identical_five_run_source_snapshots": true,
+  "current_executable_changes_since_five_run_snapshots": [
+    "braemon/src/pages/Home.jsx"
+  ],
+  "final_frontend_hashes_match_current": true
+}

@@ -12,13 +12,15 @@ heavy model weight and constrained development hardware.
 
 ## Cleanup and audit status
 
-Stage5 protection and the bounded blocker fixes are complete; final isolated groups
-passed689selected cases with1real-model exclusion. Native Chainlit login and its
-existing browser journeys pass. Remaining verification limits are in the
-[Stage5 checkpoint](docs/audit/stage5/readiness.md). PURGE1 has begun with one
-[approved artifact removal](docs/audit/purge1-batch1.md); further code-removal
-proposals require separate approval. Read the [current decisions and task ledger](docs/audit/README.md).
-Historical audit evidence remains archived; test-suite simplification is deferred.
+PURGE1 engineering is complete under DEC017, awaiting tier-end functionality
+confirmation. Removed unused implementation declarations and wrappers, obsolete
+patch/template assets, one diagram render and a redundant direct dependency
+declaration. Final isolated groups passed 689 selected cases; one real-model case
+was excluded. Native browser checks and the React build passed; React browser
+journeys and live inference remain unverified. See the
+[completion report and acceptance checklist](docs/audit/purge1-completion.md) and
+[current decisions and task ledger](docs/audit/README.md). Historical evidence is
+preserved. Test-suite simplification, consolidation and restructuring are deferred.
 
 ## Implemented features
 
