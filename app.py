@@ -885,10 +885,17 @@ def chat_service_for_model(model_name: str) -> ChatService:
     return chat_services[model_name]
 
 
+def chat_service_for_persisted_chat(chat_id: str) -> ChatService:
+    """Resolve the service for the model persisted with a REST-managed chat."""
+    return chat_service_for_model(model_name_for_chat(chat_id))
+
+
 from src.api_routes import register_api_routes, set_models_ready  # noqa: E402
 
 register_api_routes(
-    database=database, chat_service_getter=lambda: chat_service_for_model(config.model_name)
+    database=database,
+    chat_service_getter=lambda: chat_service_for_model(config.model_name),
+    chat_service_for_chat_getter=chat_service_for_persisted_chat,
 )
 
 # Eagerly warm up models so the Braemon app sees them as ready.

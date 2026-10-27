@@ -1,0 +1,75 @@
+{
+  "baseline": "b30fd611b38dc6196102990f0cadce8a6459bbf8",
+  "runs": [
+    {
+      "group": "app",
+      "source_before_sha256": "57defe40d8c3d6072874be1bc723054b313f1979829984e80e8b89153febb14c",
+      "source_unchanged": true,
+      "source_head": "b30fd611b38dc6196102990f0cadce8a6459bbf8",
+      "collected": 25,
+      "selected": 25,
+      "counts": {
+        "errored": 0,
+        "failed": 0,
+        "passed": 25,
+        "skipped": 0,
+        "xfailed": 0,
+        "xpassed": 0
+      },
+      "deselected": [],
+      "duration_seconds": 5.666784247994656,
+      "external_inference_requests": 0,
+      "temporary_log_dir": "/tmp/breamon-stage5-5whq8tun"
+    },
+    {
+      "group": "integration",
+      "source_before_sha256": "57defe40d8c3d6072874be1bc723054b313f1979829984e80e8b89153febb14c",
+      "source_unchanged": true,
+      "source_head": "b30fd611b38dc6196102990f0cadce8a6459bbf8",
+      "collected": 518,
+      "selected": 517,
+      "counts": {
+        "errored": 0,
+        "failed": 0,
+        "passed": 517,
+        "skipped": 0,
+        "xfailed": 0,
+        "xpassed": 0
+      },
+      "deselected": [
+        "tests/test_memory_reranker.py::test_cross_encoder_backend_preload_loads_model"
+      ],
+      "duration_seconds": 34.333165192991146,
+      "external_inference_requests": 0,
+      "temporary_log_dir": "/tmp/breamon-stage5-3nyam_if"
+    },
+    {
+      "group": "invalid-integration",
+      "source_before_sha256": "c2d3ab36bc491b3c0e0bd8d8e03d8934c63154b5e7752409f203034838708466",
+      "source_unchanged": false,
+      "source_head": "b30fd611b38dc6196102990f0cadce8a6459bbf8",
+      "collected": 518,
+      "selected": 517,
+      "counts": {
+        "errored": 0,
+        "failed": 0,
+        "passed": 517,
+        "skipped": 0,
+        "xfailed": 0,
+        "xpassed": 0
+      },
+      "deselected": [
+        "tests/test_memory_reranker.py::test_cross_encoder_backend_preload_loads_model"
+      ],
+      "duration_seconds": 34.16200407399447,
+      "external_inference_requests": 0,
+      "temporary_log_dir": "/tmp/breamon-stage5-milyh0fo"
+    }
+  ],
+  "frontend": "Offline isolated checks, dependency tree, build and lint passed; three existing lint warnings and bundle-size warning. Temporary logs /tmp/breamon-purge1-frontend-sc1og5fy",
+  "limitations": [
+    "React interaction/browser not run",
+    "live inference and model assets not run",
+    "invalid-integration source changed during run"
+  ]
+}

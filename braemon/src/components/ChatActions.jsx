@@ -11,8 +11,13 @@ export default function ChatActions({
 	const handleEnd = async (e) => {
 		e.preventDefault();
 		e.stopPropagation();
-		await endChat(chatId);
-		onStateChange?.(chatId, false);
+		try {
+			await endChat(chatId);
+			onStateChange?.(chatId, false);
+		} catch (err) {
+			console.error(err);
+			alert("Failed to end chat");
+		}
 	};
 
 	const handleReactivate = async (e) => {

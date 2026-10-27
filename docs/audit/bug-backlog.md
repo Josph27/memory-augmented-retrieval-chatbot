@@ -14,6 +14,8 @@ S5-UI-03 — native trace-comment presentation: an affected-run screenshot shows
 
 ## CH-UI-01 — React deleted-fetch failure reporting (static finding)
 
+TASK19 source review also found that either displayed load error hides all rows despite the partial-results message. User policy decision is pending; React browser behavior has not been reproduced in an isolated browser.
+
 `braemon/src/pages/Documents.jsx` and `Memories.jsx` log a rejected deleted/inactive fetch but do not add it to their `errors` list. If both fetches reject, source inspection indicates the UI reports only the active failure instead of the intended all-failed message; an inactive-only failure reports no page error. This is a static finding, not a runtime reproduction. A controlled React test and a separately scoped behavior/bug-fix decision should precede any shared loader hook; it does not block independently verified backend/evaluation cleanup.
 
 ## MAINT-01 — Simplify the test suite and its supporting infrastructure

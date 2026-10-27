@@ -101,6 +101,21 @@ def test_end_chat_uses_authoritative_action_keeps_history_and_refreshes(
     assert FakeMessage.sent == []
 
 
+def test_rest_end_service_resolver_uses_the_persisted_chat_model(monkeypatch) -> None:
+    expected_service = object()
+    observed_models: list[str] = []
+    monkeypatch.setattr(app, "model_name_for_chat", lambda chat_id: "persisted-model")
+
+    def service_for_model(model_name: str):
+        observed_models.append(model_name)
+        return expected_service
+
+    monkeypatch.setattr(app, "chat_service_for_model", service_for_model)
+
+    assert app.chat_service_for_persisted_chat("chat-1") is expected_service
+    assert observed_models == ["persisted-model"]
+
+
 def test_failed_end_does_not_present_chat_as_ended(monkeypatch) -> None:
     session = FakeUserSession({"chat_id": "chat-1", "model_name": "model-1"})
     window_messages = install_chainlit_fakes(monkeypatch, session)

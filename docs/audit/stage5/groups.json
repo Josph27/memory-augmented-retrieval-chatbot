@@ -101,6 +101,7 @@
       "category": "offline-integration",
       "enabled": true,
       "files": [
+        "tests/test_api_routes.py",
         "tests/test_chainlit_chat_actions.py",
         "tests/test_chainlit_memory_trace_helpers.py",
         "tests/product_behavior/test_runner.py"

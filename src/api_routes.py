@@ -1,13 +1,16 @@
 from __future__ import annotations
 import asyncio
 import chainlit as cl
+from fastapi.responses import JSONResponse
 from pathlib import Path
 from src.database import Database
+from src.actions.chat_end import ChatEndAction
 from src.lifecycle.operation_guard import guarded_chat_operation
 from typing import Any
 
 _database: Database | None = None
 _chat_service_getter: Any | None = None
+_chat_service_for_chat_getter: Any | None = None
 _models_ready = False
 
 
@@ -21,16 +24,28 @@ def get_chat_svc() -> Any:
     return _chat_service_getter()
 
 
+def get_chat_svc_for_chat(chat_id: str) -> Any:
+    """Resolve the service that owns a persisted chat's model configuration."""
+    if _chat_service_for_chat_getter is None:
+        return get_chat_svc()
+    return _chat_service_for_chat_getter(chat_id)
+
+
 def set_models_ready() -> None:
     """Signal that all ML models have been loaded into memory."""
     global _models_ready
     _models_ready = True
 
 
-def register_api_routes(database: Database, chat_service_getter: Any) -> None:
-    global _database, _chat_service_getter
+def register_api_routes(
+    database: Database,
+    chat_service_getter: Any,
+    chat_service_for_chat_getter: Any | None = None,
+) -> None:
+    global _database, _chat_service_getter, _chat_service_for_chat_getter
     _database = database
     _chat_service_getter = chat_service_getter
+    _chat_service_for_chat_getter = chat_service_for_chat_getter
 
     chainlit_server = getattr(cl, "server", None)
     app = getattr(chainlit_server, "app", None)
@@ -102,11 +117,24 @@ def register_api_routes(database: Database, chat_service_getter: Any) -> None:
         try:
             chat = get_db().get_chat(chat_id)
             if not chat:
-                return {"error": "not found"}, 404
-            get_db().mark_chat_inactive(chat_id)
+                return JSONResponse({"error": "not found"}, status_code=404)
+            service = get_chat_svc_for_chat(chat_id)
+            gist_finalizer_factory = getattr(service, "build_previous_chat_gist_generator", None)
+            gist_finalizer = (
+                gist_finalizer_factory() if callable(gist_finalizer_factory) else None
+            )
+            if gist_finalizer is None:
+                action = ChatEndAction(database=get_db(), memory=service.memory)
+            else:
+                action = ChatEndAction(
+                    database=get_db(),
+                    memory=service.memory,
+                    gist_finalizer=gist_finalizer,
+                )
+            await asyncio.to_thread(action.execute, chat_id)
             return {"status": "ended"}
         except Exception as e:
-            return {"error": str(e)}, 500
+            return JSONResponse({"error": str(e)}, status_code=500)
 
     @app.post("/api/chats/{chat_id}/reactivate")
     async def reactivate_chat(chat_id: str):
