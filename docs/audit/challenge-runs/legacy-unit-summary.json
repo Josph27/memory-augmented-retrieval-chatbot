@@ -1,0 +1,32 @@
+{
+  "collected_case_count": 127,
+  "selected_case_count": 127,
+  "counts": {
+    "errored": 0,
+    "failed": 0,
+    "passed": 127,
+    "skipped": 0,
+    "xfailed": 0,
+    "xpassed": 0
+  },
+  "deselected": [],
+  "duration_seconds": 13.63609949000238,
+  "external_inference_requests": 0,
+  "external_tokens": 0,
+  "external_cost": 0,
+  "fake_model_calls": null,
+  "archive": "legacy-unit.tar.gz",
+  "sha256": "24fd4d36b5e31787735c7b074cb46c69981cdcecad32dd7d63276e1e20ed53ce",
+  "source_head": "74f2a48ae58a0a47935d8ec884d79d5fa872892e",
+  "source_note": "Full exact dirty/staged/index snapshot is preserved in archive",
+  "launch": {
+    "duration_seconds": 15.781697028985946,
+    "exit_code": 0,
+    "output_dir": "/tmp/breamon-stage5-ei9na8p4",
+    "progress_exists": true,
+    "result_exists": true,
+    "source_unchanged_during_run": true,
+    "timed_out": false
+  },
+  "review": "Independent review confirmed old Markdown renderers lack active consumers; retained console and row converters receive direct tests; obsolete test outcomes replaced by retained provenance checks."
+}

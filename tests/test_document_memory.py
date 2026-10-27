@@ -13,7 +13,6 @@ from src.documents.splitters import (
     LangChainRecursiveSplitter,
     LangChainSplitterUnavailable,
     split_document_text,
-    split_text_into_chunks,
 )
 from src.retrieval.retriever_dispatcher import RetrieverDispatcher
 from src.retrieval.reranker import MemoryReranker
@@ -42,14 +41,17 @@ class FakeDocumentMemoryRetriever:
         ]
 
 
-def test_split_text_into_chunks_preserves_paragraphs() -> None:
+def test_custom_splitter_preserves_paragraphs_with_explicit_bounds() -> None:
     text = "First paragraph about SQLite.\n\nSecond paragraph about Chainlit."
 
-    chunks = split_text_into_chunks(text, target_chars=35, max_chars=100)
+    chunks = split_document_text(
+        text, ChunkingConfig(chunker="custom", target_chars=35, max_chars=100,
+                             chunk_size=100, chunk_overlap=0),
+    )
 
     assert len(chunks) == 2
-    assert chunks[0] == "First paragraph about SQLite."
-    assert chunks[1] == "Second paragraph about Chainlit."
+    assert chunks[0].text == "First paragraph about SQLite."
+    assert chunks[1].text == "Second paragraph about Chainlit."
 
 
 def test_custom_splitter_returns_chunk_metadata() -> None:

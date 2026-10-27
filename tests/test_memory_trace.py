@@ -8,12 +8,10 @@ from src.memory.long_term_store import (
 from src.memory.memory_trace import (
     document_memory_candidate_trace_rows,
     format_retrieved_memory_trace,
-    format_retrieved_documents_markdown,
-    format_retrieved_memories_markdown,
     format_saved_memory_trace,
-    format_saved_memories_markdown,
     memory_candidate_to_trace_row,
     memory_record_to_inspector_row,
+    memory_write_to_trace_row,
 )
 from src.core.contracts import MemoryCandidate
 
@@ -92,28 +90,23 @@ def test_memory_record_to_inspector_row_is_script_ready() -> None:
     }
 
 
-def test_saved_memories_markdown_is_chainlit_demo_ready() -> None:
-    markdown = format_saved_memories_markdown(
-        [
-            {
-                "memory_id": "preferences:library_preference",
-                "category": "preferences",
-                "key": "library_preference",
-                "value": "User prefers mature libraries.",
-                "source_chat_id": "chat-1",
-                "source_message_ids": [1],
-            }
-        ]
+def test_saved_memory_trace_row_includes_provenance() -> None:
+    record = LongTermMemoryWrite(
+        namespace=DEFAULT_USER_NAMESPACE, memory_id="preferences:library_preference",
+        category="preferences", key="library_preference", value="User prefers mature libraries.",
+        confidence=0.9, source_chat_id="chat-1", source_message_ids=[1],
     )
+    row = memory_write_to_trace_row(record)
+    assert row["memory_id"] == "preferences:library_preference"
+    assert row["category"] == "preferences"
+    assert row["key"] == "library_preference"
+    assert row["namespace"] == "user::default::semantic_memory"
+    assert row["value"] == "User prefers mature libraries."
+    assert row["source_chat_id"] == "chat-1"
+    assert row["source_message_ids"] == [1]
 
-    assert "Long-term memory saved" in markdown
-    assert "[preferences] library_preference" in markdown
-    assert "Memory ID: `preferences:library_preference`" in markdown
-    assert "Source chat: `chat-1`" in markdown
-    assert "Source messages: [1]" in markdown
 
-
-def test_retrieved_memories_markdown_is_chainlit_demo_ready() -> None:
+def test_retrieved_memory_trace_row_contains_provenance() -> None:
     candidate = MemoryCandidate(
         source="structured_memory",
         content="User prefers mature libraries.",
@@ -130,16 +123,13 @@ def test_retrieved_memories_markdown_is_chainlit_demo_ready() -> None:
     )
     rows = [memory_candidate_to_trace_row(candidate)]
 
-    markdown = format_retrieved_memories_markdown(rows)
-
-    assert "Long-term memory retrieved" in markdown
-    assert "MemoryCandidate(source=structured_memory)" in markdown
-    assert "Record: `preferences:library_preference`" in markdown
-    assert "From chat: `chat-1`" in markdown
-    assert "Content: User prefers mature libraries." in markdown
+    assert rows[0]["record_id"] == "preferences:library_preference"
+    assert rows[0]["source_chat_id"] == "chat-1"
+    assert rows[0]["value"] == "User prefers mature libraries."
+    assert rows[0]["source_message_ids"] == [1]
 
 
-def test_document_retrieval_markdown_is_chainlit_demo_ready() -> None:
+def test_document_retrieval_trace_row_contains_provenance() -> None:
     candidate = MemoryCandidate(
         source="document_memory",
         content="README says the project uses Chainlit and SQLite for the chatbot demo.",
@@ -157,11 +147,8 @@ def test_document_retrieval_markdown_is_chainlit_demo_ready() -> None:
     )
     rows = document_memory_candidate_trace_rows([candidate])
 
-    markdown = format_retrieved_documents_markdown(rows)
-
-    assert "Document memory retrieved" in markdown
-    assert "Chunk 1: `README.md`" in markdown
-    assert "Document ID: `doc-1`" in markdown
-    assert "Chunk index: `2`" in markdown
-    assert "Backend: `langchain_chroma`" in markdown
-    assert "README says the project uses Chainlit" in markdown
+    assert rows[0]["file_name"] == "README.md"
+    assert rows[0]["document_id"] == "doc-1"
+    assert rows[0]["chunk_index"] == 2
+    assert rows[0]["retrieval_backend"] == "langchain_chroma"
+    assert "README says the project uses Chainlit" in rows[0]["content"]

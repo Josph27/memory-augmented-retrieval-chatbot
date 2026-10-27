@@ -9,7 +9,6 @@ from src.retrieval.current_chat_gist_retriever import CurrentChatGistRetriever
 from src.retrieval.previous_chat_gist_retriever import PreviousChatGistRetriever
 from src.retrieval.raw_message_span_retriever import (
     RawMessageSpanRetriever,
-    source_plan_for_gist_candidate,
 )
 
 
@@ -260,7 +259,7 @@ def test_raw_message_span_retriever_truncates_long_spans(tmp_path: Path) -> None
     assert candidates[0].metadata["truncated"] is True
 
 
-def test_raw_message_span_plan_can_be_derived_from_gist_candidate(tmp_path: Path) -> None:
+def test_raw_message_span_can_be_retrieved_by_gist_candidate_id(tmp_path: Path) -> None:
     db = Database(tmp_path / "chatbot.db")
     db.create_chat("old-chat")
     first_id = db.save_message("old-chat", "user", "Use mature libraries.")
@@ -281,11 +280,8 @@ def test_raw_message_span_plan_can_be_derived_from_gist_candidate(tmp_path: Path
             query="What mature libraries preference appeared before?",
         ),
     )
-    span_plan = source_plan_for_gist_candidate(gist_candidates[0])
-
-    assert span_plan is not None
-    assert span_plan.source == "raw_message_span"
-    assert span_plan.filters == {"gist_id": gist_id}
+    assert gist_candidates[0].record_id == gist_id
+    span_plan = SourcePlan(source="raw_message_span", filters={"gist_id": gist_candidates[0].record_id})
 
     raw_candidates = RawMessageSpanRetriever(db).retrieve(
         chat_id="new-chat",

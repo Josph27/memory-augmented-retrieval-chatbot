@@ -66,24 +66,6 @@ def split_document_text(text: str, config: ChunkingConfig | None = None) -> list
     return splitter.split(text)
 
 
-def split_text_into_chunks(
-    text: str,
-    target_chars: int = DEFAULT_TARGET_CHARS,
-    max_chars: int = DEFAULT_MAX_CHARS,
-) -> list[str]:
-    """Backward-compatible custom chunking helper."""
-    splitter = CustomParagraphSplitter(
-        ChunkingConfig(
-            chunker="custom",
-            target_chars=target_chars,
-            max_chars=max_chars,
-            chunk_size=max_chars,
-            chunk_overlap=0,
-        )
-    )
-    return [chunk.text for chunk in splitter.split(text)]
-
-
 def splitter_for_config(config: ChunkingConfig) -> TextSplitter:
     """Create a splitter for the configured chunking mode."""
     if config.chunker == "langchain_recursive":

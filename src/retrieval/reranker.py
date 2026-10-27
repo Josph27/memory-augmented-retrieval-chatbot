@@ -1284,24 +1284,6 @@ def deterministic_trace(
     }
 
 
-def fallback_result(
-    mode: str,
-    deterministic: list[MemoryCandidate],
-    reason: str,
-    llm_confidence: float | None = None,
-    extra_metadata: dict[str, Any] | None = None,
-) -> RerankResult:
-    """Return deterministic ordering with explicit fallback metadata."""
-    trace = deterministic_trace(mode, deterministic)
-    return stage_fallback_result(
-        candidates=deterministic,
-        trace=trace,
-        reason=reason,
-        llm_confidence=llm_confidence,
-        extra_metadata=extra_metadata,
-    )
-
-
 def stage_fallback_result(
     candidates: list[MemoryCandidate],
     trace: dict[str, Any],

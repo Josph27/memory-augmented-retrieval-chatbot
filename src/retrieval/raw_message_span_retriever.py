@@ -343,41 +343,6 @@ class RawMessageSpanRetriever:
         return None
 
 
-def source_plan_for_gist_candidate(candidate: MemoryCandidate) -> SourcePlan | None:
-    """Build an explicit raw-span source plan from a gist candidate."""
-    if candidate.source not in {"current_chat_gist", "previous_chat_gist"}:
-        return None
-
-    gist_id = candidate.record_id if isinstance(candidate.record_id, int) else None
-    if gist_id is not None:
-        return SourcePlan(
-            source="raw_message_span",
-            enabled=True,
-            reason="Fetch raw messages linked from gist candidate.",
-            filters={"gist_id": gist_id},
-        )
-
-    start_message_id = int_filter(candidate.metadata, "start_message_id")
-    end_message_id = int_filter(candidate.metadata, "end_message_id")
-    if (
-        candidate.chat_id is not None
-        and start_message_id is not None
-        and end_message_id is not None
-    ):
-        return SourcePlan(
-            source="raw_message_span",
-            enabled=True,
-            reason="Fetch raw messages linked from gist candidate metadata.",
-            filters={
-                "chat_id": candidate.chat_id,
-                "start_message_id": start_message_id,
-                "end_message_id": end_message_id,
-            },
-        )
-
-    return None
-
-
 def format_messages(
     messages: list[StoredMessage],
     max_chars: int | None = None,
