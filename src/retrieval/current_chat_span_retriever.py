@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
+from src.core.intervals import merge_inclusive_ranges as merge_ranges
 from src.core.contracts import MemoryCandidate, SourcePlan
 from src.database import Database, StoredMessage
 from src.retrieval.raw_message_span_retriever import (
@@ -199,20 +200,6 @@ def scored_hits(
         hits,
         key=lambda hit: (-hit.score, -hit.message_id),
     )
-
-
-def merge_ranges(ranges: list[tuple[int, int]]) -> list[tuple[int, int]]:
-    """Merge overlapping or adjacent inclusive message-index ranges."""
-    if not ranges:
-        return []
-    merged: list[tuple[int, int]] = []
-    for start, end in sorted(ranges):
-        if not merged or start > merged[-1][1] + 1:
-            merged.append((start, end))
-            continue
-        previous_start, previous_end = merged[-1]
-        merged[-1] = (previous_start, max(previous_end, end))
-    return merged
 
 
 def format_exact_messages(messages: list[StoredMessage]) -> str:

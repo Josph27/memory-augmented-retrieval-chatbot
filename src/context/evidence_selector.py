@@ -6,6 +6,7 @@ from typing import Any, Sequence
 
 from src.context.context_builder import recent_message_sort_key
 from src.context.token_estimator import TokenEstimator, count_text
+from src.core.intervals import merge_inclusive_ranges as merge_ranges
 from src.core.contracts import MemoryCandidate, RoutePlan
 
 
@@ -930,19 +931,6 @@ def selected_time_range_count(
         chat_key = str(candidate.metadata.get("source_chat_id") or candidate.chat_id or "")
         ranges_by_chat.setdefault(chat_key, []).append((message_ids[0], message_ids[-1]))
     return unbounded + sum(len(merge_ranges(ranges)) for ranges in ranges_by_chat.values())
-
-
-def merge_ranges(
-    ranges: Sequence[tuple[int, int]],
-) -> list[tuple[int, int]]:
-    merged: list[tuple[int, int]] = []
-    for start, end in sorted(ranges):
-        if not merged or start > merged[-1][1] + 1:
-            merged.append((start, end))
-            continue
-        previous_start, previous_end = merged[-1]
-        merged[-1] = (previous_start, max(previous_end, end))
-    return merged
 
 
 def is_latest_query_candidate(

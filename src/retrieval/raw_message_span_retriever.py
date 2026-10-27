@@ -4,6 +4,7 @@ from dataclasses import dataclass
 import os
 import re
 
+from src.core.intervals import merge_inclusive_ranges as merge_index_ranges
 from src.core.contracts import MemoryCandidate, SourcePlan
 from src.database import Database, StoredMessage
 
@@ -767,19 +768,6 @@ def chronological_message_chunks(
     if current:
         chunks.append(current)
     return chunks
-
-
-def merge_index_ranges(
-    ranges: list[tuple[int, int]],
-) -> list[tuple[int, int]]:
-    merged: list[tuple[int, int]] = []
-    for start, end in sorted(ranges):
-        if not merged or start > merged[-1][1] + 1:
-            merged.append((start, end))
-            continue
-        previous_start, previous_end = merged[-1]
-        merged[-1] = (previous_start, max(previous_end, end))
-    return merged
 
 
 def retrieval_terms(value: str) -> set[str]:

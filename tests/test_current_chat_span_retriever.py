@@ -330,3 +330,12 @@ def test_oversized_span_is_dropped_without_exceeding_context_budget(
     assert sum(result.context_budget.source_token_budgets.values()) <= int(
         result.context_budget.metadata["allocatable_tokens"]
     )
+
+
+def test_inclusive_ranges_merge_unsorted_overlap_nesting_and_adjacency() -> None:
+    from src.core.intervals import merge_inclusive_ranges
+
+    assert merge_inclusive_ranges([]) == []
+    assert merge_inclusive_ranges([(10, 12), (2, 4), (3, 3), (5, 7), (11, 15)]) == [
+        (2, 7), (10, 15),
+    ]
