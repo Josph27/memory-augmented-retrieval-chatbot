@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import sqlite3
 
 import pytest
 
@@ -291,7 +292,7 @@ class NativeTestVectorIndex(LongTermMemoryVectorIndex):
 
 @pytest.mark.parametrize("operation", ["separate", "update", "delete"])
 def test_native_sqlite_vec_separates_database_roots_and_filters_namespaces(
-    tmp_path: Path, operation: str
+    tmp_path: Path, operation: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     pytest.importorskip("sqlite_vec", reason="Native sqlite-vec extension package unavailable")
     namespace = category_namespace("user_preferences")
@@ -358,18 +359,59 @@ def test_native_sqlite_vec_separates_database_roots_and_filters_namespaces(
 
     # Independent parameter cases preserve separation/delete protection if update fails.
     if operation == "update":
-        write(store_a, namespace, "ALPHA_NATIVE updated memory")
+
+        def vector_rows():
+            with index_a._vec_connect() as connection:
+                return dict(
+                    connection.execute("SELECT rowid, embedding FROM vec_memories").fetchall()
+                )
+
+        original_vectors = vector_rows()
+        original_score = next(
+            result.score
+            for result in index_a.search("ALPHA_NATIVE", limit=10)
+            if result.namespace == namespace
+        )
+        write(store_a, namespace, "BETA_NATIVE updated memory")
         updated = store_a.get(namespace, identifier)
         assert updated is not None and updated.rowid == first_a.rowid
         index_a.upsert_record(updated)
         assert (
-            retrieve(database_a, index_a, "ALPHA_NATIVE")[0].content
-            == "ALPHA_NATIVE updated memory"
+            retrieve(database_a, index_a, "BETA_NATIVE")[0].content == "BETA_NATIVE updated memory"
         )
-        assert {result.namespace for result in index_a.search("ALPHA_NATIVE", limit=10)} == {
-            namespace,
-            excluded_namespace,
-        }
+        replaced_vectors = vector_rows()
+        assert len(replaced_vectors) == 2
+        assert replaced_vectors[first_a.rowid] != original_vectors[first_a.rowid]
+        replacement_score = next(
+            result.score
+            for result in index_a.search("ALPHA_NATIVE", limit=10)
+            if result.namespace == namespace
+        )
+        assert replacement_score < original_score
+        excluded = store_a.get(excluded_namespace, identifier)
+        assert excluded is not None
+        for _repeat in range(2):
+            assert index_a.index_records([updated, excluded, updated]).indexed_count == 3
+            assert vector_rows() == replaced_vectors
+
+        class InvalidDimensions:
+            def embed_query(self, text):
+                return [1.0]
+
+            def embed_documents(self, texts):
+                # First insertion would change an existing vector; the second must fail.
+                return [DeterministicNativeEmbeddings().embed_query("ALPHA_NATIVE"), [1.0]]
+
+        monkeypatch.setattr(index_a, "_embeddings", lambda: InvalidDimensions())
+        for replace in (
+            lambda: index_a.upsert_record(updated),
+            lambda: index_a.index_records([updated, excluded]),
+        ):
+            with pytest.raises(sqlite3.DatabaseError, match="(?i)dimension"):
+                replace()
+            assert vector_rows() == replaced_vectors, (
+                "Failed replacement must restore deleted vectors"
+            )
     elif operation == "delete":
         store_a.delete(namespace, identifier)
         index_a.delete_record(namespace, identifier)

@@ -134,10 +134,14 @@ class LongTermMemoryVectorIndex:
                 blob = np.array(embedding, dtype=np.float32).tobytes()
                 rows.append((record.rowid, blob))  # type: ignore[arg-type]
             with self._vec_connect() as conn:
-                conn.executemany(
-                    f"INSERT OR REPLACE INTO {VEC_TABLE}(rowid, embedding) VALUES (?, ?)",
-                    rows,
-                )
+                # vec0 does not support replacement via INSERT OR REPLACE.
+                # Both statements share one transaction; a failed insert restores old vectors.
+                for rowid, blob in rows:
+                    conn.execute(f"DELETE FROM {VEC_TABLE} WHERE rowid = ?", [rowid])
+                    conn.execute(
+                        f"INSERT INTO {VEC_TABLE}(rowid, embedding) VALUES (?, ?)",
+                        [rowid, blob],
+                    )
 
         return LongTermMemoryIndexResult(
             indexed_count=len(active_records),
@@ -156,8 +160,9 @@ class LongTermMemoryVectorIndex:
         embedding = self._embeddings().embed_query(memory_record_to_index_text(record))
         blob = np.array(embedding, dtype=np.float32).tobytes()
         with self._vec_connect() as conn:
+            conn.execute(f"DELETE FROM {VEC_TABLE} WHERE rowid = ?", [record.rowid])
             conn.execute(
-                f"INSERT OR REPLACE INTO {VEC_TABLE}(rowid, embedding) VALUES (?, ?)",
+                f"INSERT INTO {VEC_TABLE}(rowid, embedding) VALUES (?, ?)",
                 [record.rowid, blob],
             )
 
@@ -194,7 +199,7 @@ class LongTermMemoryVectorIndex:
         store: LongTermMemoryStore,
         namespaces: list[tuple[str, ...]],
     ) -> LongTermMemoryIndexResult:
-        """Index all active records from selected namespaces via INSERT OR REPLACE."""
+        """Index active records from selected namespaces, replacing their stable row IDs."""
         records: list[LongTermMemoryRecord] = []
         for namespace in namespaces:
             records.extend(store.list(namespace))
