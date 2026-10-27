@@ -14,6 +14,10 @@ from src.memory.structured_state import MemoryUpdateResult
 from support.chainlit_bootstrap import prepare_chainlit_dependencies
 
 prepare_chainlit_dependencies()
+from src import settings  # noqa: E402
+
+# These existing scenarios explicitly exercise graph execution and native fallback.
+settings.ORCHESTRATION_MODE = "langgraph_demo"
 production_app = importlib.import_module("app")
 
 

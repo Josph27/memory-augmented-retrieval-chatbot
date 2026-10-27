@@ -5,14 +5,18 @@
 	const INSPECTOR_ID = "memory-answer-inspector";
 	const INSPECT_ACTION_CLASS = "memory-inspect-answer";
 	const LIFECYCLE_OVERLAY_ID = "memory-lifecycle-overlay";
-	const productState = { view: "home", active: null, chatId: null };
-	const answerInspections = [];
+	let productState = { view: "home", active: null, chatId: null };
+	let answerInspections = [];
 	let renderScheduled = false;
 	let inspectorRenderScheduled = false;
-	const firstProductStateReceived = false;
+	let firstProductStateReceived = false;
 
-	// Show the loading overlay immediately — the backend is loading models.
-	showLifecycleOverlay("Loading models…");
+	function showStartupOverlayIfNeeded() {
+		// Login must remain usable; model warm-up belongs to the authenticated composer.
+		if (!firstProductStateReceived && visibleComposer()) {
+			showLifecycleOverlay("Loading models…");
+		}
+	}
 
 	function removeElement(id) {
 		document.getElementById(id)?.remove();
@@ -45,8 +49,8 @@
 	}
 
 	function showLifecycleOverlay(label) {
+		if (document.getElementById(LIFECYCLE_OVERLAY_ID)) return;
 		injectOverlayStyles();
-		removeElement(LIFECYCLE_OVERLAY_ID);
 		const overlay = document.createElement("div");
 		overlay.id = LIFECYCLE_OVERLAY_ID;
 		overlay.setAttribute("role", "alertdialog");
@@ -612,6 +616,7 @@
 	}
 
 	function applyProductState(data) {
+		firstProductStateReceived = true;
 		hideLifecycleOverlay();
 		const previousChatId = productState.chatId;
 		productState = {
@@ -666,6 +671,7 @@
 	});
 
 	new MutationObserver(() => {
+		showStartupOverlayIfNeeded();
 		setComposerEnabled(productState.active !== false);
 		synchronizeNativeNewChat();
 		synchronizeGlobalHeader();
@@ -687,6 +693,7 @@
 
 	synchronizeNativeNewChat();
 	synchronizeGlobalHeader();
+	showStartupOverlayIfNeeded();
 
 	// ── Consolidation Log Panel ──────────────────────────────────────────
 	const CONSOLIDATION_ID = "memory-consolidation-log";

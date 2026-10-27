@@ -128,6 +128,7 @@ def browser_harness(tmp_path: Path, request: pytest.FixtureRequest):
     playwright = None
     browser: Browser | None = None
     context = None
+    page_errors: list[str] = []
     try:
         playwright = sync_playwright().start()
         _wait_for_server(url, process)
@@ -139,15 +140,18 @@ def browser_harness(tmp_path: Path, request: pytest.FixtureRequest):
         context = browser.new_context()
         context.tracing.start(screenshots=True, snapshots=True)
         page = context.new_page()
+        page.on("pageerror", lambda error: page_errors.append(str(error)))
         _login(page, url)
         harness = BrowserHarness(page, database, event_path, artifacts)
         yield harness
+        assert not page_errors, f"Browser JavaScript errors: {page_errors}"
         if getattr(request.node, "rep_call", None) and request.node.rep_call.failed:
             page.screenshot(path=artifacts / f"{request.node.name}.png", full_page=True)
             context.tracing.stop(path=artifacts / f"{request.node.name}.zip")
         else:
             context.tracing.stop()
     finally:
+        (artifacts / "page-errors.json").write_text(json.dumps(page_errors, indent=2) + "\n")
         if context is not None:
             context.close()
         if browser is not None:
@@ -322,6 +326,7 @@ def test_product_shell_visual_cleanup_and_toolbar_state(
         "Fork Chat",
         "New Chat",
         "Home",
+        "Consolidation Log",
     ]
     assert toolbar.evaluate("(element) => Boolean(element.closest('main'))")
     assert toolbar.evaluate("(element) => getComputedStyle(element).position !== 'fixed'")
@@ -339,6 +344,7 @@ def test_product_shell_visual_cleanup_and_toolbar_state(
         "Fork Chat",
         "New Chat",
         "Home",
+        "Consolidation Log",
     ]
     assert toolbar.get_by_role("button", name="End Chat").count() == 0
 
