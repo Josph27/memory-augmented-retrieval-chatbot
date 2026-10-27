@@ -12,9 +12,9 @@ heavy model weight and constrained development hardware.
 
 ## Cleanup and audit status
 
-PURGE1 is complete and the user confirmed functionality. PURGE2 consolidation is being independently challenged alongside PURGE1;
-corrective batches are in progress. Its final isolated groups
-passed 693 selected cases with one real-model exclusion. Native browser checks
+The user confirmed PURGE1 functionality. PURGE1 and PURGE2 were subsequently
+challenged and corrected; functionality confirmation is pending. The final isolated groups
+passed 698 selected cases with one real-model exclusion. Native browser checks
 and the React build passed; React browser journeys and live inference remain
 unverified. See the [current purge challenge](docs/audit/purge-challenge.md)
 and [current decisions and task ledger](docs/audit/README.md). Historical audit
@@ -227,14 +227,14 @@ python3 scripts/run_isolated_tests.py --group subprocess-wrappers --label local 
 
 Omitting --group runs the two core groups. App/wrapper groups remain explicit
 because they install different controlled test prerequisites in separate processes.
-Native browser is a separate group with existing synthetic model/document fixtures;
-its runtime works, but the current application login defect blocks all12scenarios.
+Native browser is a separate group with synthetic model/document fixtures.
+The historical login blocker was fixed; the final 13-case native group passed.
 React probes, live/paid evaluations and manual diagnostics have separate
 [commands and exclusion reasons](docs/audit/stage5/exclusions.md).
 
 Static checks remain `uv run ruff check .`, Python compilation and
-`git diff --check`. Current global checks retain31pre-existing Ruff diagnostics
-and the rebuild CLI syntax error; changed-file checks pass. See the
+`git diff --check`. Existing global Ruff diagnostics and the rebuild CLI syntax error remain;
+changed-file checks pass. See the
 [per-group results and remaining gaps](docs/audit/stage5/readiness.md).
 
 ## Evaluation summary
@@ -242,8 +242,9 @@ and the rebuild CLI syntax error; changed-file checks pass. See the
 - Product Behavior Benchmark: 50 product-level cases covering navigation,
   lifecycle, persistence, document behavior, failure handling, races, and
   idempotency. Stage5 measured39/42nonbrowser oracle rows passing; these are
-  separate from pytest cases. Native browser scenario bodies were blocked during
-  login setup. The historical48/50target is not current verification.
+  separate from pytest cases. Native browser scenarios were blocked in an earlier
+  Stage5 baseline; after the login fix the final 13-case native group passed.
+  The historical48/50target is not current verification.
 - MAB answer-level evaluation: fixed held-out manifests exercise answer quality
   through the production-shaped memory pipeline.
 - LongMemEval answer-level pilot: evaluates long-memory behavior with the

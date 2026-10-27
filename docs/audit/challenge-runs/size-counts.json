@@ -1,0 +1,54 @@
+{
+  "baseline": "f554c24",
+  "product_head": "31665a0",
+  "units": [
+    "files",
+    "bytes",
+    "logical lines (code/test only)"
+  ],
+  "before": {
+    "code": [
+      176,
+      1554114,
+      43314
+    ],
+    "tests": [
+      89,
+      780638,
+      22732
+    ],
+    "documentation": [
+      40,
+      355856,
+      null
+    ],
+    "evidence": [
+      155,
+      9192696,
+      null
+    ]
+  },
+  "after_committed_batches": {
+    "code": [
+      177,
+      1546287,
+      43047
+    ],
+    "tests": [
+      89,
+      786400,
+      22841
+    ],
+    "documentation": [
+      40,
+      355392,
+      null
+    ],
+    "evidence": [
+      174,
+      11390243,
+      null
+    ]
+  },
+  "note": "Final handoff archives/docs added after product_head are excluded."
+}

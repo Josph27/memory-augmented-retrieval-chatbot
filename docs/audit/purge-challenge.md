@@ -1,8 +1,8 @@
 # Independent PURGE1 / PURGE2 challenge
 
-TASK18 / DEC019. Baseline `f554c24`, clean `codex/audit-main`. Fresh read-only reviewers inspect core/retrieval, storage/memory, and frontend/evaluations/operations; one implementation writer, independent challenge of consequential changes and sampled retain decisions. The user's PURGE1 functionality acceptance remains recorded; PURGE2 has not received user acceptance. Existing test evidence is preserved.
+TASK18 / DEC019. Corrective engineering complete; user functionality confirmation pending. Baseline `f554c24`, clean `codex/audit-main`. Fresh read-only reviewers inspect core/retrieval, storage/memory, and frontend/evaluations/operations; one implementation writer, independent challenge of consequential changes and sampled retain decisions. The user's PURGE1 functionality acceptance remains recorded; PURGE2 has not received user acceptance. Existing test evidence is preserved.
 
-Preliminary outcome: both completion claims are reopened. Source inspection found a no-consumer long-term-memory helper missed by PURGE1 and identical LongMem/MAB resume-cache selection missed by PURGE2. The latter shows that reporting the evaluation/cache area fully exhausted was premature; it does not itself establish a regression in the earlier batches. Full relevant areas are being reassessed under the updated variation rule, not re-running all historic work.
+Challenge outcome: both completion claims were reopened. Source inspection found a no-consumer long-term-memory helper missed by PURGE1 and identical LongMem/MAB resume-cache selection missed by PURGE2. The latter shows that reporting the evaluation/cache area fully exhausted was premature; it does not itself establish a regression in the earlier batches. Relevant areas were reassessed under the updated variation rule without re-running all historic work.
 
 | Candidate / area | Consumers, behavior and proposed boundary | Benefit, risk and protection | Disposition |
 |---|---|---|---|
@@ -22,3 +22,26 @@ Preliminary outcome: both completion claims are reopened. Source inspection foun
 | Tests, documentation and runtime/user data | Existing tests migrated only where removed implementations were their sole callers; retained behavior is asserted directly. Historical audit evidence, stashes, credentials, databases, uploads and recovery material are preserved. | MAINT-01 test/framework simplification and PURGE3 broad moves remain separate. | Retain/defer; no private content inspected. |
 
 Prior [PURGE1 evidence](purge1-ledger.md) and [PURGE2 evidence](purge2-ledger.md) remain available. No live/paid inference, private stores or credentials are used.
+
+## Final challenge outcome and verification
+
+The earlier PURGE1 and PURGE2 completion claims did not fully hold: the former missed unused adapters and the latter dismissed or missed shared mechanics in large, live responsibilities. Valid prior verification and the user's PURGE1 manual acceptance remain evidence; neither established that the original search exhausted justified work. The corrected review inspected core retrieval/context/coordinator, SQLite/memory/ingestion/provider, frontend/operations/evaluations/configuration and prior diffs directly, using exact-clone search as a lead, consumer tracing and independent challenge of concrete retain samples. This is a bounded responsibility assessment, not proof that every branch or future duplicate is absent. No further previously identified justified corrective candidate or product decision remains.
+
+Corrective removal commits `3174fd0` and `2c1c359` remove eight unconsumed helpers/legacy renderers, while adapting existing tests to retained gist-ID retrieval, configured chunking and trace rows. Consolidation commits `836e30c`, `d40ec61`, `6d66552`, `89e3d7a`, `17cbc9d` and `74f2a48` share SQLite operations, cache selection, three inclusive-range mergers, source enablement, direct memory projection and validated JSONL mechanics. See candidate rows above for differences and explicit retention/deferment. Each consequential implementation was independently reviewed before its commit; no user data or recovery material was touched.
+
+Final isolated runs used the identical clean source `31665a00117599db03549914cdf43fa56437d60f`; subsequent changes are documentation/evidence only. [Machine summary and allowlisted archives](challenge-runs/final-summary.json) include exact source snapshots, result details, isolation proofs and logs.
+
+| Group | Collected | Passed | Excluded | Duration |
+|---|---:|---:|---:|---:|
+| Offline unit | 127 | 127 | 0 | 20.45s |
+| Offline integration | 518 | 517 | 1 | 46.43s |
+| App composition | 20 | 20 | 0 | 8.81s |
+| Subprocess wrappers | 21 | 21 | 0 | 2.97s |
+| Native browser | 13 | 13 | 0 | 99.19s |
+| **Distinct total** | **699** | **698** | **1** | **177.85s summed** |
+
+No failures, errors, skips, xfails or xpasses. The excluded case requires a real cross-encoder. Namespace controls and synthetic stores support zero external inference requests/tokens/cost; fake calls were not counted. Frontend offline checks, dependency tree, build and lint passed; three existing warnings and the large-bundle warning remain. The 13 browser cases are native Chainlit, not React parity. Live inference, model assets, React/Node browser and paid evaluation paths remain unexecuted. The separate 42-row product oracle remains 39 passing / 3 failing; passing its pytest harness does not erase those rows. See [exclusions](stage5/exclusions.md) and [bug backlog](bug-backlog.md).
+
+From baseline `f554c24` to corrective source `31665a0`, maintained application/evaluation/operations code changed **176 → 177 files, 43,314 → 43,047 logical lines, 1,554,114 → 1,546,287 bytes**. The extra code file is the small inclusive interval helper. Tests remain 89 files and changed **22,732 → 22,841 lines, 780,638 → 786,400 bytes**, including five targeted cases and adaptations of existing cases. The [size evidence](challenge-runs/size-counts.json) separates maintained documentation and generated audit evidence; the six final result archives add 738,374 bytes after that snapshot. No deletion quota or exhaustive test target was used.
+
+Tier-end manual acceptance: (1) create/end/resume or fork a chat and confirm old/new message history and memory; (2) upload a document, ask a grounded question and inspect retrieval provenance, including a chat that already has a document; (3) if useful for the workflow, run the mock structured-memory/generated-answer and E2E evaluations, including a resume case. The user has not yet confirmed this corrective state. Stop for functionality confirmation before PURGE3.

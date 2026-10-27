@@ -49,3 +49,10 @@ TASK16 engineering complete:689unique selected cases pass,1real-model exclusion;
 - [x] Final ledger/decisions and tier-end checklist; await user PURGE2 functionality confirmation.
 
 No PURGE3 or MAINT-01 simplification; preserve data, credentials and recovery material.
+
+## TASK18 / DEC019 — independent purge challenge
+
+- [x] Fresh independent source/consumer challenges and retain-sample review.
+- [x] Reopen both prior completion claims; implement/review corrective removal and shared-mechanics batches.
+- [x] Run affected and final isolated checks; record evidence, boundaries and existing limitations.
+- [x] Update current ledger and handoff; wait for user functionality confirmation before PURGE3.
