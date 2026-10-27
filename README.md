@@ -12,11 +12,13 @@ heavy model weight and constrained development hardware.
 
 ## Cleanup and audit status
 
-Stage5 test-only baseline and protection work is delivered; application/evaluation
-blockers still prevent purge readiness. Read [current results and limits](docs/audit/stage5/readiness.md),
-then the [decisions and task ledger](docs/audit/README.md). Historical ui-based
-conclusions remain archived. Native Chainlit login currently fails the isolated
-browser checks because the loading overlay blocks Sign In.
+Stage5 protection and the bounded blocker fixes are complete; final isolated groups
+passed689selected cases with1real-model exclusion. Native Chainlit login and its
+existing browser journeys pass. Remaining verification limits are in the
+[Stage5 checkpoint](docs/audit/stage5/readiness.md). PURGE1 has begun with one
+[approved artifact removal](docs/audit/purge1-batch1.md); further code-removal
+proposals require separate approval. Read the [current decisions and task ledger](docs/audit/README.md).
+Historical audit evidence remains archived; test-suite simplification is deferred.
 
 ## Implemented features
 

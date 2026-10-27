@@ -8,7 +8,7 @@ Updated 2026-10-27. [Original register](history/tmp-audit/docs/audit/decisions.m
 - DEC-004/006/008: nine-stage sequence remains; Stage 4 existing-test assessment requires targeted main revalidation before Stage 5 protection expansion.
 - DEC-007: original audit chat and independent reviews supplied historical assessment. Internal bounded independent review remains authorized.
 - DEC-101–106: document scope, forgetting, fork/edit semantics, deployment and frontend/configuration coverage remain unresolved. No new product policy inferred from migration.
-- DEC-107: no removal approval.
+- DEC-107: historical no-removal boundary; DEC016 later authorizes one named PNG only.
 
 ## DEC-009 — Main-based recovery and transfer
 
@@ -45,3 +45,17 @@ Authorized now: record deferred MAINT-01/TASK13 and the user-reported manual che
 ## DEC015 — Bounded Stage5 blocker resolution
 
 User instruction authorizes diagnosis and minimal application/evaluation/test-setup fixes for the four recorded blockers; existing regression tests first, narrow protection only, independent review, affected isolated groups and final offline core, coherent commits and a first cleanup **proposal**. Preserve DEC013 SQL success/logged vector failure. Reconcile the reported manual check with native Chainlit versus React and fresh-session automation. No paid/live inference, unrelated fixes, broad test expansion, MAINT-01/TASK13 implementation or purge. The preexisting React type/lock fix and DEC014 audit updates are separately preserved in c487db3 and 785ccd9.
+
+## DEC016 — PURGE1 single-artifact deletion and next proposal
+
+User explicitly approves deletion of docs/mermaid-diagram-2026-07-15-021559.png only, preserving docs/system-component-map.mmd, all other assets, application/tests/evaluations and historical audit evidence. Authorizes consumer/source/diff/link validation, current ledger/decision updates and a coherent commit; application tests need not rerun solely for this unreferenced artifact. No history rewrite/squash. Starting source:3a3ad03e5fb33b23c56aa5f36e49c1f2e413bf67, clean codex/audit-main worktree. See [executed batch](purge1-batch1.md).
+
+Also authorizes preparation, not execution, of at most3 concrete code-removal candidates using existing findings. Live responsibility consolidation belongs to PURGE2. No additional deletion, behavior change, live inference, general fix or MAINT-01/TASK13 implementation approved. Next code change needs its own explicit bounded approval.
+
+## DEC017 — Complete PURGE1 with preserved capabilities
+
+User expanded the assignment to complete PURGE1 across maintained implementation, helpers/modules/scripts/dependencies, backup/patch/generated artifacts and exclusively tied docs/assets. Authorizes autonomous removal only when no unique retained responsibility is established, necessary supporting imports/config/tests/docs, isolated verification, independent challenge of consequential code/dependency removals, and recoverable coherent commits. Do not stop at a candidate list.
+
+Preserve retained workflows, useful optional modes/evaluations/manual diagnostics/fallbacks, credentials/databases/uploads/user data, ignored/runtime data, stashes/recovery backups and historical audit evidence. Static imports alone do not establish safe removal. Consolidation/restructuring belong to PURGE2/PURGE3; MAINT-01/TASK13 remains deferred; no general fixes, live spending or wholesale stash application. Genuine product/value/data decisions block only the affected candidate while independent work continues.
+
+Completion requires recorded dispositions for all relevant repository areas, executed/reviewed justified safe removals, explicit retained/deferred/decision candidates, proportional verification plus final agreed isolated groups/build, updated records and commits. No completion claim with an unresolved PURGE1 decision. Stop after tier-end report for user functionality confirmation; do not begin PURGE2. This supersedes DEC016's proposal-only next-step restriction, not its narrow approved PNG scope.

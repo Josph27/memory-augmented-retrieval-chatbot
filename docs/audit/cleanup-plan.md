@@ -10,7 +10,7 @@ Updated2026-10-27. Governing DEC008 sequence: inference → audit/handoff → sc
 | TASK09 — Existing-test audit | Main assessor plus bounded independent review; TASK11 | Current file/setup/assertion/consumer assessment complete at documented depth.80current Python sources643lexical tests,82old/current identity union; JS/browser/manual/eval/shell consumers reconciled. Full-suite/default runtime acceptance remains unverified. |
 | TASK02/03 — Scope and concrete proposals | Coordinator + user for capability choices | Zero justified workflow removals and none approved. Resolve DEC101–106 only when relevant to a concrete protection/cleanup batch; DEC107 requires explicit removal proposal. |
 | TASK04 / TASK12 — Stage5 protection (DEC012) | Coordinator + one implementation writer; independent isolation/repair review | Test protection delivered; subsequent TASK14/DEC015 resolves the four automated blockers. Final689selected cases pass across5disjoint groups,1real-model case excluded;12native UIjourneys pass. [Readiness](stage5/readiness.md) gives remaining limits and a bounded artifact proposal, not blanket workflow-removal approval. |
-| TASK05/06/07 — Purge/consolidate/restructure | Relevant batch approval and passing protection | Not started. No audit recommendation or obsolete/broken/default-off path authorizes deletion. |
+| TASK05/06/07 — Purge/consolidate/restructure | Relevant batch approval and passing protection | PURGE1 began with DEC016/TASK15: one approved unreferenced PNG removed. No code removal, PURGE2 consolidation or PURGE3 restructuring started. |
 | TASK08 — Acceptance | Implementation tiers + user functionality confirmation | Future. Startup/clean setup, full retained workflows/live-provider/browser/API checks and remaining bugs need explicit verification. |
 
 ## Historical Stage5 preparation sequence (completed/superseded)
@@ -42,3 +42,15 @@ Complete. Coordinator owns evidence/ledger/commits; one implementation writer ow
 Reconfirmation: integration again collected509/selected508,502passed6failed/1excluded; source stable. Fresh native Chainlit browser again hit the login overlay; the repeated-failure run was deliberately interrupted, with incomplete cases recorded separately. Preserve both original complete and new partial evidence. Completion: independently reviewed minimal fixes, affected groups and final offline core on stable final source, honest remaining limits, and a small consumer-checked cleanup proposal; no deletion. See [batch evidence](stage5/blocker-resolution.md).
 
 TASK14 completion: final five groups on identical stable working source collected690/selected689, all689passed;1real-model preload excluded,0errors/skips/xfails. Independent source/runtime review accepted; native browser13pass includes12journeys. No new cases. Commits a02bcfa/4dbcaa4/bc28550 preserve native vectors, evaluations and native login fixes separately. Remaining product-oracle39/3 and deferred verification are explicit; no unrelated fixes/purge/test simplification. Next user checkpoint: approval/rejection of the single unreferenced diagram-PNG proposal in readiness. No product ambiguity blocks that proposal.
+
+## TASK15 — PURGE1 approved artifact (DEC016)
+
+Complete: start3a3ad03, clean active worktree. Rechecked exact/stem references and operational asset/packaging/loader rules; only audit/proposal references, no active consumer. Removed exactly the approved3,063,514-byte PNG. Retained Mermaid source hash unchanged; exact visual reproduction not claimed. Current records updated; historical inventories/evidence untouched. Diff/scope/local Markdown links and git diff --check validated; no application tests rerun for this non-code deletion. [Batch and Git recovery](purge1-batch1.md).
+
+Next instruction expanded to full PURGE1 under DEC017/TASK16; the prior proposal-only restriction is superseded. MAINT-01/TASK13 remains deferred.
+
+## TASK16 — Complete PURGE1 (DEC017)
+
+In progress. Coordinator owns area/candidate ledger, source-state/counts, batches, evidence and commits; internal read-only assessors cover backend, dependencies/evaluations/scripts, and frontend/docs/assets/config/test-infrastructure disposition. Exactly one implementation writer at a time, plus independent consequential review. Starting code baseline3a3ad03; TASK15 artifact batch separately preserved.
+
+Completion gates: maintained-area accounting including protected runtime/data metadata; all safe removals executed/reviewed in coherent batches; retained versus PURGE2/3 versus genuine decisions explicit; affected verification and final agreed isolated core/app/wrapper/browser/build groups; counts/sizes, current docs and tier-end manual acceptance. No general audit restart, test-suite simplification or PURGE2 work.
