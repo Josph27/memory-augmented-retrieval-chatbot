@@ -1,0 +1,34 @@
+{
+  "collected_case_count": 512,
+  "selected_case_count": 511,
+  "counts": {
+    "errored": 0,
+    "failed": 0,
+    "passed": 511,
+    "skipped": 0,
+    "xfailed": 0,
+    "xpassed": 0
+  },
+  "deselected": [
+    "tests/test_memory_reranker.py::test_cross_encoder_backend_preload_loads_model"
+  ],
+  "duration_seconds": 37.30411595699843,
+  "external_inference_requests": 0,
+  "external_tokens": 0,
+  "external_cost": 0,
+  "fake_model_calls": null,
+  "archive": "eval-integration.tar.gz",
+  "sha256": "033f7824be629239749cd5cfe61cce774df8e33466d267b3d44e2e4c43d8115e",
+  "launch": {
+    "duration_seconds": 40.07727730901388,
+    "exit_code": 0,
+    "output_dir": "/tmp/breamon-stage5-pv4zfliq",
+    "progress_exists": true,
+    "result_exists": true,
+    "source_unchanged_during_run": true,
+    "timed_out": false
+  },
+  "review": "Independent review accepted equivalent JSONL behavior and fixed direct-CLI tests to use absolute script paths from a non-repository working directory.",
+  "source": "HEAD b714855 plus documented dirty implementation/test bytes; exact before/after snapshots in archive",
+  "prior_runs": "Two earlier integration checks passed; second added CLI help check; final run verifies reviewer-recommended non-root cwd. No failures or retries."
+}

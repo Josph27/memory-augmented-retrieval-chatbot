@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from evals.multi_source_retrieval.run_multi_source_retrieval_eval import (
     DEFAULT_DATASET,
     load_jsonl,
@@ -118,3 +120,37 @@ def test_summary_and_trace_export_schema(tmp_path: Path) -> None:
     assert parsed["top_k"] == 5
     assert parsed["cases"][0]["trace"]["routing"]["source_plans"]
     assert "retrieved_candidates" in parsed["cases"][0]["trace"]
+
+
+def test_evaluation_jsonl_loaders_preserve_input_and_error_contract(tmp_path: Path) -> None:
+    from evals.structured_memory.run_structured_memory_eval import load_jsonl as structured_load
+
+    path = tmp_path / "cases.jsonl"
+    path.write_text('\n {"case_id": "a"}\n42\n null\n', encoding="utf-8")
+    for loader in (load_jsonl, structured_load):
+        assert loader(path) == [{"case_id": "a"}, 42, None]
+        assert loader(path, limit=1) == [{"case_id": "a"}]
+        assert loader(path, limit=0) == [{"case_id": "a"}]
+        assert loader(path, limit=-1) == [{"case_id": "a"}]
+        with pytest.raises(FileNotFoundError):
+            loader(tmp_path / "missing.jsonl")
+    path.write_text('{"invalid": }\n', encoding="utf-8")
+    for loader in (load_jsonl, structured_load):
+        with pytest.raises(json.JSONDecodeError):
+            loader(path)
+
+    # Both direct CLI entry points must resolve the shared helper after path setup.
+    import subprocess
+    import sys
+
+    root = Path(__file__).resolve().parents[1]
+    for script in (
+        "evals/structured_memory/run_structured_memory_eval.py",
+        "evals/multi_source_retrieval/run_multi_source_retrieval_eval.py",
+    ):
+        result = subprocess.run(
+            [sys.executable, str(root / script), "--help"],
+            cwd=tmp_path, capture_output=True, text=True, timeout=30
+        )
+        assert result.returncode == 0, result.stderr
+        assert "--dataset" in result.stdout

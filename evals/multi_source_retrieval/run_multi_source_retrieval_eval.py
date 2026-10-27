@@ -12,6 +12,7 @@ ROOT_DIR = Path(__file__).resolve().parents[2]
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
+from evals._jsonl import load_jsonl  # noqa: E402
 from src.core.contracts import MemoryCandidate, RoutePlan, SourcePlan  # noqa: E402
 from src.retrieval.retriever_dispatcher import RetrieverDispatcher  # noqa: E402
 
@@ -71,19 +72,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output", type=Path, help="Optional JSON trace report path.")
     parser.add_argument("--json", action="store_true", help="Print JSON summary.")
     return parser.parse_args()
-
-
-def load_jsonl(path: Path, limit: int | None = None) -> list[dict[str, Any]]:
-    """Load multi-source retrieval cases from JSONL."""
-    cases: list[dict[str, Any]] = []
-    with path.open(encoding="utf-8") as handle:
-        for line in handle:
-            if not line.strip():
-                continue
-            cases.append(json.loads(line))
-            if limit is not None and len(cases) >= limit:
-                break
-    return cases
 
 
 def run_cases(cases: list[dict[str, Any]], top_k: int = 5) -> list[MultiSourceCaseResult]:

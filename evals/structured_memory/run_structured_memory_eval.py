@@ -18,6 +18,7 @@ from evals.structured_memory.metrics import (  # noqa: E402
     score_case,
     summarize_scores,
 )
+from evals._jsonl import load_jsonl  # noqa: E402
 from src.core.contracts import SourcePlan  # noqa: E402
 from src.database import Database  # noqa: E402
 from src.memory.langmem_structured import LangMemStructuredMemoryState  # noqa: E402
@@ -89,19 +90,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--limit", type=int, default=None)
     parser.add_argument("--json", action="store_true", help="Print JSON summary.")
     return parser.parse_args()
-
-
-def load_jsonl(path: Path, limit: int | None = None) -> list[dict[str, Any]]:
-    """Load structured-memory eval cases from JSONL."""
-    cases = []
-    with path.open(encoding="utf-8") as handle:
-        for line in handle:
-            if not line.strip():
-                continue
-            cases.append(json.loads(line))
-            if limit is not None and len(cases) >= limit:
-                break
-    return cases
 
 
 def run_cases(cases: list[dict[str, Any]]) -> list[EvalCaseResult]:
