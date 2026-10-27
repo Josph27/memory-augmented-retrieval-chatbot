@@ -12,11 +12,11 @@ heavy model weight and constrained development hardware.
 
 ## Cleanup and audit status
 
-PURGE1 is complete and the user confirmed functionality. PURGE2 consolidation
-is complete, awaiting user functionality confirmation. Its final isolated groups
+PURGE1 is complete and the user confirmed functionality. PURGE2 consolidation is being independently challenged alongside PURGE1;
+corrective batches are in progress. Its final isolated groups
 passed 693 selected cases with one real-model exclusion. Native browser checks
 and the React build passed; React browser journeys and live inference remain
-unverified. See the [PURGE2 ledger and acceptance checklist](docs/audit/purge2-ledger.md)
+unverified. See the [current purge challenge](docs/audit/purge-challenge.md)
 and [current decisions and task ledger](docs/audit/README.md). Historical audit
 evidence is preserved. Test-suite simplification and restructuring remain deferred.
 
